@@ -8,10 +8,13 @@ import {
   Animated,
   TouchableOpacity,
   Keyboard,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
+import socketService from "../services/socket";
 
 // Floating particle component
 const FloatingParticle = ({ delay, startX, startY, size }) => {
@@ -81,6 +84,7 @@ export default function JoinGameScreen({ navigation, route }) {
   const [lobbyCode, setLobbyCode] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isInvalid, setIsInvalid] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -132,6 +136,7 @@ export default function JoinGameScreen({ navigation, route }) {
   }, [isReady]);
 
   const handleGoBack = () => {
+    socketService.disconnect();
     navigation.goBack();
   };
 
@@ -156,25 +161,51 @@ export default function JoinGameScreen({ navigation, route }) {
     ]).start();
   };
 
-  const handleJoinLobby = () => {
+  const handleJoinLobby = async () => {
     if (!isValidCode) {
       triggerShake();
       return;
     }
 
-    Keyboard.dismiss();
+    if (isJoining) return;
 
-    // Navigate to lobby as a non-host player
-    // In real app, this would first validate the code with backend
-    navigation.navigate("Lobby", {
-      lobbyCode: lobbyCode,
-      hostName: "Host", // Would come from backend
-      hostId: "host-1", // Would come from backend
-      isHost: false,
-      currentPlayerId: `player-${Date.now()}`,
-      currentPlayerName: playerName,
-      gameSettings: {}, // Would come from backend
-    });
+    Keyboard.dismiss();
+    setIsJoining(true);
+
+    try {
+      // Connect to server if not connected
+      if (!socketService.isConnected) {
+        await socketService.connect(playerName);
+      }
+
+      // Join lobby
+      const lobby = await socketService.joinLobby(lobbyCode, playerName);
+
+      console.log("Joined lobby:", lobby);
+
+      // Navigate to lobby screen with lobby data
+      navigation.navigate("Lobby", {
+        lobbyCode: lobby.code,
+        lobbyId: lobby.id,
+        hostName: lobby.hostName,
+        hostId: lobby.hostPlayerId,
+        isHost: lobby.hostPlayerId === socketService.playerId,
+        currentPlayerId: socketService.playerId,
+        currentPlayerName: playerName,
+        gameSettings: lobby.settings,
+        initialPlayers: lobby.players,
+      });
+    } catch (error) {
+      console.error("Error joining lobby:", error);
+      triggerShake();
+      Alert.alert(
+        "Join Failed",
+        error.message || "Failed to join lobby. Please check the code and try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   const handleButtonPressIn = () => {
@@ -339,12 +370,16 @@ export default function JoinGameScreen({ navigation, route }) {
                           style={styles.glossOverlay}
                         />
 
-                        <Text style={[
-                          styles.buttonText,
-                          !isValidCode && styles.buttonTextDisabled,
-                        ]}>
-                          Join Lobby
-                        </Text>
+                        {isJoining ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={[
+                            styles.buttonText,
+                            !isValidCode && styles.buttonTextDisabled,
+                          ]}>
+                            Join Lobby
+                          </Text>
+                        )}
 
                         {/* Inner bottom highlight */}
                         <View style={styles.innerHighlight} />

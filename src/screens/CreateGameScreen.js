@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -6,41 +6,31 @@ import {
   StyleSheet,
   Animated,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
-import LobbyCode from "../components/LobbyCode";
 import SettingCard from "../components/SettingCard";
 import RoundSelector from "../components/RoundSelector";
 import OrderModeToggle from "../components/OrderModeToggle";
 import ScoringModeToggle from "../components/ScoringModeToggle";
 import GameButton from "../components/GameButton";
-
-// Generate random 6-character alphanumeric code
-const generateLobbyCode = () => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-};
+import socketService from "../services/socket";
 
 export default function CreateGameScreen({ navigation, route }) {
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   // Game settings state
-  const [players, setPlayers] = useState(4);
+  const [maxPlayers, setMaxPlayers] = useState(4);
   const [rounds, setRounds] = useState(4);
   const [orderMode, setOrderMode] = useState("Kachuful");
   const [scoringMode, setScoringMode] = useState("+10");
-
-  // Generate lobby code once on mount
-  const lobbyCode = useMemo(() => generateLobbyCode(), []);
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -83,25 +73,53 @@ export default function CreateGameScreen({ navigation, route }) {
   }, [isReady]);
 
   const handleGoBack = () => {
+    socketService.disconnect();
     navigation.goBack();
   };
 
-  const handleCreateLobby = () => {
-    // Navigate to lobby screen with host data
-    navigation.navigate("Lobby", {
-      lobbyCode: lobbyCode,
-      hostName: playerName,
-      hostId: `host-${Date.now()}`,
-      isHost: true,
-      currentPlayerId: `host-${Date.now()}`,
-      currentPlayerName: playerName,
-      gameSettings: {
-        maxPlayers: players,
+  const handleCreateLobby = async () => {
+    if (isCreating) return;
+
+    setIsCreating(true);
+
+    try {
+      // Connect to server if not connected
+      if (!socketService.isConnected) {
+        await socketService.connect(playerName);
+      }
+
+      // Create lobby with settings
+      const lobby = await socketService.createLobby(playerName, {
+        maxPlayers,
         rounds,
         orderMode,
         scoringMode,
-      },
-    });
+      });
+
+      console.log("Lobby created:", lobby);
+
+      // Navigate to lobby screen with lobby data
+      navigation.navigate("Lobby", {
+        lobbyCode: lobby.code,
+        lobbyId: lobby.id,
+        hostName: lobby.hostName,
+        hostId: lobby.hostPlayerId,
+        isHost: true,
+        currentPlayerId: socketService.playerId,
+        currentPlayerName: playerName,
+        gameSettings: lobby.settings,
+        initialPlayers: lobby.players,
+      });
+    } catch (error) {
+      console.error("Error creating lobby:", error);
+      Alert.alert(
+        "Connection Error",
+        error.message || "Failed to create lobby. Please check your connection and try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   if (!fontsLoaded) {
@@ -143,9 +161,9 @@ export default function CreateGameScreen({ navigation, route }) {
                 },
               ]}
             >
-              {/* Lobby Code Section */}
+              {/* Title Section */}
               <View style={styles.topSection}>
-                <LobbyCode code={lobbyCode} />
+                <Text style={styles.title}>Game Settings</Text>
               </View>
 
               {/* Settings Section - 2x2 Grid */}
@@ -153,8 +171,8 @@ export default function CreateGameScreen({ navigation, route }) {
                 <View style={styles.settingsRow}>
                   <SettingCard label="Players" compact>
                     <RoundSelector
-                      value={players}
-                      onChange={setPlayers}
+                      value={maxPlayers}
+                      onChange={setMaxPlayers}
                       min={3}
                       max={8}
                     />
@@ -189,11 +207,18 @@ export default function CreateGameScreen({ navigation, route }) {
 
               {/* Create Lobby Button */}
               <View style={styles.bottomSection}>
-                <GameButton
-                  title="Create Lobby"
-                  onPress={handleCreateLobby}
-                  delay={0}
-                />
+                {isCreating ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#FFD700" />
+                    <Text style={styles.loadingText}>Creating Lobby...</Text>
+                  </View>
+                ) : (
+                  <GameButton
+                    title="Create Lobby"
+                    onPress={handleCreateLobby}
+                    delay={0}
+                  />
+                )}
               </View>
             </Animated.View>
 
@@ -246,6 +271,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 5,
   },
+  title: {
+    fontSize: 42,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFD700",
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 6,
+    letterSpacing: 2,
+  },
   settingsSection: {
     flex: 1,
     justifyContent: "flex-start",
@@ -287,5 +321,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFD700",
+    marginTop: 10,
   },
 });

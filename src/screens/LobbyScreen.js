@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Animated,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,28 +16,42 @@ import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 
 import PlayerCard from "../components/PlayerCard";
 import RemovePlayerModal from "../components/RemovePlayerModal";
+import socketService from "../services/socket";
 
 export default function LobbyScreen({ navigation, route }) {
   // Get params from navigation
   const {
     lobbyCode = "ABC123",
+    lobbyId = "",
     hostName = "Player",
     hostId = "host-1",
     isHost = true,
     gameSettings = {},
     currentPlayerId = "host-1",
     currentPlayerName = "Player",
+    initialPlayers = [],
   } = route.params || {};
 
   const [isReady, setIsReady] = useState(false);
   const [copied, setCopied] = useState(false);
   const [removeModalVisible, setRemoveModalVisible] = useState(false);
   const [playerToRemove, setPlayerToRemove] = useState(null);
+  const [isStarting, setIsStarting] = useState(false);
 
-  // Mock players state - in real app this would come from realtime backend
-  const [players, setPlayers] = useState([
-    { id: hostId, name: hostName, isHost: true, joinedAt: Date.now() },
-  ]);
+  // Initialize players from initial data or fallback to host
+  const [players, setPlayers] = useState(() => {
+    if (initialPlayers && initialPlayers.length > 0) {
+      return initialPlayers.map(p => ({
+        id: p.playerId,
+        name: p.name,
+        isHost: p.isHost,
+        joinedAt: new Date(p.joinedAt).getTime(),
+      }));
+    }
+    return [{ id: hostId, name: hostName, isHost: true, joinedAt: Date.now() }];
+  });
+
+  const [currentHostId, setCurrentHostId] = useState(hostId);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -47,7 +62,70 @@ export default function LobbyScreen({ navigation, route }) {
   });
 
   const canStartGame = players.length >= 3;
-  const isCurrentUserHost = isHost;
+  const isCurrentUserHost = currentPlayerId === currentHostId;
+
+  // Handle socket events for real-time updates
+  useEffect(() => {
+    // Listen for lobby updates
+    const unsubscribeUpdate = socketService.on('lobby:update', (data) => {
+      console.log('Lobby update:', data.lobby);
+      const lobby = data.lobby;
+
+      // Update players list
+      setPlayers(lobby.players.map(p => ({
+        id: p.playerId,
+        name: p.name,
+        isHost: p.isHost,
+        joinedAt: new Date(p.joinedAt).getTime(),
+      })));
+
+      // Update host if changed
+      setCurrentHostId(lobby.hostPlayerId);
+    });
+
+    // Listen for player joined
+    const unsubscribeJoined = socketService.on('lobby:player-joined', (data) => {
+      console.log('Player joined:', data.player.name);
+    });
+
+    // Listen for player left
+    const unsubscribeLeft = socketService.on('lobby:player-left', (data) => {
+      console.log('Player left:', data.playerId);
+    });
+
+    // Listen for being kicked
+    const unsubscribeKicked = socketService.on('lobby:kicked', (data) => {
+      Alert.alert('Removed from Lobby', data.message, [
+        { text: 'OK', onPress: () => navigation.navigate('Home') }
+      ]);
+    });
+
+    // Listen for game started
+    const unsubscribeGameStarted = socketService.on('game:started', (data) => {
+      console.log('Game started:', data.gameState);
+      // Navigate to game screen
+      navigation.navigate('Game', {
+        gameState: data.gameState,
+        currentPlayerId,
+        currentPlayerName,
+      });
+    });
+
+    // Listen for errors
+    const unsubscribeError = socketService.on('lobby:error', (data) => {
+      Alert.alert('Error', data.message);
+      setIsStarting(false);
+    });
+
+    return () => {
+      unsubscribeUpdate();
+      unsubscribeJoined();
+      unsubscribeLeft();
+      unsubscribeKicked();
+      unsubscribeGameStarted();
+      unsubscribeError();
+    };
+  }, [navigation, currentPlayerId, currentPlayerName]);
 
   // Button glow animation
   useEffect(() => {
@@ -103,26 +181,7 @@ export default function LobbyScreen({ navigation, route }) {
     }
   }, [isReady]);
 
-  // Demo: Add mock players for testing layout
-  useEffect(() => {
-    // Simulate players joining for demo
-    const mockPlayers = [
-      { id: "player-2", name: "Alice", isHost: false, joinedAt: Date.now() + 1000 },
-      { id: "player-3", name: "Bob", isHost: false, joinedAt: Date.now() + 2000 },
-      { id: "player-4", name: "Charlie", isHost: false, joinedAt: Date.now() + 3000 },
-    ];
-
-    const timers = mockPlayers.map((player, index) => {
-      return setTimeout(() => {
-        setPlayers((prev) => {
-          if (prev.find((p) => p.id === player.id)) return prev;
-          return [...prev, player];
-        });
-      }, (index + 1) * 800);
-    });
-
-    return () => timers.forEach(clearTimeout);
-  }, []);
+  // Real-time updates are handled by socket events above
 
   const handleCopyCode = async () => {
     await Clipboard.setStringAsync(lobbyCode);
@@ -137,8 +196,8 @@ export default function LobbyScreen({ navigation, route }) {
 
   const confirmRemovePlayer = () => {
     if (playerToRemove) {
-      setPlayers((prev) => prev.filter((p) => p.id !== playerToRemove.id));
-      // TODO: Send remove event to backend
+      // Send kick event to backend
+      socketService.kickPlayer(playerToRemove.id);
     }
     setRemoveModalVisible(false);
     setPlayerToRemove(null);
@@ -150,22 +209,28 @@ export default function LobbyScreen({ navigation, route }) {
   };
 
   const handleStartGame = () => {
-    if (!canStartGame) return;
+    if (!canStartGame || isStarting) return;
 
-    const gameData = {
-      lobbyCode,
-      players,
-      settings: gameSettings,
-    };
+    setIsStarting(true);
 
-    console.log("Starting game:", gameData);
-    // TODO: Navigate to game screen
-    // navigation.navigate("Game", gameData);
+    // Send start game event to backend
+    socketService.startGame();
+
+    // Navigation will happen when we receive game:started event
+    console.log("Starting game...");
   };
 
   const handleLeaveLobby = () => {
+    // Send leave event to backend
+    socketService.leaveLobby();
     navigation.goBack();
   };
+
+  // Get host name from players list
+  const displayHostName = useMemo(() => {
+    const host = players.find(p => p.isHost);
+    return host ? host.name : hostName;
+  }, [players, hostName]);
 
   // Calculate player layout based on count
   const getPlayerLayout = useMemo(() => {
@@ -340,7 +405,7 @@ export default function LobbyScreen({ navigation, route }) {
               {/* Top Section - Title and Code */}
               <View style={styles.topSection}>
                 {/* Lobby Title */}
-                <Text style={styles.title}>{hostName}'s Lobby</Text>
+                <Text style={styles.title}>{displayHostName}'s Lobby</Text>
 
                 {/* Lobby Code */}
                 <View style={styles.codeContainer}>
