@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   },
   gradient: {
     paddingVertical: 14,
-    paddingHorizontal: 32,
+    paddingHorizontal: 45,
     borderRadius: 14,
     minWidth: 180,
     alignItems: "center",
@@ -131,6 +131,8 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     letterSpacing: 0.5,
     fontFamily: "Bangers_400Regular",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   innerHighlight: {
     position: "absolute",

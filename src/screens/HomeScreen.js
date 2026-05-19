@@ -21,7 +21,7 @@ import PlayerNameInput from "../components/PlayerNameInput";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const [playerName, setPlayerName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -113,15 +113,13 @@ export default function HomeScreen() {
 
   const handleCreateGame = () => {
     validateAndProceed(() => {
-      console.log("Create Game pressed, Player:", playerName.trim());
-      // TODO: Navigate to create game screen
+      navigation.navigate("CreateGame", { playerName: playerName.trim() });
     });
   };
 
   const handleJoinGame = () => {
     validateAndProceed(() => {
-      console.log("Join Game pressed, Player:", playerName.trim());
-      // TODO: Navigate to join game screen
+      navigation.navigate("JoinGame", { playerName: playerName.trim() });
     });
   };
 
