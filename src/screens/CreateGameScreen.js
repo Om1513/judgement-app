@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,12 +10,37 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
+import LobbyCode from "../components/LobbyCode";
+import SettingCard from "../components/SettingCard";
+import RoundSelector from "../components/RoundSelector";
+import OrderModeToggle from "../components/OrderModeToggle";
+import ScoringModeToggle from "../components/ScoringModeToggle";
+import GameButton from "../components/GameButton";
+
+// Generate random 6-character alphanumeric code
+const generateLobbyCode = () => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
 
 export default function CreateGameScreen({ navigation, route }) {
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Game settings state
+  const [players, setPlayers] = useState(4);
+  const [rounds, setRounds] = useState(4);
+  const [orderMode, setOrderMode] = useState("Kachuful");
+  const [scoringMode, setScoringMode] = useState("+10");
+
+  // Generate lobby code once on mount
+  const lobbyCode = useMemo(() => generateLobbyCode(), []);
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -61,6 +86,23 @@ export default function CreateGameScreen({ navigation, route }) {
     navigation.goBack();
   };
 
+  const handleCreateLobby = () => {
+    // Prepare lobby data
+    const lobbyData = {
+      code: lobbyCode,
+      hostName: playerName,
+      settings: {
+        players,
+        rounds,
+        orderMode,
+        scoringMode,
+      },
+    };
+
+    console.log("Creating lobby:", lobbyData);
+    // TODO: Create multiplayer room with this data
+  };
+
   if (!fontsLoaded) {
     return (
       <View style={styles.container}>
@@ -83,13 +125,14 @@ export default function CreateGameScreen({ navigation, route }) {
         {/* Only show content after transition completes */}
         {isReady && (
           <>
-            {/* Top gradient for better text visibility */}
+            {/* Top gradient for better visibility */}
             <LinearGradient
-              colors={["rgba(26, 16, 48, 0.6)", "transparent"]}
-              style={styles.topGradient}
+              colors={["rgba(26, 16, 48, 0.7)", "transparent", "rgba(26, 16, 48, 0.5)"]}
+              locations={[0, 0.4, 1]}
+              style={styles.overlayGradient}
             />
 
-            {/* Content */}
+            {/* Main content */}
             <Animated.View
               style={[
                 styles.content,
@@ -99,12 +142,57 @@ export default function CreateGameScreen({ navigation, route }) {
                 },
               ]}
             >
-              <Text style={styles.title}>Create Game</Text>
-              <Text style={styles.subtitle}>Welcome, {playerName}!</Text>
+              {/* Lobby Code Section */}
+              <View style={styles.topSection}>
+                <LobbyCode code={lobbyCode} />
+              </View>
 
-              {/* Placeholder content */}
-              <View style={styles.placeholderContainer}>
-                <Text style={styles.placeholderText}>Game creation options coming soon...</Text>
+              {/* Settings Section - 2x2 Grid */}
+              <View style={styles.settingsSection}>
+                <View style={styles.settingsRow}>
+                  <SettingCard label="Players" compact>
+                    <RoundSelector
+                      value={players}
+                      onChange={setPlayers}
+                      min={3}
+                      max={8}
+                    />
+                  </SettingCard>
+
+                  <SettingCard label="Rounds" compact>
+                    <RoundSelector
+                      value={rounds}
+                      onChange={setRounds}
+                      min={4}
+                      max={8}
+                    />
+                  </SettingCard>
+                </View>
+
+                <View style={styles.settingsRow}>
+                  <SettingCard label="Order" compact>
+                    <OrderModeToggle
+                      value={orderMode}
+                      onChange={setOrderMode}
+                    />
+                  </SettingCard>
+
+                  <SettingCard label="Scoring" compact>
+                    <ScoringModeToggle
+                      value={scoringMode}
+                      onChange={setScoringMode}
+                    />
+                  </SettingCard>
+                </View>
+              </View>
+
+              {/* Create Lobby Button */}
+              <View style={styles.bottomSection}>
+                <GameButton
+                  title="Create Lobby"
+                  onPress={handleCreateLobby}
+                  delay={0}
+                />
               </View>
             </Animated.View>
 
@@ -144,61 +232,41 @@ const styles = StyleSheet.create({
     height: "100%",
     overflow: "visible",
   },
-  topGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: "30%",
+  overlayGradient: {
+    ...StyleSheet.absoluteFillObject,
   },
   content: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 50,
-    width: "100%",
+    paddingHorizontal: 30,
+    paddingTop: 15,
     overflow: "visible",
   },
-  title: {
-    fontSize: 42,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 6,
-    marginBottom: 10,
-    textAlign: "center",
+  topSection: {
+    alignItems: "center",
+    marginBottom: 5,
+  },
+  settingsSection: {
+    flex: 1,
+    justifyContent: "flex-start",
+    alignSelf: "center",
+    width: "100%",
     paddingHorizontal: 10,
+    paddingTop: 10,
   },
-  subtitle: {
-    fontSize: 24,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    textShadowColor: "rgba(0, 0, 0, 0.6)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 4,
-    marginBottom: 30,
-    textAlign: "center",
-    paddingHorizontal: 10,
+  settingsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "stretch",
+    marginVertical: 5,
   },
-  placeholderContainer: {
-    backgroundColor: "rgba(61, 34, 114, 0.7)",
-    paddingVertical: 20,
-    paddingHorizontal: 40,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "#5E3A9E",
-  },
-  placeholderText: {
-    fontSize: 18,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    textAlign: "center",
+  bottomSection: {
+    alignItems: "center",
+    paddingBottom: 15,
   },
   backButtonContainer: {
     position: "absolute",
     bottom: "5%",
-    left: "5%",
+    left: "3%",
   },
   backButton: {
     borderRadius: 12,
