@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "../screens/HomeScreen";
 import CreateGameScreen from "../screens/CreateGameScreen";
 import JoinGameScreen from "../screens/JoinGameScreen";
+import LobbyScreen from "../screens/LobbyScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -36,6 +37,13 @@ export default function AppNavigator() {
       <Stack.Screen
         name="JoinGame"
         component={JoinGameScreen}
+        options={{
+          animation: "fade",
+        }}
+      />
+      <Stack.Screen
+        name="Lobby"
+        component={LobbyScreen}
         options={{
           animation: "fade",
         }}

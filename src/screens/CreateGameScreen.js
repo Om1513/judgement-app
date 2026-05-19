@@ -87,20 +87,21 @@ export default function CreateGameScreen({ navigation, route }) {
   };
 
   const handleCreateLobby = () => {
-    // Prepare lobby data
-    const lobbyData = {
-      code: lobbyCode,
+    // Navigate to lobby screen with host data
+    navigation.navigate("Lobby", {
+      lobbyCode: lobbyCode,
       hostName: playerName,
-      settings: {
-        players,
+      hostId: `host-${Date.now()}`,
+      isHost: true,
+      currentPlayerId: `host-${Date.now()}`,
+      currentPlayerName: playerName,
+      gameSettings: {
+        maxPlayers: players,
         rounds,
         orderMode,
         scoringMode,
       },
-    };
-
-    console.log("Creating lobby:", lobbyData);
-    // TODO: Create multiplayer room with this data
+    });
   };
 
   if (!fontsLoaded) {

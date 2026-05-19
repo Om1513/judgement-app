@@ -164,14 +164,17 @@ export default function JoinGameScreen({ navigation, route }) {
 
     Keyboard.dismiss();
 
-    // Prepare join data
-    const joinData = {
-      code: lobbyCode,
-      playerName: playerName,
-    };
-
-    console.log("Joining lobby:", joinData);
-    // TODO: Attempt to join the lobby with this code
+    // Navigate to lobby as a non-host player
+    // In real app, this would first validate the code with backend
+    navigation.navigate("Lobby", {
+      lobbyCode: lobbyCode,
+      hostName: "Host", // Would come from backend
+      hostId: "host-1", // Would come from backend
+      isHost: false,
+      currentPlayerId: `player-${Date.now()}`,
+      currentPlayerName: playerName,
+      gameSettings: {}, // Would come from backend
+    });
   };
 
   const handleButtonPressIn = () => {
