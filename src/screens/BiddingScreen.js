@@ -56,12 +56,18 @@ export default function BiddingScreen({ navigation, route }) {
   // Socket event listeners
   useEffect(() => {
     const unsubscribeUpdate = socketService.on("game:update", (data) => {
-      console.log("Game update:", data.gameState);
+      console.log("Game update:", data.gameState?.status);
       setGameState(data.gameState);
       setIsSubmitting(false);
 
+      // Navigate to game table when playing phase begins
       if (data.gameState.status === "PLAYING") {
-        console.log("All bids complete! Game moving to playing phase.");
+        console.log("All bids complete! Navigating to game table.");
+        navigation.replace("GameTable", {
+          gameState: data.gameState,
+          currentPlayerId,
+          currentPlayerName,
+        });
       }
     });
 

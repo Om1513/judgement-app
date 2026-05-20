@@ -114,6 +114,18 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         s.emit('game:update', { gameState: clientState });
       }
 
+      // Send trick complete event if applicable
+      if (trickComplete && state.roundState?.currentTrick) {
+        const trick = state.roundState.currentTrick;
+        const winner = state.players.find(p => p.id === trick.winnerId);
+        io.to(`lobby:${lobby.code}`).emit('game:trick-completed', {
+          trickNumber: state.roundState.trickNumber - 1,
+          winnerId: trick.winnerId || '',
+          winnerName: winner?.name || 'Unknown',
+          cardsPlayed: trick.cardsPlayed,
+        });
+      }
+
       // Send round complete event if applicable
       if (roundComplete) {
         io.to(`lobby:${lobby.code}`).emit('game:round-complete', {

@@ -42,6 +42,12 @@ export interface ServerToClientEvents {
   'game:started': (data: { gameState: ClientGameState }) => void;
   'game:update': (data: { gameState: ClientGameState }) => void;
   'game:error': (data: { message: string; code?: string }) => void;
+  'game:trick-completed': (data: {
+    trickNumber: number;
+    winnerId: string;
+    winnerName: string;
+    cardsPlayed: { playerId: string; card: Card }[];
+  }) => void;
   'game:round-complete': (data: { roundNumber: number; scores: Record<string, number> }) => void;
   'game:over': (data: { finalScores: Record<string, number>; winner: { id: string; name: string } }) => void;
 }

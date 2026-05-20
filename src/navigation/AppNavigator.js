@@ -5,6 +5,7 @@ import CreateGameScreen from "../screens/CreateGameScreen";
 import JoinGameScreen from "../screens/JoinGameScreen";
 import LobbyScreen from "../screens/LobbyScreen";
 import BiddingScreen from "../screens/BiddingScreen";
+import GameTableScreen from "../screens/GameTableScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -52,6 +53,14 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Bidding"
         component={BiddingScreen}
+        options={{
+          animation: "fade",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="GameTable"
+        component={GameTableScreen}
         options={{
           animation: "fade",
           gestureEnabled: false,

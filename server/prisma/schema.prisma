@@ -87,6 +87,8 @@ model Game {
   gameActions       GameAction[]
   gameRounds        GameRound[]
   roundBids         RoundBid[]
+  roundTricks       RoundTrick[]
+  roundScores       RoundScore[]
 
   @@index([lobbyId])
   @@index([status])
@@ -106,8 +108,10 @@ model GameRound {
   updatedAt   DateTime    @updatedAt
 
   // Relations
-  game      Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  roundBids RoundBid[]
+  game        Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  roundBids   RoundBid[]
+  roundTricks RoundTrick[]
+  roundScores RoundScore[]
 
   @@unique([gameId, roundNumber])
   @@index([gameId])
@@ -127,6 +131,70 @@ model RoundBid {
   game   Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
   round  GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
   player Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, playerId])
+  @@index([gameId])
+  @@index([roundId])
+  @@index([playerId])
+}
+
+// RoundTrick model - stores each trick in a round
+model RoundTrick {
+  id              String       @id @default(cuid())
+  gameId          String
+  roundId         String
+  trickNumber     Int
+  leadPlayerId    String
+  leadSuit        String?
+  winningPlayerId String?
+  winningCardJson Json?
+  status          TrickStatus  @default(ACTIVE)
+  createdAt       DateTime     @default(now())
+  completedAt     DateTime?
+
+  // Relations
+  game       Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  round      GameRound   @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  trickCards TrickCard[]
+
+  @@unique([roundId, trickNumber])
+  @@index([gameId])
+  @@index([roundId])
+  @@index([status])
+}
+
+// TrickCard model - stores each card played in a trick
+model TrickCard {
+  id        String   @id @default(cuid())
+  trickId   String
+  playerId  String
+  cardJson  Json
+  playOrder Int
+  createdAt DateTime @default(now())
+
+  // Relations
+  trick RoundTrick @relation(fields: [trickId], references: [id], onDelete: Cascade)
+
+  @@unique([trickId, playerId])
+  @@index([trickId])
+  @@index([playerId])
+}
+
+// RoundScore model - stores player scores for each round
+model RoundScore {
+  id         String   @id @default(cuid())
+  gameId     String
+  roundId    String
+  playerId   String
+  bidValue   Int
+  handsMade  Int
+  roundScore Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  game  Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  round GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
   @@unique([roundId, playerId])
   @@index([gameId])
@@ -170,6 +238,11 @@ enum GameStatus {
 enum RoundStatus {
   BIDDING
   PLAYING
+  COMPLETED
+}
+
+enum TrickStatus {
+  ACTIVE
   COMPLETED
 }
 
