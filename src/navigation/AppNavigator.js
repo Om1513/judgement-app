@@ -4,6 +4,7 @@ import HomeScreen from "../screens/HomeScreen";
 import CreateGameScreen from "../screens/CreateGameScreen";
 import JoinGameScreen from "../screens/JoinGameScreen";
 import LobbyScreen from "../screens/LobbyScreen";
+import BiddingScreen from "../screens/BiddingScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +47,14 @@ export default function AppNavigator() {
         component={LobbyScreen}
         options={{
           animation: "fade",
+        }}
+      />
+      <Stack.Screen
+        name="Bidding"
+        component={BiddingScreen}
+        options={{
+          animation: "fade",
+          gestureEnabled: false,
         }}
       />
     </Stack.Navigator>

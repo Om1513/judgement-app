@@ -16,11 +16,13 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     marginHorizontal: 20,
     alignItems: "center",
+    overflow: "visible",
   },
   containerCompact: {
     marginVertical: 0,
-    marginHorizontal: 12,
+    marginHorizontal: 2,
     flex: 1,
+    overflow: "visible",
   },
   label: {
     fontSize: 20,
@@ -41,6 +43,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
+    overflow: "visible",
   },
   underline: {
     width: "80%",

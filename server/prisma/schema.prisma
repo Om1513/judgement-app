@@ -23,6 +23,7 @@ model Player {
   lobbyPlayers  LobbyPlayer[]
   gameActions   GameAction[]
   currentTurns  Game[]        @relation("CurrentTurnPlayer")
+  roundBids     RoundBid[]
 
   @@index([socketId])
 }
@@ -70,9 +71,12 @@ model LobbyPlayer {
 model Game {
   id                  String     @id @default(cuid())
   lobbyId             String
+  totalRounds         Int        @default(4)
   currentRound        Int        @default(1)
+  currentHandSize     Int        @default(1)
   currentTurnPlayerId String?
   status              GameStatus @default(BIDDING)
+  trumpOrderJson      Json       @default("[]")
   gameStateJson       Json       @default("{}")
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
@@ -81,9 +85,53 @@ model Game {
   lobby             Lobby        @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
   currentTurnPlayer Player?      @relation("CurrentTurnPlayer", fields: [currentTurnPlayerId], references: [id])
   gameActions       GameAction[]
+  gameRounds        GameRound[]
+  roundBids         RoundBid[]
 
   @@index([lobbyId])
   @@index([status])
+}
+
+// GameRound model - represents a single round in a game
+model GameRound {
+  id          String      @id @default(cuid())
+  gameId      String
+  roundNumber Int
+  handSize    Int
+  trumpKey    String      // e.g., "Kari", "Chukat", "Falli", "Lal"
+  trumpName   String      // Display name in Hindi/local language
+  trumpSuit   String      // e.g., "spades", "diamonds", "clubs", "hearts"
+  status      RoundStatus @default(BIDDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  game      Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  roundBids RoundBid[]
+
+  @@unique([gameId, roundNumber])
+  @@index([gameId])
+  @@index([status])
+}
+
+// RoundBid model - stores player bids for each round
+model RoundBid {
+  id        String   @id @default(cuid())
+  gameId    String
+  roundId   String
+  playerId  String
+  bidValue  Int
+  createdAt DateTime @default(now())
+
+  // Relations
+  game   Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  round  GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, playerId])
+  @@index([gameId])
+  @@index([roundId])
+  @@index([playerId])
 }
 
 // GameAction model - logs all game actions for replay/audit
@@ -117,6 +165,12 @@ enum GameStatus {
   PLAYING
   ROUND_COMPLETE
   GAME_OVER
+}
+
+enum RoundStatus {
+  BIDDING
+  PLAYING
+  COMPLETED
 }
 
 enum GameActionType {

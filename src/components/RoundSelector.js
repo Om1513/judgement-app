@@ -131,10 +131,10 @@ const styles = StyleSheet.create({
     color: "#666",
   },
   numberContainer: {
-    minWidth: 60,
+    width: 50,
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: 15,
+    marginHorizontal: 8,
   },
   numberText: {
     fontSize: 32,
@@ -142,6 +142,7 @@ const styles = StyleSheet.create({
     color: "#FFD700",
     textShadowColor: "rgba(0, 0, 0, 0.5)",
     textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 2,
+    paddingRight: 4,
   },
 });

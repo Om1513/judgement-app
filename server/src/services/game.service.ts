@@ -10,19 +10,26 @@ import {
   PlayCardInput,
   RoundState,
   Trick,
+  TrumpInfo,
+  ClientPlayer,
+  ClientRoundState,
 } from '../types/game';
 import { Card, GamePlayer } from '../types/player';
 import { LobbySettings } from '../types/lobby';
 import { lobbyService } from './lobby.service';
 import {
   dealCards,
-  pickTrumpSuit,
   getCardsForRound,
   determineTrickWinner,
   canPlayCard,
   calculateScore,
 } from '../utils/cardUtils';
 import { validateBid } from '../utils/validateLobby';
+import {
+  generateTrumpOrder,
+  getTrumpForRound,
+  canBidValue,
+} from '../utils/trump';
 
 export class GameService {
   /**
@@ -44,31 +51,58 @@ export class GameService {
       .sort((a, b) => a.seatPosition - b.seatPosition)
       .map(p => p.playerId);
 
+    // Generate trump order for all rounds
+    const trumpOrder = generateTrumpOrder(settings.rounds).map(trump => ({
+      key: trump.key,
+      name: trump.name,
+      suit: trump.suit,
+      symbol: trump.symbol,
+    }));
+
+    // Get trump for round 1
+    const round1Trump = trumpOrder[0];
+
     // Initialize players
     const cardsForRound = getCardsForRound(1, settings.rounds);
     const hands = dealCards(playerCount, cardsForRound);
 
-    const gamePlayers: GamePlayer[] = lobby.players.map((p, index) => ({
-      id: p.playerId,
-      name: p.name,
-      seatPosition: p.seatPosition,
-      hand: hands[index],
-      bid: null,
-      tricksWon: 0,
-      score: 0,
-      isCurrentTurn: index === 0,
-    }));
+    // Dealer is first player, bidding starts with next player
+    const dealerIndex = 0;
+    const firstBidderIndex = (dealerIndex + 1) % playerCount;
+
+    // Create bid order (clockwise from dealer)
+    const bidOrder: string[] = [];
+    for (let i = 0; i < playerCount; i++) {
+      const idx = (firstBidderIndex + i) % playerCount;
+      bidOrder.push(turnOrder[idx]);
+    }
+
+    const gamePlayers: GamePlayer[] = lobby.players
+      .sort((a, b) => a.seatPosition - b.seatPosition)
+      .map((p, index) => ({
+        id: p.playerId,
+        name: p.name,
+        seatPosition: p.seatPosition,
+        hand: hands[index],
+        bid: null,
+        tricksWon: 0,
+        score: 0,
+        isCurrentTurn: p.playerId === bidOrder[0],
+      }));
 
     // Initialize round state
     const roundState: RoundState = {
       roundNumber: 1,
       cardsPerPlayer: cardsForRound,
-      trumpSuit: pickTrumpSuit(),
-      dealerId: turnOrder[0],
+      trumpSuit: round1Trump.suit as Card['suit'],
+      trump: round1Trump,
+      dealerId: turnOrder[dealerIndex],
       bids: {},
       tricksWon: {},
       currentTrick: null,
       trickNumber: 0,
+      bidOrder,
+      currentBidderIndex: 0,
     };
 
     // Initialize game state
@@ -81,17 +115,34 @@ export class GameService {
       scores: Object.fromEntries(turnOrder.map(id => [id, 0])),
       settings,
       turnOrder,
-      currentTurnIndex: 0,
+      currentTurnIndex: firstBidderIndex,
+      trumpOrder,
     };
 
-    // Save game state
+    // Save game state and create game round record
     await db.game.update({
       where: { id: gameId },
       data: {
+        totalRounds: settings.rounds,
         currentRound: 1,
-        currentTurnPlayerId: turnOrder[0],
+        currentHandSize: cardsForRound,
+        currentTurnPlayerId: bidOrder[0],
         status: 'BIDDING',
+        trumpOrderJson: trumpOrder as any,
         gameStateJson: gameState as any,
+      },
+    });
+
+    // Create game round record
+    await db.gameRound.create({
+      data: {
+        gameId,
+        roundNumber: 1,
+        handSize: cardsForRound,
+        trumpKey: round1Trump.key,
+        trumpName: round1Trump.name,
+        trumpSuit: round1Trump.suit,
+        status: 'BIDDING',
       },
     });
 
@@ -159,6 +210,45 @@ export class GameService {
   getClientGameState(game: Game, playerId: string): ClientGameState {
     const state = game.gameState;
     const currentPlayer = state.players.find(p => p.id === playerId);
+    const roundState = state.roundState;
+
+    // Build client round state with bidding info
+    let clientRoundState: ClientRoundState | null = null;
+    if (roundState) {
+      const totalBidsSoFar = Object.values(roundState.bids).reduce((sum, b) => sum + b, 0);
+      const biddedCount = Object.keys(roundState.bids).length;
+      const isLastBidder = biddedCount === state.players.length - 1;
+      const currentBidderId = roundState.bidOrder[roundState.currentBidderIndex] || null;
+
+      clientRoundState = {
+        roundNumber: roundState.roundNumber,
+        cardsPerPlayer: roundState.cardsPerPlayer,
+        trumpSuit: roundState.trumpSuit,
+        trump: roundState.trump,
+        bids: roundState.bids,
+        tricksWon: roundState.tricksWon,
+        currentTrick: roundState.currentTrick,
+        trickNumber: roundState.trickNumber,
+        bidOrder: roundState.bidOrder,
+        currentBidderIndex: roundState.currentBidderIndex,
+        currentBidderId,
+        totalBidsSoFar,
+        isLastBidder: isLastBidder && currentBidderId === playerId,
+      };
+    }
+
+    // Build client players with bidding info
+    const clientPlayers: ClientPlayer[] = state.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      seatPosition: p.seatPosition,
+      bid: p.bid,
+      tricksWon: p.tricksWon,
+      score: p.score,
+      isCurrentTurn: p.isCurrentTurn,
+      cardCount: p.hand.length,
+      hasBid: roundState ? roundState.bids[p.id] !== undefined : false,
+    }));
 
     return {
       id: game.id,
@@ -166,29 +256,13 @@ export class GameService {
       currentRound: state.currentRound,
       totalRounds: state.totalRounds,
       status: state.status,
-      players: state.players.map(p => ({
-        id: p.id,
-        name: p.name,
-        seatPosition: p.seatPosition,
-        bid: p.bid,
-        tricksWon: p.tricksWon,
-        score: p.score,
-        isCurrentTurn: p.isCurrentTurn,
-        cardCount: p.hand.length,
-      })),
+      players: clientPlayers,
       myHand: currentPlayer?.hand || [],
       currentTurnPlayerId: game.currentTurnPlayerId,
-      roundState: state.roundState ? {
-        roundNumber: state.roundState.roundNumber,
-        cardsPerPlayer: state.roundState.cardsPerPlayer,
-        trumpSuit: state.roundState.trumpSuit,
-        bids: state.roundState.bids,
-        tricksWon: state.roundState.tricksWon,
-        currentTrick: state.roundState.currentTrick,
-        trickNumber: state.roundState.trickNumber,
-      } : null,
+      roundState: clientRoundState,
       scores: state.scores,
       isMyTurn: game.currentTurnPlayerId === playerId,
+      trumpOrder: state.trumpOrder,
     };
   }
 
@@ -214,21 +288,21 @@ export class GameService {
     const state = game.gameState;
     const roundState = state.roundState!;
 
-    // Calculate if this is the last player to bid
+    // Calculate if this is the last player to bid (dealer is always last)
     const totalBidsSoFar = Object.values(roundState.bids).reduce((sum, b) => sum + b, 0);
     const biddedCount = Object.keys(roundState.bids).length;
-    const isLastPlayer = biddedCount === state.players.length - 1;
+    const isLastBidder = biddedCount === state.players.length - 1;
 
-    // Validate bid
-    const bidValidation = validateBid(
+    // Validate bid using trump utility
+    const bidValidation = canBidValue(
       input.bid,
       roundState.cardsPerPlayer,
       totalBidsSoFar,
-      isLastPlayer
+      isLastBidder
     );
 
     if (!bidValidation.valid) {
-      throw new Error(bidValidation.error || 'Invalid bid');
+      throw new Error(bidValidation.reason || 'Invalid bid');
     }
 
     // Record bid
@@ -238,6 +312,23 @@ export class GameService {
     const playerIndex = state.players.findIndex(p => p.id === input.playerId);
     state.players[playerIndex].bid = input.bid;
 
+    // Get current game round to save bid
+    const gameRound = await db.gameRound.findFirst({
+      where: { gameId: input.gameId, roundNumber: roundState.roundNumber },
+    });
+
+    if (gameRound) {
+      // Save bid to round_bids table
+      await db.roundBid.create({
+        data: {
+          gameId: input.gameId,
+          roundId: gameRound.id,
+          playerId: input.playerId,
+          bidValue: input.bid,
+        },
+      });
+    }
+
     // Log action
     await this.logAction(input.gameId, input.playerId, 'BID_SUBMIT', { bid: input.bid });
 
@@ -246,16 +337,32 @@ export class GameService {
       // Move to playing phase
       state.status = 'PLAYING';
       roundState.trickNumber = 1;
+
+      // Player after dealer leads (first bidder)
+      const firstPlayerId = roundState.bidOrder[0];
+      const firstPlayerIndex = state.turnOrder.indexOf(firstPlayerId);
+
       roundState.currentTrick = {
-        leadPlayerId: state.turnOrder[0],
+        leadPlayerId: firstPlayerId,
         leadSuit: null,
         cardsPlayed: [],
         winnerId: null,
       };
-      state.currentTurnIndex = 0;
+      state.currentTurnIndex = firstPlayerIndex;
+
+      // Update game round status
+      if (gameRound) {
+        await db.gameRound.update({
+          where: { id: gameRound.id },
+          data: { status: 'PLAYING' },
+        });
+      }
     } else {
-      // Move to next player
-      state.currentTurnIndex = (state.currentTurnIndex + 1) % state.players.length;
+      // Move to next bidder
+      roundState.currentBidderIndex++;
+      state.currentTurnIndex = state.turnOrder.indexOf(
+        roundState.bidOrder[roundState.currentBidderIndex]
+      );
     }
 
     // Update current turn
@@ -423,6 +530,7 @@ export class GameService {
    * Starts a new round.
    */
   private async startNewRound(state: GameState, gameId: string): Promise<void> {
+    const db = getDB();
     const cardsForRound = getCardsForRound(state.currentRound, state.totalRounds);
     const hands = dealCards(state.players.length, cardsForRound);
 
@@ -433,28 +541,60 @@ export class GameService {
       p.tricksWon = 0;
     });
 
-    // Rotate dealer
+    // Rotate dealer (each round dealer moves clockwise)
     const dealerIndex = (state.currentRound - 1) % state.players.length;
-    state.currentTurnIndex = (dealerIndex + 1) % state.players.length;
+    const firstBidderIndex = (dealerIndex + 1) % state.players.length;
+
+    // Create bid order (clockwise from dealer, dealer bids last)
+    const bidOrder: string[] = [];
+    for (let i = 0; i < state.players.length; i++) {
+      const idx = (firstBidderIndex + i) % state.players.length;
+      bidOrder.push(state.turnOrder[idx]);
+    }
+
+    // Get trump from pre-generated order (0-indexed)
+    const roundTrump = state.trumpOrder[state.currentRound - 1];
 
     // Create new round state
     state.roundState = {
       roundNumber: state.currentRound,
       cardsPerPlayer: cardsForRound,
-      trumpSuit: pickTrumpSuit(),
+      trumpSuit: roundTrump.suit as Card['suit'],
+      trump: roundTrump,
       dealerId: state.turnOrder[dealerIndex],
       bids: {},
       tricksWon: {},
       currentTrick: null,
       trickNumber: 0,
+      bidOrder,
+      currentBidderIndex: 0,
     };
 
     state.status = 'BIDDING';
+    state.currentTurnIndex = firstBidderIndex;
+
+    // Update current turn markers
+    state.players.forEach(p => {
+      p.isCurrentTurn = p.id === bidOrder[0];
+    });
+
+    // Create game round record
+    await db.gameRound.create({
+      data: {
+        gameId,
+        roundNumber: state.currentRound,
+        handSize: cardsForRound,
+        trumpKey: roundTrump.key,
+        trumpName: roundTrump.name,
+        trumpSuit: roundTrump.suit,
+        status: 'BIDDING',
+      },
+    });
 
     // Log round start
     await this.logAction(gameId, state.turnOrder[dealerIndex], 'ROUND_START', {
       round: state.currentRound,
-      trumpSuit: state.roundState.trumpSuit,
+      trump: roundTrump,
     });
   }
 

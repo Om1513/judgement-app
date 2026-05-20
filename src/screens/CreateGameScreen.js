@@ -32,6 +32,29 @@ export default function CreateGameScreen({ navigation, route }) {
   const [orderMode, setOrderMode] = useState("Kachuful");
   const [scoringMode, setScoringMode] = useState("+10");
 
+  // Deck has 52 cards, so maxPlayers * rounds must be <= 52
+  const DECK_SIZE = 52;
+  const maxAllowedRounds = Math.min(8, Math.floor(DECK_SIZE / maxPlayers));
+  const maxAllowedPlayers = Math.min(8, Math.floor(DECK_SIZE / rounds));
+
+  // Handle player change - adjust rounds if needed
+  const handlePlayersChange = (newPlayers) => {
+    setMaxPlayers(newPlayers);
+    const maxRoundsForPlayers = Math.floor(DECK_SIZE / newPlayers);
+    if (rounds > maxRoundsForPlayers) {
+      setRounds(Math.min(8, maxRoundsForPlayers));
+    }
+  };
+
+  // Handle rounds change - adjust players if needed
+  const handleRoundsChange = (newRounds) => {
+    setRounds(newRounds);
+    const maxPlayersForRounds = Math.floor(DECK_SIZE / newRounds);
+    if (maxPlayers > maxPlayersForRounds) {
+      setMaxPlayers(Math.min(8, maxPlayersForRounds));
+    }
+  };
+
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
   });
@@ -172,18 +195,18 @@ export default function CreateGameScreen({ navigation, route }) {
                   <SettingCard label="Players" compact>
                     <RoundSelector
                       value={maxPlayers}
-                      onChange={setMaxPlayers}
+                      onChange={handlePlayersChange}
                       min={3}
-                      max={8}
+                      max={maxAllowedPlayers}
                     />
                   </SettingCard>
 
                   <SettingCard label="Rounds" compact>
                     <RoundSelector
                       value={rounds}
-                      onChange={setRounds}
+                      onChange={handleRoundsChange}
                       min={4}
-                      max={8}
+                      max={maxAllowedRounds}
                     />
                   </SettingCard>
                 </View>
@@ -263,7 +286,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 30,
+    paddingHorizontal: 10,
     paddingTop: 15,
     overflow: "visible",
   },
@@ -285,7 +308,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     alignSelf: "center",
     width: "100%",
-    paddingHorizontal: 10,
+    paddingHorizontal: 0,
     paddingTop: 10,
   },
   settingsRow: {
@@ -293,6 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "stretch",
     marginVertical: 5,
+    overflow: "visible",
   },
   bottomSection: {
     alignItems: "center",

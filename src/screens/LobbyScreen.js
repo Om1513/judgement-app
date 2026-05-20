@@ -61,7 +61,7 @@ export default function LobbyScreen({ navigation, route }) {
     Bangers_400Regular,
   });
 
-  const canStartGame = players.length >= 3;
+  const canStartGame = players.length >= 2; // Changed to 2 for testing
   const isCurrentUserHost = currentPlayerId === currentHostId;
 
   // Handle socket events for real-time updates
@@ -103,8 +103,8 @@ export default function LobbyScreen({ navigation, route }) {
     // Listen for game started
     const unsubscribeGameStarted = socketService.on('game:started', (data) => {
       console.log('Game started:', data.gameState);
-      // Navigate to game screen
-      navigation.navigate('Game', {
+      // Navigate to bidding screen
+      navigation.replace('Bidding', {
         gameState: data.gameState,
         currentPlayerId,
         currentPlayerName,
@@ -431,7 +431,7 @@ export default function LobbyScreen({ navigation, route }) {
 
                 {/* Player count */}
                 <Text style={styles.playerCount}>
-                  Players: {players.length}/8
+                  Players: {players.length}/{gameSettings.maxPlayers || 8}
                 </Text>
               </View>
 
@@ -494,7 +494,7 @@ export default function LobbyScreen({ navigation, route }) {
                     </TouchableOpacity>
                     {!canStartGame && (
                       <Text style={styles.minPlayersText}>
-                        Need at least 3 players to start
+                        Need at least 2 players to start
                       </Text>
                     )}
                   </View>

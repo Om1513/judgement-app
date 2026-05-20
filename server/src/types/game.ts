@@ -2,6 +2,15 @@
 
 import { Card, GamePlayer } from './player';
 import { LobbySettings } from './lobby';
+import { TrumpSuit } from '../utils/trump';
+
+// Trump info for the round
+export interface TrumpInfo {
+  key: string;       // e.g., "Kari", "Chukat", "Falli", "Lal"
+  name: string;      // Display name
+  suit: string;      // e.g., "spades", "diamonds", "clubs", "hearts"
+  symbol: string;    // e.g., "♠", "♦", "♣", "♥"
+}
 
 export type GameStatus = 'BIDDING' | 'PLAYING' | 'ROUND_COMPLETE' | 'GAME_OVER';
 
@@ -38,11 +47,14 @@ export interface RoundState {
   roundNumber: number;
   cardsPerPlayer: number;
   trumpSuit: Card['suit'] | null;
+  trump: TrumpInfo | null;           // Full trump info with name and symbol
   dealerId: string;
-  bids: Record<string, number>; // playerId -> bid
+  bids: Record<string, number>;      // playerId -> bid
   tricksWon: Record<string, number>; // playerId -> tricks won
   currentTrick: Trick | null;
   trickNumber: number;
+  bidOrder: string[];                // Order of players for bidding
+  currentBidderIndex: number;        // Index in bidOrder
 }
 
 // Full game state stored in gameStateJson
@@ -54,8 +66,9 @@ export interface GameState {
   roundState: RoundState | null;
   scores: Record<string, number>; // playerId -> total score
   settings: LobbySettings;
-  turnOrder: string[]; // array of player IDs
+  turnOrder: string[];            // array of player IDs
   currentTurnIndex: number;
+  trumpOrder: TrumpInfo[];        // Pre-generated trump order for all rounds
 }
 
 export interface Game {
@@ -81,6 +94,36 @@ export interface PlayCardInput {
   card: Card;
 }
 
+// Player info with card count (for client)
+export interface ClientPlayer {
+  id: string;
+  name: string;
+  seatPosition: number;
+  bid: number | null;
+  tricksWon: number;
+  score: number;
+  isCurrentTurn: boolean;
+  cardCount: number;
+  hasBid: boolean;
+}
+
+// Client round state
+export interface ClientRoundState {
+  roundNumber: number;
+  cardsPerPlayer: number;
+  trumpSuit: Card['suit'] | null;
+  trump: TrumpInfo | null;
+  bids: Record<string, number>;
+  tricksWon: Record<string, number>;
+  currentTrick: Trick | null;
+  trickNumber: number;
+  bidOrder: string[];
+  currentBidderIndex: number;
+  currentBidderId: string | null;
+  totalBidsSoFar: number;
+  isLastBidder: boolean;
+}
+
 // Game state broadcast to clients (may hide other players' hands)
 export interface ClientGameState {
   id: string;
@@ -88,18 +131,11 @@ export interface ClientGameState {
   currentRound: number;
   totalRounds: number;
   status: GameStatus;
-  players: Omit<GamePlayer, 'hand'>[];
+  players: ClientPlayer[];
   myHand: Card[];
   currentTurnPlayerId: string | null;
-  roundState: {
-    roundNumber: number;
-    cardsPerPlayer: number;
-    trumpSuit: Card['suit'] | null;
-    bids: Record<string, number>;
-    tricksWon: Record<string, number>;
-    currentTrick: Trick | null;
-    trickNumber: number;
-  } | null;
+  roundState: ClientRoundState | null;
   scores: Record<string, number>;
   isMyTurn: boolean;
+  trumpOrder: TrumpInfo[];
 }

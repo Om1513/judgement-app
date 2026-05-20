@@ -4,7 +4,7 @@ import { LobbySettings, LobbyStatus, DEFAULT_LOBBY_SETTINGS } from '../types/lob
 
 // Validation constraints
 export const LOBBY_CONSTRAINTS = {
-  MIN_PLAYERS: 3,
+  MIN_PLAYERS: 2, // Changed to 2 for testing
   MAX_PLAYERS: 8,
   MIN_ROUNDS: 4,
   MAX_ROUNDS: 8,

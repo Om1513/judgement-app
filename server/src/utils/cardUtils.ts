@@ -195,20 +195,11 @@ export function calculateScore(
 
 /**
  * Gets the number of cards per player for a given round in Kachuful order.
- * In Kachuful, cards go: 1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1
- * But this depends on the number of rounds configured.
+ * In Kachuful, rounds start with 1 card and increase by 1 each round.
+ * Round 1: 1 card, Round 2: 2 cards, ..., Round N: N cards
  */
-export function getCardsForRound(round: number, totalRounds: number): number {
-  // For a 4-round game: 4, 5, 6, 7
-  // For an 8-round game: 1, 2, 3, 4, 5, 6, 7, 8
-  // The max cards depends on totalRounds
-
-  if (totalRounds <= 8) {
-    // Simple ascending order starting from (9 - totalRounds)
-    return 9 - totalRounds + round - 1;
-  }
-
-  // Default ascending
+export function getCardsForRound(round: number, _totalRounds: number): number {
+  // Simple ascending: round 1 = 1 card, round 2 = 2 cards, etc.
   return round;
 }
 
