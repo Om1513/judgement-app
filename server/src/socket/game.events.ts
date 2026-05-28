@@ -11,6 +11,7 @@ import {
 import { gameService } from '../services/game.service';
 import { lobbyService } from '../services/lobby.service';
 import { botService } from '../services/bot.service';
+import { broadcastScoreboard } from './scoreboard.events';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -133,23 +134,15 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         });
       }
 
-      // Send round complete event if applicable
-      if (roundComplete) {
+      // Send round complete event and scoreboard if applicable
+      if (roundComplete && state.status === 'ROUND_SCOREBOARD') {
         io.to(`lobby:${lobby.code}`).emit('game:round-complete', {
-          roundNumber: state.currentRound - 1, // Previous round
+          roundNumber: state.currentRound,
           scores: state.scores,
         });
-      }
 
-      // Check if game is over
-      if (state.status === 'GAME_OVER') {
-        const winner = gameService.getWinner(state);
-        if (winner) {
-          io.to(`lobby:${lobby.code}`).emit('game:over', {
-            finalScores: state.scores,
-            winner: { id: winner.id, name: winner.name },
-          });
-        }
+        // Broadcast scoreboard state and trigger bot continues
+        await broadcastScoreboard(io, socket.data.gameId);
       }
     } catch (error) {
       console.error('Error playing card:', error);

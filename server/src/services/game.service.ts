@@ -458,7 +458,8 @@ export class GameService {
       if (player.hand.length === 0) {
         roundComplete = true;
 
-        // Calculate scores
+        // Calculate scores and save to database
+        const roundScores: { playerId: string; bid: number; handsMade: number; score: number }[] = [];
         for (const p of state.players) {
           const roundScore = calculateScore(
             p.bid!,
@@ -467,6 +468,56 @@ export class GameService {
           );
           p.score += roundScore;
           state.scores[p.id] = p.score;
+          roundScores.push({
+            playerId: p.id,
+            bid: p.bid!,
+            handsMade: p.tricksWon,
+            score: roundScore,
+          });
+        }
+
+        // Save round scores to database
+        const currentRoundDb = await db.gameRound.findFirst({
+          where: { gameId: input.gameId, roundNumber: roundState.roundNumber },
+        });
+        if (currentRoundDb) {
+          await db.roundScore.deleteMany({
+            where: { gameId: input.gameId, roundId: currentRoundDb.id },
+          });
+          await db.roundScore.createMany({
+            data: roundScores.map(rs => ({
+              gameId: input.gameId,
+              roundId: currentRoundDb.id,
+              playerId: rs.playerId,
+              bidValue: rs.bid,
+              handsMade: rs.handsMade,
+              roundScore: rs.score,
+            })),
+          });
+
+          // Update round status to COMPLETED
+          await db.gameRound.update({
+            where: { id: currentRoundDb.id },
+            data: { status: 'COMPLETED' },
+          });
+
+          // Create scoreboard confirmations
+          await db.scoreboardConfirmation.deleteMany({
+            where: { gameId: input.gameId, roundId: currentRoundDb.id },
+          });
+          const lobby = await lobbyService.getLobbyById(
+            (await db.game.findUnique({ where: { id: input.gameId } }))?.lobbyId || ''
+          );
+          if (lobby) {
+            await db.scoreboardConfirmation.createMany({
+              data: lobby.players.map(p => ({
+                gameId: input.gameId,
+                roundId: currentRoundDb.id,
+                playerId: p.playerId,
+                hasContinued: false,
+              })),
+            });
+          }
         }
 
         // Log round end
@@ -475,19 +526,8 @@ export class GameService {
           scores: state.scores,
         });
 
-        // Check if game is over
-        if (state.currentRound >= state.totalRounds) {
-          state.status = 'GAME_OVER';
-
-          // Log game end
-          await this.logAction(input.gameId, input.playerId, 'GAME_END', {
-            finalScores: state.scores,
-          });
-        } else {
-          // Start next round
-          state.currentRound++;
-          await this.startNewRound(state, input.gameId);
-        }
+        // Transition to scoreboard phase (don't start next round yet)
+        state.status = 'ROUND_SCOREBOARD';
       } else {
         // Start new trick, winner leads
         const winnerIndex = state.turnOrder.indexOf(winnerId);
@@ -596,6 +636,65 @@ export class GameService {
       round: state.currentRound,
       trump: roundTrump,
     });
+  }
+
+  /**
+   * Advances to the next round after all players have clicked Continue.
+   * Returns the updated game state or null if game is complete.
+   */
+  async advanceToNextRound(gameId: string): Promise<Game | null> {
+    const db = getDB();
+
+    const game = await this.getGameById(gameId);
+    if (!game) {
+      throw new Error('Game not found');
+    }
+
+    if (game.gameState.status !== 'ROUND_SCOREBOARD') {
+      throw new Error('Game is not in scoreboard phase');
+    }
+
+    const state = game.gameState;
+
+    // Check if this was the final round
+    if (state.currentRound >= state.totalRounds) {
+      // Game is over
+      state.status = 'GAME_OVER';
+
+      // Log game end
+      await this.logAction(gameId, state.turnOrder[0], 'GAME_END', {
+        finalScores: state.scores,
+      });
+
+      // Save state
+      await db.game.update({
+        where: { id: gameId },
+        data: {
+          status: 'GAME_OVER',
+          gameStateJson: state as any,
+        },
+      });
+
+      return this.getGameById(gameId);
+    }
+
+    // Advance to next round
+    state.currentRound++;
+    await this.startNewRound(state, gameId);
+
+    // Save state
+    const nextPlayerId = state.turnOrder[state.currentTurnIndex];
+    await db.game.update({
+      where: { id: gameId },
+      data: {
+        currentRound: state.currentRound,
+        status: state.status,
+        currentTurnPlayerId: nextPlayerId,
+        gameStateJson: state as any,
+      },
+    });
+
+    return this.getGameById(gameId);
   }
 
   /**

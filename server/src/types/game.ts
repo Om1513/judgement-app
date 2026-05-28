@@ -12,7 +12,7 @@ export interface TrumpInfo {
   symbol: string;    // e.g., "♠", "♦", "♣", "♥"
 }
 
-export type GameStatus = 'BIDDING' | 'PLAYING' | 'ROUND_COMPLETE' | 'GAME_OVER';
+export type GameStatus = 'BIDDING' | 'PLAYING' | 'ROUND_COMPLETE' | 'ROUND_SCOREBOARD' | 'GAME_OVER';
 
 export type GameActionType =
   | 'BID_SUBMIT'
@@ -138,4 +138,38 @@ export interface ClientGameState {
   scores: Record<string, number>;
   isMyTurn: boolean;
   trumpOrder: TrumpInfo[];
+}
+
+// Scoreboard types
+export interface ScoreboardPlayer {
+  id: string;
+  name: string;
+  isHost: boolean;
+  isBot: boolean;
+  totalScore: number;
+  hasContinued: boolean;
+}
+
+export interface ScoreboardRowScore {
+  playerId: string;
+  bid: number | null;
+  handsMade: number | null;
+  score: number | null;
+}
+
+export interface ScoreboardRow {
+  roundNumber: number;
+  trump: TrumpInfo;
+  scores: ScoreboardRowScore[];
+}
+
+export interface ScoreboardState {
+  gameId: string;
+  roundId: string;
+  currentRound: number;
+  totalRounds: number;
+  scoringMode: '+10' | '+1';
+  status: 'round_scoreboard' | 'completed';
+  players: ScoreboardPlayer[];
+  rows: ScoreboardRow[];
 }

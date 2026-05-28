@@ -32,6 +32,8 @@ const BOT_TIMING = {
   BID_MAX: 1800,
   PLAY_MIN: 900,
   PLAY_MAX: 2200,
+  CONTINUE_MIN: 700,
+  CONTINUE_MAX: 1800,
 };
 
 // Action locks to prevent duplicate bot actions
@@ -263,11 +265,13 @@ export class BotService {
         // Broadcast updated game state to all clients
         await this.broadcastGameState(gameId);
 
+        // Release lock BEFORE processing next action
+        actionLocks.delete(lockKey);
+
         // Process next bot action if needed
         await this.processPendingBotActions(gameId);
       } catch (error) {
         console.error(`Error in bot bid for ${botPlayerId}:`, error);
-      } finally {
         actionLocks.delete(lockKey);
       }
     }, delay);
@@ -353,14 +357,24 @@ export class BotService {
           }
         }
 
-        // Send round complete event if applicable
-        if (roundComplete && this.io) {
+        // Send round complete event and scoreboard if applicable
+        if (roundComplete && newState.status === 'ROUND_SCOREBOARD' && this.io) {
           const lobby = await lobbyService.getLobbyById(game.lobbyId);
           if (lobby) {
             this.io.to(`lobby:${lobby.code}`).emit('game:round-complete', {
-              roundNumber: newState.currentRound - 1,
+              roundNumber: newState.currentRound,
               scores: newState.scores,
             });
+
+            // Broadcast scoreboard state
+            const { scoreboardService } = await import('./scoreboard.service');
+            const scoreboard = await scoreboardService.getScoreboardState(gameId);
+            if (scoreboard) {
+              this.io.to(`lobby:${lobby.code}`).emit('scoreboard:state', { scoreboard });
+            }
+
+            // Schedule bot continues
+            this.scheduleBotContinues(gameId);
           }
         }
 
@@ -378,16 +392,203 @@ export class BotService {
           }
         }
 
-        // Process next bot action if needed (only if game not over)
-        if (newState.status !== 'GAME_OVER') {
+        // Release lock BEFORE processing next action to allow same bot to play again
+        actionLocks.delete(lockKey);
+
+        // Process next bot action if needed (only if game not over and not in scoreboard)
+        if (newState.status === 'PLAYING' || newState.status === 'BIDDING') {
           await this.processPendingBotActions(gameId);
         }
       } catch (error) {
         console.error(`Error in bot card play for ${botPlayerId}:`, error);
+        actionLocks.delete(lockKey);
+      }
+    }, delay);
+  }
+
+  /**
+   * Schedules bot continues for scoreboard phase.
+   */
+  scheduleBotContinues(gameId: string): void {
+    // Delay to fetch game state after other operations
+    setTimeout(async () => {
+      try {
+        const db = getDB();
+        const game = await gameService.getGameById(gameId);
+        if (!game || game.gameState.status !== 'ROUND_SCOREBOARD') {
+          return;
+        }
+
+        const lobby = await lobbyService.getLobbyById(game.lobbyId);
+        if (!lobby) {
+          return;
+        }
+
+        // Get current round
+        const currentRound = await db.gameRound.findFirst({
+          where: { gameId, roundNumber: game.currentRound },
+        });
+        if (!currentRound) {
+          return;
+        }
+
+        // Get existing confirmations
+        const confirmations = await db.scoreboardConfirmation.findMany({
+          where: { gameId, roundId: currentRound.id },
+        });
+        const continuedPlayerIds = new Set(
+          confirmations.filter(c => c.hasContinued).map(c => c.playerId)
+        );
+
+        // Find bots that haven't continued yet
+        for (const lp of lobby.players) {
+          if (lp.isBot && !continuedPlayerIds.has(lp.playerId)) {
+            this.scheduleSingleBotContinue(gameId, lp.playerId, currentRound.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error scheduling bot continues:', error);
+      }
+    }, 100);
+  }
+
+  /**
+   * Schedules a single bot's continue action.
+   */
+  private scheduleSingleBotContinue(gameId: string, botPlayerId: string, roundId: string): void {
+    const lockKey = `continue:${gameId}:${botPlayerId}`;
+
+    // Check if already processing
+    if (actionLocks.get(lockKey)) {
+      return;
+    }
+    actionLocks.set(lockKey, true);
+
+    const delay = this.getRandomDelay(BOT_TIMING.CONTINUE_MIN, BOT_TIMING.CONTINUE_MAX);
+
+    setTimeout(async () => {
+      try {
+        const db = getDB();
+
+        // Re-verify game is still in scoreboard phase
+        const game = await gameService.getGameById(gameId);
+        if (!game || game.gameState.status !== 'ROUND_SCOREBOARD') {
+          return;
+        }
+
+        // Check if bot already continued
+        const existing = await db.scoreboardConfirmation.findUnique({
+          where: {
+            gameId_roundId_playerId: { gameId, roundId, playerId: botPlayerId },
+          },
+        });
+        if (existing?.hasContinued) {
+          return;
+        }
+
+        // Get bot player info
+        const bot = await db.player.findUnique({ where: { id: botPlayerId } });
+        console.log(`Bot ${bot?.name || 'Unknown'} clicking Continue`);
+
+        // Update confirmation
+        await db.scoreboardConfirmation.upsert({
+          where: {
+            gameId_roundId_playerId: { gameId, roundId, playerId: botPlayerId },
+          },
+          update: {
+            hasContinued: true,
+            continuedAt: new Date(),
+          },
+          create: {
+            gameId,
+            roundId,
+            playerId: botPlayerId,
+            hasContinued: true,
+            continuedAt: new Date(),
+          },
+        });
+
+        // Broadcast updated scoreboard
+        await this.broadcastScoreboardAndCheckAllContinued(gameId);
+      } catch (error) {
+        console.error(`Error in bot continue for ${botPlayerId}:`, error);
       } finally {
         actionLocks.delete(lockKey);
       }
     }, delay);
+  }
+
+  /**
+   * Broadcasts scoreboard state and checks if all have continued.
+   */
+  private async broadcastScoreboardAndCheckAllContinued(gameId: string): Promise<void> {
+    if (!this.io) {
+      console.error('Socket.IO server not initialized in bot service');
+      return;
+    }
+
+    const db = getDB();
+    const game = await gameService.getGameById(gameId);
+    if (!game) {
+      return;
+    }
+
+    const lobby = await lobbyService.getLobbyById(game.lobbyId);
+    if (!lobby) {
+      return;
+    }
+
+    // Import scoreboardService dynamically to avoid circular dependency
+    const { scoreboardService } = await import('./scoreboard.service');
+
+    const scoreboard = await scoreboardService.getScoreboardState(gameId);
+    if (!scoreboard) {
+      return;
+    }
+
+    // Broadcast scoreboard state
+    this.io.to(`lobby:${lobby.code}`).emit('scoreboard:state', { scoreboard });
+
+    // Check if all continued
+    const currentRound = await db.gameRound.findFirst({
+      where: { gameId, roundNumber: game.currentRound },
+    });
+    if (!currentRound) {
+      return;
+    }
+
+    const confirmations = await db.scoreboardConfirmation.findMany({
+      where: { gameId, roundId: currentRound.id },
+    });
+    const continuedCount = confirmations.filter(c => c.hasContinued).length;
+
+    if (continuedCount >= lobby.playerCount) {
+      // All continued
+      this.io.to(`lobby:${lobby.code}`).emit('scoreboard:all-continued');
+
+      // Advance to next round
+      const updatedGame = await gameService.advanceToNextRound(gameId);
+
+      if (updatedGame) {
+        if (updatedGame.gameState.status === 'GAME_OVER') {
+          const winner = gameService.getWinner(updatedGame.gameState);
+          this.io.to(`lobby:${lobby.code}`).emit('game:completed', {
+            finalScores: updatedGame.gameState.scores,
+            winner: winner || { id: '', name: 'Unknown' },
+          });
+        } else {
+          // Send new round bidding state
+          const sockets = await this.io.in(`lobby:${lobby.code}`).fetchSockets();
+          for (const s of sockets) {
+            const clientState = gameService.getClientGameState(updatedGame, s.data.playerId);
+            s.emit('round:bidding-started', { gameState: clientState });
+          }
+
+          // Trigger bot actions if first bidder is a bot
+          await this.processPendingBotActions(gameId);
+        }
+      }
+    }
   }
 }
 

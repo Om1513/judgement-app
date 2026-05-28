@@ -225,6 +225,28 @@ class SocketService {
   }
 
   // =====================
+  // Scoreboard Methods
+  // =====================
+
+  /**
+   * Requests current scoreboard state.
+   */
+  getScoreboardState() {
+    if (this.socket?.connected) {
+      this.socket.emit('scoreboard:get-state');
+    }
+  }
+
+  /**
+   * Sends continue confirmation on scoreboard.
+   */
+  scoreboardContinue() {
+    if (this.socket?.connected) {
+      this.socket.emit('scoreboard:continue');
+    }
+  }
+
+  // =====================
   // Event Listeners
   // =====================
 

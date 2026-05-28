@@ -91,6 +91,7 @@ model Game {
   roundBids         RoundBid[]
   roundTricks       RoundTrick[]
   roundScores       RoundScore[]
+  scoreboardConfirmations ScoreboardConfirmation[]
 
   @@index([lobbyId])
   @@index([status])
@@ -114,6 +115,7 @@ model GameRound {
   roundBids   RoundBid[]
   roundTricks RoundTrick[]
   roundScores RoundScore[]
+  scoreboardConfirmations ScoreboardConfirmation[]
 
   @@unique([gameId, roundNumber])
   @@index([gameId])
@@ -204,6 +206,27 @@ model RoundScore {
   @@index([playerId])
 }
 
+// ScoreboardConfirmation model - tracks who has clicked Continue
+model ScoreboardConfirmation {
+  id          String    @id @default(cuid())
+  gameId      String
+  roundId     String
+  playerId    String
+  hasContinued Boolean  @default(false)
+  continuedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  game  Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  round GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, roundId, playerId])
+  @@index([gameId])
+  @@index([roundId])
+  @@index([playerId])
+}
+
 // GameAction model - logs all game actions for replay/audit
 model GameAction {
   id            String         @id @default(cuid())
@@ -234,6 +257,7 @@ enum GameStatus {
   BIDDING
   PLAYING
   ROUND_COMPLETE
+  ROUND_SCOREBOARD
   GAME_OVER
 }
 

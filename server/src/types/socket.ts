@@ -1,7 +1,7 @@
 // Socket.IO event types for Kachuful game
 
 import { LobbyState, LobbySettings, CreateLobbyInput, JoinLobbyInput } from './lobby';
-import { ClientGameState, SubmitBidInput, PlayCardInput } from './game';
+import { ClientGameState, SubmitBidInput, PlayCardInput, ScoreboardState } from './game';
 import { Card } from './player';
 
 // Client to Server events
@@ -22,6 +22,10 @@ export interface ClientToServerEvents {
   'game:submit-bid': (data: { bid: number }) => void;
   'game:play-card': (data: { card: Card }) => void;
   'game:state-request': () => void;
+
+  // Scoreboard events
+  'scoreboard:get-state': () => void;
+  'scoreboard:continue': () => void;
 }
 
 // Server to Client events
@@ -51,6 +55,13 @@ export interface ServerToClientEvents {
   }) => void;
   'game:round-complete': (data: { roundNumber: number; scores: Record<string, number> }) => void;
   'game:over': (data: { finalScores: Record<string, number>; winner: { id: string; name: string } }) => void;
+  'game:completed': (data: { finalScores: Record<string, number>; winner: { id: string; name: string } }) => void;
+
+  // Scoreboard events
+  'scoreboard:state': (data: { scoreboard: ScoreboardState }) => void;
+  'scoreboard:player-continued': (data: { playerId: string; playerName: string }) => void;
+  'scoreboard:all-continued': () => void;
+  'round:bidding-started': (data: { gameState: ClientGameState }) => void;
 }
 
 // Inter-server events (for future Redis scaling)

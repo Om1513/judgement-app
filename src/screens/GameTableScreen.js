@@ -172,10 +172,16 @@ export default function GameTableScreen({ navigation, route }) {
     });
 
     const unsubscribeRoundComplete = socketService.on("game:round-complete", (data) => {
-      Alert.alert(
-        `Round ${data.roundNumber} Complete!`,
-        "Starting next round..."
-      );
+      console.log(`Round ${data.roundNumber} complete`);
+    });
+
+    const unsubscribeScoreboard = socketService.on("scoreboard:state", (data) => {
+      console.log("Scoreboard state received, navigating to ScoreBoard");
+      navigation.replace("ScoreBoard", {
+        scoreboard: data.scoreboard,
+        currentPlayerId,
+        currentPlayerName,
+      });
     });
 
     const unsubscribeGameOver = socketService.on("game:over", (data) => {
@@ -191,6 +197,7 @@ export default function GameTableScreen({ navigation, route }) {
       unsubscribeError();
       unsubscribeTrickComplete();
       unsubscribeRoundComplete();
+      unsubscribeScoreboard();
       unsubscribeGameOver();
     };
   }, [navigation, currentPlayerId, currentPlayerName]);

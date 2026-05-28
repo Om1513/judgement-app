@@ -174,6 +174,14 @@ export function canPlayCard(
 
 /**
  * Calculates score for a round.
+ *
+ * For +10 scoring mode:
+ * - If player's handsMade equals bid: score = bid * 10 (or 10 if bid is 0)
+ * - If player misses their bid: score = 0
+ *
+ * For +1 scoring mode:
+ * - If player's handsMade equals bid: score = bid (or 1 if bid is 0)
+ * - If player misses their bid: score = 0
  */
 export function calculateScore(
   bid: number,
@@ -183,13 +191,15 @@ export function calculateScore(
   if (bid === tricksWon) {
     // Made the bid exactly
     if (scoringMode === '+10') {
-      return 10 + bid;
+      // Bid 0 and made 0 = 10 points, else bid * 10
+      return bid === 0 ? 10 : bid * 10;
     } else {
-      return 1 + bid;
+      // Bid 0 and made 0 = 1 point, else bid
+      return bid === 0 ? 1 : bid;
     }
   } else {
-    // Failed to make bid
-    return -Math.abs(bid - tricksWon);
+    // Failed to make bid - 0 points
+    return 0;
   }
 }
 

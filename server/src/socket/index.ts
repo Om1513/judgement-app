@@ -12,6 +12,7 @@ import { playerService } from '../services/player.service';
 import { botService } from '../services/bot.service';
 import { registerLobbyEvents, handleLobbyDisconnect } from './lobby.events';
 import { registerGameEvents, handleGameDisconnect } from './game.events';
+import { registerScoreboardEvents } from './scoreboard.events';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -80,6 +81,7 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
     // Register event handlers
     registerLobbyEvents(io, socket);
     registerGameEvents(io, socket);
+    registerScoreboardEvents(io, socket);
 
     // Handle disconnection
     socket.on('disconnect', async (reason) => {
