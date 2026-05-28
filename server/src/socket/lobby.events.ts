@@ -12,6 +12,7 @@ import { LobbySettings } from '../types/lobby';
 import { playerService } from '../services/player.service';
 import { lobbyService } from '../services/lobby.service';
 import { gameService } from '../services/game.service';
+import { botService } from '../services/bot.service';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -244,6 +245,46 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
   });
 
   /**
+   * Adds a bot to the lobby (host only).
+   */
+  socket.on('lobby:add-bot', async () => {
+    try {
+      if (!socket.data.playerId || !socket.data.lobbyId) {
+        socket.emit('lobby:error', {
+          message: 'Not in a lobby',
+          code: SocketErrorCodes.LOBBY_NOT_FOUND,
+        });
+        return;
+      }
+
+      // Add bot to lobby
+      const botPlayer = await botService.addBotToLobby(
+        socket.data.lobbyId,
+        socket.data.playerId
+      );
+
+      // Get updated lobby state
+      const lobby = await lobbyService.getLobbyById(socket.data.lobbyId);
+      if (!lobby) {
+        throw new Error('Lobby not found after adding bot');
+      }
+
+      console.log(`Bot ${botPlayer.name} added to lobby ${lobby.code}`);
+
+      // Broadcast updated lobby state
+      io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
+    } catch (error) {
+      console.error('Error adding bot:', error);
+      socket.emit('lobby:error', {
+        message: error instanceof Error ? error.message : 'Failed to add bot',
+        code: error instanceof Error && error.message.includes('host')
+          ? SocketErrorCodes.NOT_HOST
+          : SocketErrorCodes.INVALID_ACTION,
+      });
+    }
+  });
+
+  /**
    * Updates lobby settings (host only).
    */
   socket.on('lobby:update-settings', async (data) => {
@@ -317,6 +358,9 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
           s.emit('game:started', { gameState: clientState });
         }
       }
+
+      // Process pending bot actions (if first player is a bot)
+      await botService.processPendingBotActions(gameId);
     } catch (error) {
       console.error('Error starting game:', error);
       socket.emit('lobby:error', {

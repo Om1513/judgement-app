@@ -21,6 +21,8 @@ export class PlayerService {
       data: {
         name: nameValidation.sanitized,
         socketId: input.socketId || null,
+        isBot: input.isBot || false,
+        botDifficulty: input.botDifficulty || null,
       },
     });
 
@@ -28,6 +30,8 @@ export class PlayerService {
       id: player.id,
       name: player.name,
       socketId: player.socketId,
+      isBot: player.isBot,
+      botDifficulty: player.botDifficulty,
       createdAt: player.createdAt,
     };
   }
@@ -50,6 +54,8 @@ export class PlayerService {
       id: player.id,
       name: player.name,
       socketId: player.socketId,
+      isBot: player.isBot,
+      botDifficulty: player.botDifficulty,
       createdAt: player.createdAt,
     };
   }
@@ -72,6 +78,8 @@ export class PlayerService {
       id: player.id,
       name: player.name,
       socketId: player.socketId,
+      isBot: player.isBot,
+      botDifficulty: player.botDifficulty,
       createdAt: player.createdAt,
     };
   }
@@ -105,6 +113,8 @@ export class PlayerService {
       id: player.id,
       name: player.name,
       socketId: player.socketId,
+      isBot: player.isBot,
+      botDifficulty: player.botDifficulty,
       createdAt: player.createdAt,
     };
   }

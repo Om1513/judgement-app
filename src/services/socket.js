@@ -184,6 +184,15 @@ class SocketService {
     }
   }
 
+  /**
+   * Adds a bot to the lobby (host only).
+   */
+  addBot() {
+    if (this.socket?.connected) {
+      this.socket.emit('lobby:add-bot');
+    }
+  }
+
   // =====================
   // Game Methods
   // =====================

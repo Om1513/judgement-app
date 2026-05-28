@@ -410,6 +410,7 @@ export class LobbyService {
       playerId: lp.playerId,
       name: lp.player.name,
       isHost: lp.isHost,
+      isBot: lp.player.isBot || false,
       seatPosition: lp.seatPosition,
       joinedAt: lp.joinedAt,
     }));

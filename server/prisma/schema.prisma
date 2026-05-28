@@ -12,11 +12,13 @@ datasource db {
 
 // Player model - stores player information
 model Player {
-  id        String   @id @default(cuid())
-  name      String
-  socketId  String?  @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  socketId      String?  @unique
+  isBot         Boolean  @default(false)
+  botDifficulty String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
   hostedLobbies Lobby[]       @relation("HostedLobbies")

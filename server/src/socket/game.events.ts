@@ -10,6 +10,7 @@ import {
 } from '../types/socket';
 import { gameService } from '../services/game.service';
 import { lobbyService } from '../services/lobby.service';
+import { botService } from '../services/bot.service';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -60,6 +61,9 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         const clientState = gameService.getClientGameState(game, s.data.playerId);
         s.emit('game:update', { gameState: clientState });
       }
+
+      // Process pending bot actions
+      await botService.processPendingBotActions(socket.data.gameId);
     } catch (error) {
       console.error('Error submitting bid:', error);
       socket.emit('game:error', {
@@ -113,6 +117,9 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         const clientState = gameService.getClientGameState(game, s.data.playerId);
         s.emit('game:update', { gameState: clientState });
       }
+
+      // Process pending bot actions
+      await botService.processPendingBotActions(socket.data.gameId);
 
       // Send trick complete event if applicable
       if (trickComplete && state.roundState?.currentTrick) {

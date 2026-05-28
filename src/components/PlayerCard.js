@@ -15,6 +15,14 @@ export default function PlayerCard({
   size = "normal",
 }) {
   const isCompact = size === "compact";
+  const isBot = player.isBot || false;
+
+  // Get avatar colors based on player type
+  const getAvatarColors = () => {
+    if (isBot) return ["#FF8C00", "#FF6600"];
+    if (player.isHost) return ["#FFD700", "#F5A623"];
+    return ["#5E3A9E", "#3D2272"];
+  };
 
   return (
     <View style={[styles.container, isCompact && styles.containerCompact]}>
@@ -25,11 +33,11 @@ export default function PlayerCard({
         {/* Avatar placeholder */}
         <View style={[styles.avatar, isCompact && styles.avatarCompact]}>
           <LinearGradient
-            colors={player.isHost ? ["#FFD700", "#F5A623"] : ["#5E3A9E", "#3D2272"]}
+            colors={getAvatarColors()}
             style={styles.avatarGradient}
           >
             <Text style={[styles.avatarText, isCompact && styles.avatarTextCompact]}>
-              {player.name.charAt(0).toUpperCase()}
+              {isBot ? "🤖" : player.name.charAt(0).toUpperCase()}
             </Text>
           </LinearGradient>
         </View>
@@ -51,6 +59,18 @@ export default function PlayerCard({
                 style={styles.hostBadgeGradient}
               >
                 <Text style={styles.hostBadgeText}>HOST</Text>
+              </LinearGradient>
+            </View>
+          )}
+
+          {/* Bot badge */}
+          {isBot && (
+            <View style={styles.botBadge}>
+              <LinearGradient
+                colors={["#FF8C00", "#FF6600"]}
+                style={styles.botBadgeGradient}
+              >
+                <Text style={styles.botBadgeText}>BOT</Text>
               </LinearGradient>
             </View>
           )}
@@ -168,6 +188,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "Bangers_400Regular",
     color: "#2A1654",
+    letterSpacing: 1,
+  },
+  botBadge: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+  },
+  botBadgeGradient: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  botBadgeText: {
+    fontSize: 10,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFFFFF",
     letterSpacing: 1,
   },
   removeButton: {

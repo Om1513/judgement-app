@@ -4,12 +4,16 @@ export interface Player {
   id: string;
   name: string;
   socketId: string | null;
+  isBot: boolean;
+  botDifficulty?: string | null;
   createdAt: Date;
 }
 
 export interface CreatePlayerInput {
   name: string;
   socketId?: string;
+  isBot?: boolean;
+  botDifficulty?: string;
 }
 
 export interface UpdatePlayerInput {
@@ -23,6 +27,7 @@ export interface LobbyPlayer {
   playerId: string;
   name: string;
   isHost: boolean;
+  isBot: boolean;
   seatPosition: number;
   joinedAt: Date;
 }

@@ -9,6 +9,7 @@ import {
   SocketData,
 } from '../types/socket';
 import { playerService } from '../services/player.service';
+import { botService } from '../services/bot.service';
 import { registerLobbyEvents, handleLobbyDisconnect } from './lobby.events';
 import { registerGameEvents, handleGameDisconnect } from './game.events';
 
@@ -103,6 +104,9 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
       console.error(`Socket error for ${socket.id}:`, error);
     });
   });
+
+  // Initialize bot service with Socket.IO server
+  botService.setIO(io);
 
   console.log('Socket.IO initialized');
 

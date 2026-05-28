@@ -45,10 +45,11 @@ export default function LobbyScreen({ navigation, route }) {
         id: p.playerId,
         name: p.name,
         isHost: p.isHost,
+        isBot: p.isBot || false,
         joinedAt: new Date(p.joinedAt).getTime(),
       }));
     }
-    return [{ id: hostId, name: hostName, isHost: true, joinedAt: Date.now() }];
+    return [{ id: hostId, name: hostName, isHost: true, isBot: false, joinedAt: Date.now() }];
   });
 
   const [currentHostId, setCurrentHostId] = useState(hostId);
@@ -76,6 +77,7 @@ export default function LobbyScreen({ navigation, route }) {
         id: p.playerId,
         name: p.name,
         isHost: p.isHost,
+        isBot: p.isBot || false,
         joinedAt: new Date(p.joinedAt).getTime(),
       })));
 
@@ -218,6 +220,15 @@ export default function LobbyScreen({ navigation, route }) {
 
     // Navigation will happen when we receive game:started event
     console.log("Starting game...");
+  };
+
+  const handleAddBot = () => {
+    // Check if lobby is full
+    if (players.length >= (gameSettings.maxPlayers || 8)) {
+      Alert.alert('Lobby Full', 'Cannot add more players to the lobby.');
+      return;
+    }
+    socketService.addBot();
   };
 
   const handleLeaveLobby = () => {
@@ -443,8 +454,23 @@ export default function LobbyScreen({ navigation, route }) {
               {/* Bottom Section */}
               <View style={styles.bottomSection}>
                 {isCurrentUserHost ? (
-                  // Host view - Start Game button
+                  // Host view - Add Bot and Start Game buttons
                   <View style={styles.startButtonContainer}>
+                    {/* Add Bot Button - shown when not at max players */}
+                    {players.length < (gameSettings.maxPlayers || 8) && (
+                      <TouchableOpacity
+                        onPress={handleAddBot}
+                        activeOpacity={0.8}
+                        style={styles.addBotButton}
+                      >
+                        <LinearGradient
+                          colors={["#FFB347", "#FF8C00", "#FF6600"]}
+                          style={styles.addBotButtonGradient}
+                        >
+                          <Text style={styles.addBotButtonText}>+ Add Bot</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    )}
                     <Animated.View
                       style={[
                         styles.buttonGlow,
@@ -646,6 +672,32 @@ const styles = StyleSheet.create({
   startButtonContainer: {
     alignItems: "center",
     position: "relative",
+  },
+  addBotButton: {
+    marginBottom: 15,
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  addBotButtonGradient: {
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addBotButtonText: {
+    fontSize: 18,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFFFFF",
+    textShadowColor: "rgba(100, 50, 0, 0.8)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+    letterSpacing: 1,
   },
   buttonGlow: {
     position: "absolute",

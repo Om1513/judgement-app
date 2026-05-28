@@ -16,6 +16,7 @@ export interface ClientToServerEvents {
   'lobby:kick-player': (data: { playerId: string }) => void;
   'lobby:update-settings': (data: { settings: Partial<LobbySettings> }) => void;
   'lobby:start-game': () => void;
+  'lobby:add-bot': () => void;
 
   // Game events
   'game:submit-bid': (data: { bid: number }) => void;
