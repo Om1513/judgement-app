@@ -623,6 +623,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
 
   // Bidding Table

@@ -44,10 +44,7 @@ export default function PlayerCard({
 
         {/* Player info */}
         <View style={styles.info}>
-          <Text
-            style={[styles.name, isCompact && styles.nameCompact]}
-            numberOfLines={1}
-          >
+          <Text style={[styles.name, isCompact && styles.nameCompact]}>
             {player.name}
           </Text>
 
@@ -115,7 +112,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: "#5E3A9E",
-    minWidth: 160,
+    minWidth: 180,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -126,7 +123,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 12,
-    minWidth: 120,
+    minWidth: 150,
   },
   avatar: {
     width: 44,
@@ -155,6 +152,8 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0, 0, 0, 0.5)",
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   avatarTextCompact: {
     fontSize: 14,
