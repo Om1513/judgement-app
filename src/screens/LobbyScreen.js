@@ -698,6 +698,8 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
     letterSpacing: 1,
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   buttonGlow: {
     position: "absolute",
@@ -758,6 +760,8 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
     letterSpacing: 1,
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   startButtonTextDisabled: {
     color: "#888888",

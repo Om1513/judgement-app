@@ -531,6 +531,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   bidButtonTextForbidden: {
     color: "#888",
@@ -712,6 +714,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Bangers_400Regular",
     color: "#FFF",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   noBidText: {
     fontSize: 16,

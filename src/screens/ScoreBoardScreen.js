@@ -442,6 +442,8 @@ const styles = StyleSheet.create({
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     letterSpacing: 1,
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   playerHeaderText: {
     color: "#FFD700",
@@ -479,16 +481,21 @@ const styles = StyleSheet.create({
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     letterSpacing: 0.5,
+    paddingHorizontal: 4,
   },
   roundNumber: {
     fontSize: 17,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   scoreText: {
     fontSize: 18,
     lineHeight: 26,
     fontFamily: "Bangers_400Regular",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   scorePositive: {
     color: "#FFD700",
@@ -526,6 +533,7 @@ const styles = StyleSheet.create({
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
     letterSpacing: 2,
+    paddingHorizontal: 5,
   },
   totalScoreContainer: {
     flexDirection: "row",
@@ -540,6 +548,8 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   leadingScore: {
     color: "#FFD700",

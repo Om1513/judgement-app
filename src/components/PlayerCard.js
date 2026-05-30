@@ -221,6 +221,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#FFF",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   hostGlow: {
     position: "absolute",
