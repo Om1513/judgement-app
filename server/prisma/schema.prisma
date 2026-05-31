@@ -92,9 +92,25 @@ model Game {
   roundTricks       RoundTrick[]
   roundScores       RoundScore[]
   scoreboardConfirmations ScoreboardConfirmation[]
+  gameResult        GameResult?
 
   @@index([lobbyId])
   @@index([status])
+}
+
+// GameResult model - stores the final result of a completed game (created once)
+model GameResult {
+  id              String   @id @default(cuid())
+  gameId          String   @unique
+  winnerPlayerIds Json     // array of winning player IDs (supports ties)
+  winningScore    Int
+  finalScoresJson Json     // map of playerId -> total score
+  createdAt       DateTime @default(now())
+
+  // Relations
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
 }
 
 // GameRound model - represents a single round in a game
@@ -256,9 +272,12 @@ enum LobbyStatus {
 enum GameStatus {
   BIDDING
   PLAYING
+  HAND_WINNER
   ROUND_COMPLETE
   ROUND_SCOREBOARD
   GAME_OVER
+  FINAL_WINNER
+  COMPLETED
 }
 
 enum RoundStatus {

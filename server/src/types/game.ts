@@ -12,7 +12,15 @@ export interface TrumpInfo {
   symbol: string;    // e.g., "♠", "♦", "♣", "♥"
 }
 
-export type GameStatus = 'BIDDING' | 'PLAYING' | 'ROUND_COMPLETE' | 'ROUND_SCOREBOARD' | 'GAME_OVER';
+export type GameStatus =
+  | 'BIDDING'
+  | 'PLAYING'
+  | 'HAND_WINNER'
+  | 'ROUND_COMPLETE'
+  | 'ROUND_SCOREBOARD'
+  | 'GAME_OVER'
+  | 'FINAL_WINNER'
+  | 'COMPLETED';
 
 export type GameActionType =
   | 'BID_SUBMIT'
@@ -55,6 +63,10 @@ export interface RoundState {
   trickNumber: number;
   bidOrder: string[];                // Order of players for bidding
   currentBidderIndex: number;        // Index in bidOrder
+  // Inter-hand pause: set when a trick completes and we are holding to show
+  // the hand-winner popup before dealing/leading the next hand.
+  awaitingNextHand?: boolean;
+  nextLeaderId?: string | null;      // Winner of the just-completed trick; leads next hand
 }
 
 // Full game state stored in gameStateJson
@@ -122,6 +134,7 @@ export interface ClientRoundState {
   currentBidderId: string | null;
   totalBidsSoFar: number;
   isLastBidder: boolean;
+  awaitingNextHand?: boolean;
 }
 
 // Game state broadcast to clients (may hide other players' hands)
@@ -172,4 +185,18 @@ export interface ScoreboardState {
   status: 'round_scoreboard' | 'completed';
   players: ScoreboardPlayer[];
   rows: ScoreboardRow[];
+}
+
+// Final game result (computed by the backend, stored once)
+export interface GameWinner {
+  id: string;
+  name: string;
+}
+
+export interface FinalResult {
+  winners: GameWinner[];          // multiple winners on a tie
+  winnerIds: string[];
+  winningScore: number;
+  isTie: boolean;
+  finalScores: Record<string, number>; // playerId -> total score
 }

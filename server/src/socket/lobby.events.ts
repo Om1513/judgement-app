@@ -219,12 +219,13 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
 
       console.log(`Host ${socket.data.playerName} kicked player ${targetPlayerId} from lobby ${lobby.code}`);
 
-      // Find the kicked player's socket and notify them
+      // Find the kicked player's socket and notify them. Bots have no socket,
+      // so this loop simply finds no match for them - no error.
       const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();
       for (const s of sockets) {
         if (s.data.playerId === targetPlayerId) {
           s.emit('lobby:kicked', { message: 'You have been removed from the lobby by the host.' });
-          s.leave(`lobby:${lobby.code}`);
+          await s.leave(`lobby:${lobby.code}`);
           s.data.lobbyId = null;
           s.data.gameId = null;
           break;

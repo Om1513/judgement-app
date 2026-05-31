@@ -7,6 +7,7 @@ import {
   ScoreboardRow,
   ScoreboardRowScore,
   TrumpInfo,
+  FinalResult,
 } from '../types/game';
 import { LobbySettings } from '../types/lobby';
 import { gameService } from './game.service';
@@ -284,6 +285,79 @@ export class ScoreboardService {
     await db.roundScore.createMany({
       data: scores,
     });
+  }
+
+  /**
+   * Computes and persists the final game result (winner(s), winning score and
+   * the full final score map). The result is stored exactly once per game; any
+   * subsequent call returns the already-stored result without creating a
+   * duplicate. The winner is always computed by the backend (authoritative).
+   */
+  async finalizeGame(gameId: string): Promise<FinalResult | null> {
+    const db = getDB();
+
+    const game = await gameService.getGameById(gameId);
+    if (!game) {
+      return null;
+    }
+
+    const lobby = await lobbyService.getLobbyById(game.lobbyId);
+    if (!lobby) {
+      return null;
+    }
+
+    const finalScores = game.gameState.scores || {};
+    const nameOf = (playerId: string) =>
+      lobby.players.find(p => p.playerId === playerId)?.name || 'Unknown';
+
+    // Highest total score wins; ties produce multiple winners.
+    const scoreValues = Object.values(finalScores);
+    const winningScore = scoreValues.length ? Math.max(...scoreValues) : 0;
+    const winnerIds = Object.entries(finalScores)
+      .filter(([, score]) => score === winningScore)
+      .map(([playerId]) => playerId);
+    const winners = winnerIds.map(id => ({ id, name: nameOf(id) }));
+
+    const result: FinalResult = {
+      winners,
+      winnerIds,
+      winningScore,
+      isTie: winnerIds.length > 1,
+      finalScores,
+    };
+
+    // Persist the result once (unique gameId guarantees idempotency). This is
+    // wrapped so a persistence problem can never block the winner screen - the
+    // computed result above is what the clients actually need.
+    try {
+      const existing = await db.gameResult.findUnique({ where: { gameId } });
+      if (!existing) {
+        await db.gameResult.create({
+          data: {
+            gameId,
+            winnerPlayerIds: winnerIds as any,
+            winningScore,
+            finalScoresJson: finalScores as any,
+          },
+        });
+
+        // Mark the game as fully completed.
+        await db.game.update({
+          where: { id: gameId },
+          data: { status: 'COMPLETED' as any },
+        });
+
+        console.log(
+          `Game ${gameId} finalized. Winner(s): ${winners.map(w => w.name).join(', ')} @ ${winningScore}`
+        );
+      }
+    } catch (error) {
+      // Concurrent finalize race, or a DB/schema issue - log and carry on so
+      // the final winner is still broadcast.
+      console.error('Failed to persist game result (continuing):', error);
+    }
+
+    return result;
   }
 
   /**

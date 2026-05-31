@@ -12,6 +12,7 @@ import { gameService } from '../services/game.service';
 import { scoreboardService } from '../services/scoreboard.service';
 import { lobbyService } from '../services/lobby.service';
 import { botService } from '../services/bot.service';
+import { broadcastFinalWinner } from './playFlow';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -113,12 +114,8 @@ export function registerScoreboardEvents(io: TypedServer, socket: TypedSocket): 
 
         if (updatedGame) {
           if (updatedGame.gameState.status === 'GAME_OVER') {
-            // Game is complete
-            const winner = gameService.getWinner(updatedGame.gameState);
-            io.to(`lobby:${lobby.code}`).emit('game:completed', {
-              finalScores: updatedGame.gameState.scores,
-              winner: winner || { id: '', name: 'Unknown' },
-            });
+            // Game is complete - finalize and broadcast the winner(s).
+            await broadcastFinalWinner(io, socket.data.gameId);
           } else {
             // Send new round bidding state
             const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();

@@ -14,6 +14,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 
+// Display trump by its English suit name rather than the local name.
+const TRUMP_SUIT_NAMES = {
+  spades: "Spades",
+  hearts: "Hearts",
+  diamonds: "Diamonds",
+  clubs: "Clubs",
+};
+
 export default function BiddingScreen({ navigation, route }) {
   const {
     gameState: initialGameState,
@@ -175,7 +183,9 @@ export default function BiddingScreen({ navigation, route }) {
           <Text style={[styles.trumpSymbol, isRed && styles.trumpSymbolRed]}>
             {suitSymbol}
           </Text>
-          <Text style={styles.trumpName}>{trump.name}</Text>
+          <Text style={styles.trumpName}>
+            {TRUMP_SUIT_NAMES[trump.suit] || trump.name}
+          </Text>
         </View>
         <View style={styles.trumpDivider} />
       </View>
@@ -314,24 +324,10 @@ export default function BiddingScreen({ navigation, route }) {
         style={styles.background}
         resizeMode="cover"
       >
-        {/* Round indicator - bottom right */}
+        {/* Round indicator - bottom right corner */}
         <View style={styles.roundIndicator}>
           <Text style={styles.roundIndicatorText}>
             Round {currentRound}/{totalRounds}
-          </Text>
-        </View>
-
-        {/* Trump indicator - bottom right corner */}
-        <View style={styles.trumpIndicator}>
-          <Text style={styles.trumpIndicatorLabel}>TRUMP</Text>
-          <Text
-            style={[
-              styles.trumpIndicatorSymbol,
-              (trump?.suit === "hearts" || trump?.suit === "diamonds") &&
-                styles.trumpIndicatorRed,
-            ]}
-          >
-            {trump?.symbol}
           </Text>
         </View>
 
@@ -421,49 +417,23 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
-  // Round & Trump Indicators
+  // Round Indicator
   roundIndicator: {
     position: "absolute",
-    bottom: 100,
+    bottom: 20,
     right: 20,
     backgroundColor: "rgba(42, 22, 84, 0.9)",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: "#5E3A9E",
   },
   roundIndicatorText: {
-    fontSize: 14,
+    fontSize: 22,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
-    letterSpacing: 1,
-  },
-  trumpIndicator: {
-    position: "absolute",
-    bottom: 55,
-    right: 20,
-    backgroundColor: "rgba(42, 22, 84, 0.9)",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#FFD700",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  trumpIndicatorLabel: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginRight: 6,
-  },
-  trumpIndicatorSymbol: {
-    fontSize: 18,
-    color: "#1a1a2e",
-  },
-  trumpIndicatorRed: {
-    color: "#e53935",
+    letterSpacing: 1.5,
   },
 
   // Modal

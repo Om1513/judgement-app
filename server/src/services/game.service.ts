@@ -234,6 +234,7 @@ export class GameService {
         currentBidderId,
         totalBidsSoFar,
         isLastBidder: isLastBidder && currentBidderId === playerId,
+        awaitingNextHand: roundState.awaitingNextHand === true,
       };
     }
 
@@ -405,6 +406,12 @@ export class GameService {
 
     const state = game.gameState;
     const roundState = state.roundState!;
+
+    // Block plays while we are holding to show the hand-winner popup.
+    if (roundState.awaitingNextHand) {
+      throw new Error('Hand is being scored - please wait');
+    }
+
     const trick = roundState.currentTrick!;
 
     // Find player and their hand
@@ -529,27 +536,23 @@ export class GameService {
         // Transition to scoreboard phase (don't start next round yet)
         state.status = 'ROUND_SCOREBOARD';
       } else {
-        // Start new trick, winner leads
-        const winnerIndex = state.turnOrder.indexOf(winnerId);
-        state.currentTurnIndex = winnerIndex;
-
-        roundState.trickNumber++;
-        roundState.currentTrick = {
-          leadPlayerId: winnerId,
-          leadSuit: null,
-          cardsPlayed: [],
-          winnerId: null,
-        };
+        // Hold here: keep the completed trick on the table (with its winner)
+        // so the hand-winner popup can be shown. advanceToNextTrick() will
+        // deal the next hand once the popup has been displayed.
+        roundState.awaitingNextHand = true;
+        roundState.nextLeaderId = winnerId;
       }
     } else {
       // Move to next player
       state.currentTurnIndex = (state.currentTurnIndex + 1) % state.players.length;
     }
 
-    // Update current turn
-    const nextPlayerId = state.turnOrder[state.currentTurnIndex];
+    // Update current turn. While awaiting the next hand, nobody is on turn
+    // (this prevents any further plays until the popup clears).
+    const awaiting = roundState.awaitingNextHand === true;
+    const nextPlayerId = awaiting ? null : state.turnOrder[state.currentTurnIndex];
     state.players.forEach(p => {
-      p.isCurrentTurn = p.id === nextPlayerId;
+      p.isCurrentTurn = !awaiting && p.id === nextPlayerId;
     });
 
     // Save state
@@ -564,6 +567,54 @@ export class GameService {
     });
 
     return { state, trickComplete, roundComplete };
+  }
+
+  /**
+   * Advances to the next hand (trick) after the hand-winner popup has been
+   * shown. The winner of the just-completed trick leads the new hand.
+   */
+  async advanceToNextTrick(gameId: string): Promise<GameState | null> {
+    const db = getDB();
+    const game = await this.getGameById(gameId);
+    if (!game) {
+      return null;
+    }
+
+    const state = game.gameState;
+    const roundState = state.roundState;
+    if (!roundState || !roundState.awaitingNextHand || !roundState.nextLeaderId) {
+      // Nothing to advance (idempotent - e.g. duplicate timer fire)
+      return state;
+    }
+
+    const winnerId = roundState.nextLeaderId;
+    const winnerIndex = state.turnOrder.indexOf(winnerId);
+    state.currentTurnIndex = winnerIndex;
+
+    roundState.trickNumber++;
+    roundState.currentTrick = {
+      leadPlayerId: winnerId,
+      leadSuit: null,
+      cardsPlayed: [],
+      winnerId: null,
+    };
+    roundState.awaitingNextHand = false;
+    roundState.nextLeaderId = null;
+
+    state.players.forEach(p => {
+      p.isCurrentTurn = p.id === winnerId;
+    });
+
+    await db.game.update({
+      where: { id: gameId },
+      data: {
+        status: state.status,
+        currentTurnPlayerId: winnerId,
+        gameStateJson: state as any,
+      },
+    });
+
+    return state;
   }
 
   /**

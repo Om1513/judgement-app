@@ -333,71 +333,22 @@ export class BotService {
         console.log(`Bot ${botPlayer.name} playing ${card.rank} of ${card.suit}`);
 
         // Play card using game service
-        const { state: newState, trickComplete, roundComplete } = await gameService.playCard({
+        const { trickComplete, roundComplete } = await gameService.playCard({
           gameId,
           playerId: botPlayerId,
           card,
         });
 
-        // Broadcast updated game state to all clients
-        await this.broadcastGameState(gameId);
-
-        // Send trick complete event if applicable
-        if (trickComplete && this.io) {
-          const lobby = await lobbyService.getLobbyById(game.lobbyId);
-          if (lobby && newState.roundState?.currentTrick) {
-            const completedTrick = newState.roundState.currentTrick;
-            const winner = newState.players.find(p => p.id === completedTrick.winnerId);
-            this.io.to(`lobby:${lobby.code}`).emit('game:trick-completed', {
-              trickNumber: newState.roundState.trickNumber - 1,
-              winnerId: completedTrick.winnerId || '',
-              winnerName: winner?.name || 'Unknown',
-              cardsPlayed: completedTrick.cardsPlayed,
-            });
-          }
-        }
-
-        // Send round complete event and scoreboard if applicable
-        if (roundComplete && newState.status === 'ROUND_SCOREBOARD' && this.io) {
-          const lobby = await lobbyService.getLobbyById(game.lobbyId);
-          if (lobby) {
-            this.io.to(`lobby:${lobby.code}`).emit('game:round-complete', {
-              roundNumber: newState.currentRound,
-              scores: newState.scores,
-            });
-
-            // Broadcast scoreboard state
-            const { scoreboardService } = await import('./scoreboard.service');
-            const scoreboard = await scoreboardService.getScoreboardState(gameId);
-            if (scoreboard) {
-              this.io.to(`lobby:${lobby.code}`).emit('scoreboard:state', { scoreboard });
-            }
-
-            // Schedule bot continues
-            this.scheduleBotContinues(gameId);
-          }
-        }
-
-        // Check if game is over
-        if (newState.status === 'GAME_OVER' && this.io) {
-          const lobby = await lobbyService.getLobbyById(game.lobbyId);
-          if (lobby) {
-            const winner = gameService.getWinner(newState);
-            if (winner) {
-              this.io.to(`lobby:${lobby.code}`).emit('game:over', {
-                finalScores: newState.scores,
-                winner: { id: winner.id, name: winner.name },
-              });
-            }
-          }
-        }
-
-        // Release lock BEFORE processing next action to allow same bot to play again
+        // Release this bot's lock before orchestrating follow-up actions so the
+        // same bot can be scheduled again (e.g. it wins the trick and leads next).
         actionLocks.delete(lockKey);
 
-        // Process next bot action if needed (only if game not over and not in scoreboard)
-        if (newState.status === 'PLAYING' || newState.status === 'BIDDING') {
-          await this.processPendingBotActions(gameId);
+        // Shared post-play orchestration: broadcasts state, runs the
+        // hand-winner popup / inter-hand pause, advances to the next hand or
+        // scoreboard, and drives any pending bot actions.
+        if (this.io) {
+          const { handleAfterCardPlay } = await import('../socket/playFlow');
+          await handleAfterCardPlay(this.io, gameId, { trickComplete, roundComplete });
         }
       } catch (error) {
         console.error(`Error in bot card play for ${botPlayerId}:`, error);
@@ -571,11 +522,9 @@ export class BotService {
 
       if (updatedGame) {
         if (updatedGame.gameState.status === 'GAME_OVER') {
-          const winner = gameService.getWinner(updatedGame.gameState);
-          this.io.to(`lobby:${lobby.code}`).emit('game:completed', {
-            finalScores: updatedGame.gameState.scores,
-            winner: winner || { id: '', name: 'Unknown' },
-          });
+          // Finalize and broadcast the winner(s).
+          const { broadcastFinalWinner } = await import('../socket/playFlow');
+          await broadcastFinalWinner(this.io, gameId);
         } else {
           // Send new round bidding state
           const sockets = await this.io.in(`lobby:${lobby.code}`).fetchSockets();

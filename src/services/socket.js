@@ -246,6 +246,15 @@ class SocketService {
     }
   }
 
+  /**
+   * Requests the final scoreboard for a completed game.
+   */
+  getFinalScoreboard() {
+    if (this.socket?.connected) {
+      this.socket.emit('game:get-final-scoreboard');
+    }
+  }
+
   // =====================
   // Event Listeners
   // =====================

@@ -9,9 +9,10 @@ import {
   SocketErrorCodes,
 } from '../types/socket';
 import { gameService } from '../services/game.service';
+import { scoreboardService } from '../services/scoreboard.service';
 import { lobbyService } from '../services/lobby.service';
 import { botService } from '../services/bot.service';
-import { broadcastScoreboard } from './scoreboard.events';
+import { handleAfterCardPlay } from './playFlow';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -92,7 +93,7 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       }
 
       // Play card
-      const { state, trickComplete, roundComplete } = await gameService.playCard({
+      const { trickComplete, roundComplete } = await gameService.playCard({
         gameId: socket.data.gameId,
         playerId: socket.data.playerId,
         card,
@@ -100,50 +101,9 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
 
       console.log(`Player ${socket.data.playerName} played ${card.rank} of ${card.suit}`);
 
-      // Get the updated game
-      const game = await gameService.getGameById(socket.data.gameId);
-      if (!game) {
-        throw new Error('Game not found after play');
-      }
-
-      // Get lobby for room name
-      const lobby = await lobbyService.getLobbyById(game.lobbyId);
-      if (!lobby) {
-        throw new Error('Lobby not found');
-      }
-
-      // Send personalized game state to each player
-      const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();
-      for (const s of sockets) {
-        const clientState = gameService.getClientGameState(game, s.data.playerId);
-        s.emit('game:update', { gameState: clientState });
-      }
-
-      // Process pending bot actions
-      await botService.processPendingBotActions(socket.data.gameId);
-
-      // Send trick complete event if applicable
-      if (trickComplete && state.roundState?.currentTrick) {
-        const trick = state.roundState.currentTrick;
-        const winner = state.players.find(p => p.id === trick.winnerId);
-        io.to(`lobby:${lobby.code}`).emit('game:trick-completed', {
-          trickNumber: state.roundState.trickNumber - 1,
-          winnerId: trick.winnerId || '',
-          winnerName: winner?.name || 'Unknown',
-          cardsPlayed: trick.cardsPlayed,
-        });
-      }
-
-      // Send round complete event and scoreboard if applicable
-      if (roundComplete && state.status === 'ROUND_SCOREBOARD') {
-        io.to(`lobby:${lobby.code}`).emit('game:round-complete', {
-          roundNumber: state.currentRound,
-          scores: state.scores,
-        });
-
-        // Broadcast scoreboard state and trigger bot continues
-        await broadcastScoreboard(io, socket.data.gameId);
-      }
+      // Broadcast the new state, run the hand-winner popup / inter-hand pause,
+      // and drive any pending bot actions.
+      await handleAfterCardPlay(io, socket.data.gameId, { trickComplete, roundComplete });
     } catch (error) {
       console.error('Error playing card:', error);
       socket.emit('game:error', {
@@ -184,6 +144,44 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       socket.emit('game:error', {
         message: 'Failed to fetch game state',
         code: SocketErrorCodes.GAME_NOT_FOUND,
+      });
+    }
+  });
+
+  /**
+   * Returns the final scoreboard (all round scores + totals) for a completed
+   * game, including the backend-determined winner(s).
+   */
+  socket.on('game:get-final-scoreboard', async () => {
+    try {
+      if (!socket.data.gameId) {
+        socket.emit('game:error', {
+          message: 'Not in a game',
+          code: SocketErrorCodes.GAME_NOT_FOUND,
+        });
+        return;
+      }
+
+      const scoreboard = await scoreboardService.getScoreboardState(socket.data.gameId);
+      const result = await scoreboardService.finalizeGame(socket.data.gameId);
+      if (!scoreboard || !result) {
+        socket.emit('game:error', {
+          message: 'Final scoreboard not available',
+          code: SocketErrorCodes.GAME_NOT_FOUND,
+        });
+        return;
+      }
+
+      socket.emit('game:final-scoreboard', {
+        scoreboard,
+        winnerIds: result.winnerIds,
+        winningScore: result.winningScore,
+      });
+    } catch (error) {
+      console.error('Error fetching final scoreboard:', error);
+      socket.emit('game:error', {
+        message: error instanceof Error ? error.message : 'Failed to get final scoreboard',
+        code: SocketErrorCodes.INVALID_ACTION,
       });
     }
   });

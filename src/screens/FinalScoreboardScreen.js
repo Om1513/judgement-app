@@ -12,7 +12,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 
-// Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
   spades: { symbol: "♠", color: "#FFF8E7" },
   hearts: { symbol: "♥", color: "#FF5D6C" },
@@ -20,97 +19,38 @@ const TRUMP_DISPLAY = {
   clubs: { symbol: "♣", color: "#FFF8E7" },
 };
 
-export default function ScoreBoardScreen({ navigation, route }) {
+/**
+ * Read-only final scoreboard for a completed game. Shows every round's scores
+ * plus totals, with the winning player column(s) highlighted (crown + glow).
+ * Winner(s) come from the backend (authoritative) - never recomputed here.
+ */
+export default function FinalScoreboardScreen({ navigation, route }) {
   const {
-    scoreboard: initialScoreboard,
     currentPlayerId = "",
-    currentPlayerName = "",
+    winnerIds: initialWinnerIds = [],
   } = route.params || {};
 
-  const [scoreboard, setScoreboard] = useState(initialScoreboard || null);
-
-  // Check if current player has already continued based on initial scoreboard
-  const initialContinued = initialScoreboard?.players?.find(p => p.id === currentPlayerId)?.hasContinued || false;
-  const [hasContinued, setHasContinued] = useState(initialContinued);
-  const [isWaiting, setIsWaiting] = useState(initialContinued);
+  const [scoreboard, setScoreboard] = useState(null);
+  const [winnerIds, setWinnerIds] = useState(initialWinnerIds);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  const buttonPulse = useRef(new Animated.Value(1)).current;
 
-  const [fontsLoaded] = useFonts({
-    Bangers_400Regular,
-  });
+  const [fontsLoaded] = useFonts({ Bangers_400Regular });
 
-  // Listen for socket events
   useEffect(() => {
-    // Request scoreboard state only if we don't have initial data
-    if (!initialScoreboard) {
-      socketService.getScoreboardState();
-    }
+    socketService.getFinalScoreboard();
 
-    // Listen for scoreboard updates
-    const unsubscribeState = socketService.on('scoreboard:state', (data) => {
-      console.log('Scoreboard state:', data.scoreboard);
+    const unsubscribe = socketService.on("game:final-scoreboard", (data) => {
       setScoreboard(data.scoreboard);
-
-      // Check if current player has already continued
-      const currentPlayer = data.scoreboard.players.find(p => p.id === currentPlayerId);
-      if (currentPlayer?.hasContinued) {
-        setHasContinued(true);
-        setIsWaiting(true);
+      if (Array.isArray(data.winnerIds)) {
+        setWinnerIds(data.winnerIds);
       }
     });
 
-    // Listen for player continued
-    const unsubscribeContinued = socketService.on('scoreboard:player-continued', (data) => {
-      console.log('Player continued:', data.playerName);
-    });
+    return () => unsubscribe();
+  }, []);
 
-    // Listen for all continued - navigate to next round
-    const unsubscribeAllContinued = socketService.on('scoreboard:all-continued', () => {
-      console.log('All players continued');
-    });
-
-    // Listen for round bidding started
-    const unsubscribeBidding = socketService.on('round:bidding-started', (data) => {
-      console.log('Next round bidding started');
-      navigation.replace('Bidding', {
-        gameState: data.gameState,
-        currentPlayerId,
-        currentPlayerName,
-      });
-    });
-
-    // Surface any server-side error (e.g. while finalizing the game).
-    const unsubscribeGameError = socketService.on('game:error', (data) => {
-      console.warn('Game error on scoreboard:', data.message, data.code);
-    });
-
-    // Listen for the final winner - go to the celebration screen.
-    const unsubscribeFinalWinner = socketService.on('game:final-winner', (data) => {
-      console.log('Final winner:', data);
-      navigation.replace('FinalWinner', {
-        winners: data.winners,
-        winningScore: data.winningScore,
-        isTie: data.isTie,
-        finalScores: data.finalScores,
-        currentPlayerId,
-        currentPlayerName,
-      });
-    });
-
-    return () => {
-      unsubscribeState();
-      unsubscribeContinued();
-      unsubscribeAllContinued();
-      unsubscribeBidding();
-      unsubscribeGameError();
-      unsubscribeFinalWinner();
-    };
-  }, [navigation, currentPlayerId, currentPlayerName]);
-
-  // Animations
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -127,43 +67,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
     ]).start();
   }, []);
 
-  // Button pulse animation
-  useEffect(() => {
-    if (!hasContinued) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(buttonPulse, {
-            toValue: 1.05,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(buttonPulse, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    }
-  }, [hasContinued]);
-
-  const handleContinue = () => {
-    if (hasContinued) return;
-    setHasContinued(true);
-    setIsWaiting(true);
-    socketService.scoreboardContinue();
-  };
-
-  // Find leading player
-  const getLeadingPlayer = () => {
-    if (!scoreboard?.players?.length) return null;
-    return scoreboard.players.reduce((max, p) =>
-      p.totalScore > (max?.totalScore || 0) ? p : max
-    , scoreboard.players[0]);
-  };
-
   if (!fontsLoaded || !scoreboard) {
     return (
       <View style={styles.container}>
@@ -176,7 +79,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
     );
   }
 
-  const leadingPlayer = getLeadingPlayer();
+  const isWinner = (playerId) => winnerIds.includes(playerId);
 
   return (
     <View style={styles.container}>
@@ -194,15 +97,11 @@ export default function ScoreBoardScreen({ navigation, route }) {
         <Animated.View
           style={[
             styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          {/* Title */}
           <View style={styles.titleContainer}>
-            <Text style={styles.title}>Score Board</Text>
+            <Text style={styles.title}>Final Results</Text>
           </View>
 
           {/* Scoreboard Table Card */}
@@ -221,11 +120,13 @@ export default function ScoreBoardScreen({ navigation, route }) {
                 </View>
                 {scoreboard.players.map((player) => (
                   <View key={player.id} style={[styles.cell, styles.playerCell]}>
+                    {isWinner(player.id) && <Text style={styles.crownHeader}>👑</Text>}
                     <Text
                       style={[
                         styles.headerText,
                         styles.playerHeaderText,
                         player.id === currentPlayerId && styles.currentPlayerText,
+                        isWinner(player.id) && styles.winnerHeaderText,
                       ]}
                       numberOfLines={1}
                     >
@@ -238,19 +139,13 @@ export default function ScoreBoardScreen({ navigation, route }) {
               {/* Score Rows */}
               <View style={styles.rowsContainer}>
                 {scoreboard.rows.map((row, index) => {
-                  const isCurrentRound = row.roundNumber === scoreboard.currentRound;
                   const trumpInfo = TRUMP_DISPLAY[row.trump.suit] || { symbol: "?", color: "#FFF8E7" };
 
                   return (
                     <View
                       key={row.roundNumber}
-                      style={[
-                        styles.dataRow,
-                        index % 2 === 1 && styles.alternateRow,
-                        isCurrentRound && styles.currentRoundRow,
-                      ]}
+                      style={[styles.dataRow, index % 2 === 1 && styles.alternateRow]}
                     >
-                      {/* Trump */}
                       <View style={[styles.cell, styles.trumpCell]}>
                         <Text style={[styles.trumpSymbol, { color: trumpInfo.color }]}>
                           {trumpInfo.symbol}
@@ -260,18 +155,20 @@ export default function ScoreBoardScreen({ navigation, route }) {
                         </Text>
                       </View>
 
-                      {/* Round number */}
                       <View style={[styles.cell, styles.roundCell]}>
                         <Text style={styles.roundNumber}>{row.roundNumber}</Text>
                       </View>
 
-                      {/* Player scores */}
                       {row.scores.map((score) => {
                         const hasScore = score.score !== null;
                         const madeBid = hasScore && score.bid === score.handsMade;
+                        const winnerCol = isWinner(score.playerId);
 
                         return (
-                          <View key={score.playerId} style={[styles.cell, styles.playerCell]}>
+                          <View
+                            key={score.playerId}
+                            style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
+                          >
                             {hasScore ? (
                               <Text
                                 style={[
@@ -305,17 +202,16 @@ export default function ScoreBoardScreen({ navigation, route }) {
                   <Text style={styles.totalLabel}>Total</Text>
                 </View>
                 {scoreboard.players.map((player) => {
-                  const isLeading = player.id === leadingPlayer?.id;
-
+                  const winnerCol = isWinner(player.id);
                   return (
-                    <View key={player.id} style={[styles.cell, styles.playerCell]}>
+                    <View
+                      key={player.id}
+                      style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
+                    >
                       <View style={styles.totalScoreContainer}>
-                        {isLeading && <Text style={styles.crownIcon}>👑</Text>}
+                        {winnerCol && <Text style={styles.crownIcon}>👑</Text>}
                         <Text
-                          style={[
-                            styles.totalScoreText,
-                            isLeading && styles.leadingScore,
-                          ]}
+                          style={[styles.totalScoreText, winnerCol && styles.leadingScore]}
                         >
                           {player.totalScore}
                         </Text>
@@ -327,43 +223,20 @@ export default function ScoreBoardScreen({ navigation, route }) {
             </LinearGradient>
           </View>
 
-          {/* Continue Button */}
+          {/* Home button */}
           <View style={styles.buttonContainer}>
-            {!hasContinued ? (
-              <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
-                <TouchableOpacity
-                  onPress={handleContinue}
-                  activeOpacity={0.8}
-                  style={styles.continueButton}
-                >
-                  <LinearGradient
-                    colors={["#FF8C00", "#FF6600", "#E65500"]}
-                    style={styles.continueButtonGradient}
-                  >
-                    <Text style={styles.continueButtonText}>CONTINUE</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            ) : (
-              <View style={styles.waitingContainer}>
-                <Text style={styles.waitingText}>Waiting for other players...</Text>
-                <View style={styles.continuedList}>
-                  {scoreboard.players.map((player) => (
-                    <View key={player.id} style={styles.continuedItem}>
-                      <Text style={styles.continuedName}>{player.name}</Text>
-                      <Text
-                        style={[
-                          styles.continuedStatus,
-                          player.hasContinued ? styles.continuedYes : styles.continuedNo,
-                        ]}
-                      >
-                        {player.hasContinued ? "Ready" : "..."}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Home")}
+              activeOpacity={0.8}
+              style={styles.homeButton}
+            >
+              <LinearGradient
+                colors={["#FF8C00", "#FF6600", "#E65500"]}
+                style={styles.homeButtonGradient}
+              >
+                <Text style={styles.homeButtonText}>RETURN TO HOME</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </Animated.View>
 
@@ -405,8 +278,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 20,
     letterSpacing: 3,
   },
-
-  // Table card
   tableContainer: {
     flex: 1,
     borderRadius: 16,
@@ -419,8 +290,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-
-  // Shared cell + column widths (flex based so it fills the width)
   cell: {
     paddingHorizontal: 4,
     justifyContent: "center",
@@ -437,7 +306,10 @@ const styles = StyleSheet.create({
   playerCell: {
     flex: 1.2,
   },
-
+  winnerColumn: {
+    backgroundColor: "rgba(255, 215, 0, 0.12)",
+    borderRadius: 6,
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -459,7 +331,16 @@ const styles = StyleSheet.create({
   currentPlayerText: {
     color: "#FF8C00",
   },
-
+  winnerHeaderText: {
+    color: "#FFD700",
+    textShadowColor: "rgba(255, 215, 0, 0.6)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  crownHeader: {
+    fontSize: 14,
+    marginBottom: 2,
+  },
   rowsContainer: {
     flex: 1,
     paddingVertical: 4,
@@ -475,10 +356,6 @@ const styles = StyleSheet.create({
   alternateRow: {
     backgroundColor: "rgba(42, 22, 84, 0.4)",
   },
-  currentRoundRow: {
-    backgroundColor: "rgba(255, 215, 0, 0.12)",
-  },
-
   trumpSymbol: {
     fontSize: 20,
     fontWeight: "bold",
@@ -515,8 +392,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6E5C94",
   },
-
-  // Total row
   totalContainer: {
     marginTop: 4,
     borderRadius: 14,
@@ -565,14 +440,12 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
-
-  // Continue button
   buttonContainer: {
     marginTop: 16,
     alignItems: "center",
     paddingBottom: 16,
   },
-  continueButton: {
+  homeButton: {
     borderRadius: 14,
     overflow: "hidden",
     shadowColor: "#FF6600",
@@ -581,12 +454,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
-  continueButtonGradient: {
+  homeButtonGradient: {
     paddingVertical: 11,
     paddingHorizontal: 50,
     borderRadius: 12,
   },
-  continueButtonText: {
+  homeButtonText: {
     fontSize: 19,
     fontFamily: "Bangers_400Regular",
     color: "#FFFFFF",
@@ -594,46 +467,5 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
     letterSpacing: 3,
-  },
-  waitingContainer: {
-    alignItems: "center",
-    backgroundColor: "rgba(42, 22, 84, 0.8)",
-    padding: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#5E3A9E",
-  },
-  waitingText: {
-    fontSize: 16,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginBottom: 10,
-  },
-  continuedList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  continuedItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 8,
-    marginVertical: 4,
-  },
-  continuedName: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginRight: 5,
-  },
-  continuedStatus: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-  },
-  continuedYes: {
-    color: "#4CAF50",
-  },
-  continuedNo: {
-    color: "#888888",
   },
 });

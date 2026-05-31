@@ -8,11 +8,13 @@ import {
   Animated,
   Alert,
   ScrollView,
+  Pressable,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
+import HandWinnerOverlay from "../components/HandWinnerOverlay";
 
 // Suit symbols
 const SUIT_SYMBOLS = {
@@ -40,6 +42,9 @@ export default function GameTableScreen({ navigation, route }) {
   const [gameState, setGameState] = useState(initialGameState);
   const [selectedCard, setSelectedCard] = useState(null);
   const [isPlayingCard, setIsPlayingCard] = useState(false);
+  // Hand (trick) winner popup. Non-null while the popup is shown; card play is
+  // disabled during this window (the backend also pauses, so bots wait too).
+  const [handWinner, setHandWinner] = useState(null);
 
   // Animations
   const turnGlow = useRef(new Animated.Value(0.6)).current;
@@ -89,13 +94,13 @@ export default function GameTableScreen({ navigation, route }) {
       ];
     }
 
-    // For 3 players, use top, bottom-left, bottom-right
+    // For 3 players: one on the left, one on the right, me centered at bottom.
     if (players.length === 3) {
       return [
-        { ...players[(myIndex + 2) % 3], seatIndex: 0 }, // Top
-        { ...players[(myIndex + 1) % 3], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me at bottom
-        null, // Left empty
+        null, // Top empty
+        { ...players[(myIndex + 2) % 3], seatIndex: 1 }, // Right
+        { ...players[myIndex], seatIndex: 2 }, // Me at bottom (centered)
+        { ...players[(myIndex + 1) % 3], seatIndex: 3 }, // Left
       ];
     }
 
@@ -166,9 +171,20 @@ export default function GameTableScreen({ navigation, route }) {
       setIsPlayingCard(false);
     });
 
-    const unsubscribeTrickComplete = socketService.on("game:trick-completed", (data) => {
-      console.log(`Trick ${data.trickNumber} won by ${data.winnerName}`);
-      // Brief notification - you could add a toast/animation here
+    const unsubscribeHandWinner = socketService.on("hand:winner-announced", (data) => {
+      console.log(`Hand ${data.trickNumber} won by ${data.playerName}`);
+      setHandWinner({
+        playerId: data.playerId,
+        playerName: data.playerName,
+        trickNumber: data.trickNumber,
+      });
+      // Clear any pending card selection so play is fully blocked.
+      setSelectedCard(null);
+    });
+
+    const unsubscribeHandNext = socketService.on("hand:next-started", () => {
+      console.log("Next hand started");
+      setHandWinner(null);
     });
 
     const unsubscribeRoundComplete = socketService.on("game:round-complete", (data) => {
@@ -179,6 +195,19 @@ export default function GameTableScreen({ navigation, route }) {
       console.log("Scoreboard state received, navigating to ScoreBoard");
       navigation.replace("ScoreBoard", {
         scoreboard: data.scoreboard,
+        currentPlayerId,
+        currentPlayerName,
+      });
+    });
+
+    // Final round skips the scoreboard - go straight to the winner screen.
+    const unsubscribeFinalWinner = socketService.on("game:final-winner", (data) => {
+      console.log("Final winner:", data);
+      navigation.replace("FinalWinner", {
+        winners: data.winners,
+        winningScore: data.winningScore,
+        isTie: data.isTie,
+        finalScores: data.finalScores,
         currentPlayerId,
         currentPlayerName,
       });
@@ -195,14 +224,17 @@ export default function GameTableScreen({ navigation, route }) {
     return () => {
       unsubscribeUpdate();
       unsubscribeError();
-      unsubscribeTrickComplete();
+      unsubscribeHandWinner();
+      unsubscribeHandNext();
       unsubscribeRoundComplete();
       unsubscribeScoreboard();
+      unsubscribeFinalWinner();
       unsubscribeGameOver();
     };
   }, [navigation, currentPlayerId, currentPlayerName]);
 
-  const handleCardPress = (_card, index) => {
+  const handleCardPress = (card, index) => {
+    if (handWinner) return;
     if (!isMyTurn || isPlayingCard || gameState?.status !== "PLAYING") return;
 
     if (!playableCards.includes(index)) {
@@ -210,15 +242,13 @@ export default function GameTableScreen({ navigation, route }) {
       return;
     }
 
-    setSelectedCard(index);
-  };
-
-  const handlePlayCard = () => {
-    if (selectedCard === null || !isMyTurn || isPlayingCard) return;
-
-    const card = myHand[selectedCard];
-    setIsPlayingCard(true);
-    socketService.playCard(card);
+    // First tap selects the card; tapping the already-selected card plays it.
+    if (selectedCard === index) {
+      setIsPlayingCard(true);
+      socketService.playCard(card);
+    } else {
+      setSelectedCard(index);
+    }
   };
 
   const renderPlayerSeat = (player, position) => {
@@ -227,28 +257,30 @@ export default function GameTableScreen({ navigation, route }) {
     const isCurrentTurn = player.id === gameState?.currentTurnPlayerId;
     const isMe = player.id === currentPlayerId;
 
+    // For 3 players, nudge the left/right seats a bit higher.
+    const isThreePlayers = players.length === 3;
+    const sideUp = isThreePlayers && (position === 1 || position === 3);
+
     return (
-      <Animated.View
+      <View
         key={player.id}
-        style={[
-          styles.playerSeat,
-          styles[`seat${position}`],
-          isCurrentTurn && { opacity: turnGlow },
-        ]}
+        style={[styles.playerSeat, styles[`seat${position}`], sideUp && styles.seatSideUp]}
       >
-        <LinearGradient
-          colors={
-            isCurrentTurn
-              ? ["rgba(255, 215, 0, 0.3)", "rgba(255, 215, 0, 0.1)"]
-              : ["rgba(42, 22, 84, 0.8)", "rgba(26, 16, 48, 0.8)"]
-          }
-          style={[
-            styles.playerSeatInner,
-            isCurrentTurn && styles.currentTurnSeat,
-          ]}
-        >
+        <View style={[styles.seatBox, isCurrentTurn && styles.seatBoxActive]}>
+          {isCurrentTurn && (
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.seatGlowRing, { opacity: turnGlow }]}
+            />
+          )}
           {/* Avatar */}
-          <View style={[styles.avatar, isCurrentTurn && styles.avatarGlow]}>
+          <View
+            style={[
+              styles.avatar,
+              isCurrentTurn && styles.avatarGlow,
+              isCurrentTurn && styles.avatarTurnHighlight,
+            ]}
+          >
             <Text style={styles.avatarText}>
               {player.name.charAt(0).toUpperCase()}
             </Text>
@@ -262,25 +294,11 @@ export default function GameTableScreen({ navigation, route }) {
           {/* Bid / Hands Made */}
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreText}>
-              {player.tricksWon} / {player.bid ?? "-"}
+              {player.tricksWon} / {player.bid ?? 0}
             </Text>
           </View>
-
-          {/* Host badge */}
-          {player.isHost && (
-            <View style={styles.hostBadge}>
-              <Text style={styles.hostBadgeText}>HOST</Text>
-            </View>
-          )}
-
-          {/* Cards remaining indicator */}
-          {!isMe && (
-            <View style={styles.cardCountBadge}>
-              <Text style={styles.cardCountText}>{player.cardCount}</Text>
-            </View>
-          )}
-        </LinearGradient>
-      </Animated.View>
+        </View>
+      </View>
     );
   };
 
@@ -314,19 +332,6 @@ export default function GameTableScreen({ navigation, route }) {
             </View>
           );
         })}
-
-        {/* Show lead suit indicator */}
-        {leadSuit && (
-          <View style={styles.leadSuitIndicator}>
-            <Text style={styles.leadSuitLabel}>LEAD</Text>
-            <Text style={[
-              styles.leadSuitSymbol,
-              (leadSuit === "hearts" || leadSuit === "diamonds") && styles.redCard
-            ]}>
-              {SUIT_SYMBOLS[leadSuit]}
-            </Text>
-          </View>
-        )}
       </View>
     );
   };
@@ -398,24 +403,6 @@ export default function GameTableScreen({ navigation, route }) {
             );
           })}
         </ScrollView>
-
-        {/* Play button */}
-        {selectedCard !== null && isMyTurn && (
-          <TouchableOpacity
-            onPress={handlePlayCard}
-            disabled={isPlayingCard}
-            style={styles.playButtonContainer}
-          >
-            <LinearGradient
-              colors={isPlayingCard ? ["#666", "#444"] : ["#4CAF50", "#388E3C"]}
-              style={styles.playButton}
-            >
-              <Text style={styles.playButtonText}>
-                {isPlayingCard ? "Playing..." : "Play Card"}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
       </View>
     );
   };
@@ -459,28 +446,25 @@ export default function GameTableScreen({ navigation, route }) {
         style={styles.background}
         resizeMode="cover"
       >
-        {/* Round indicator - top right */}
+        {/* Tapping any empty area deselects the currently selected card. */}
+        <Pressable style={styles.touchableArea} onPress={() => setSelectedCard(null)}>
+        {/* Round + Trump indicator - top right */}
         <View style={styles.roundIndicator}>
           <Text style={styles.roundIndicatorText}>
             Round {currentRound}/{totalRounds}
           </Text>
-          <Text style={styles.handIndicatorText}>
-            Hand {trickNumber}/{handSize}
-          </Text>
-        </View>
-
-        {/* Trump indicator - top left */}
-        <View style={styles.trumpIndicator}>
-          <Text style={styles.trumpIndicatorLabel}>TRUMP</Text>
-          <Text
-            style={[
-              styles.trumpIndicatorSymbol,
-              (trump?.suit === "hearts" || trump?.suit === "diamonds") &&
-                styles.trumpIndicatorRed,
-            ]}
-          >
-            {trump?.symbol}
-          </Text>
+          <View style={styles.trumpRow}>
+            <Text style={styles.trumpRowLabel}>TRUMP</Text>
+            <Text
+              style={[
+                styles.trumpRowSymbol,
+                (trump?.suit === "hearts" || trump?.suit === "diamonds") &&
+                  styles.trumpRowSymbolRed,
+              ]}
+            >
+              {trump?.symbol}
+            </Text>
+          </View>
         </View>
 
         {/* Leave button - bottom left */}
@@ -507,17 +491,6 @@ export default function GameTableScreen({ navigation, route }) {
           <Text style={styles.leaveButtonText}>LEAVE</Text>
         </TouchableOpacity>
 
-        {/* Turn indicator */}
-        {isMyTurn && gameState.status === "PLAYING" && (
-          <View style={styles.turnBanner}>
-            <LinearGradient
-              colors={["rgba(255, 215, 0, 0.9)", "rgba(245, 166, 35, 0.9)"]}
-              style={styles.turnBannerGradient}
-            >
-              <Text style={styles.turnBannerText}>YOUR TURN</Text>
-            </LinearGradient>
-          </View>
-        )}
 
         {/* Player seats */}
         <View style={styles.tableArea}>
@@ -538,18 +511,49 @@ export default function GameTableScreen({ navigation, route }) {
         {renderMyHand()}
 
         {/* Bottom player info (me) - seat 2 */}
-        <View style={styles.myInfoContainer}>
+        <View
+          style={[
+            styles.myInfoContainer,
+            players.length >= 3 && styles.myInfoLeft,
+          ]}
+        >
           {arrangedPlayers[2] && (
-            <View style={styles.myInfo}>
+            <View style={[styles.myInfo, isMyTurn && styles.seatBoxActive]}>
+              {isMyTurn && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.seatGlowRing, { opacity: turnGlow }]}
+                />
+              )}
+              <View
+                style={[
+                  styles.avatar,
+                  isMyTurn && styles.avatarGlow,
+                  isMyTurn && styles.avatarTurnHighlight,
+                ]}
+              >
+                <Text style={styles.avatarText}>
+                  {(currentPlayerName || arrangedPlayers[2].name || "Y")
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
               <Text style={styles.myInfoName}>You</Text>
               <View style={styles.myScoreContainer}>
                 <Text style={styles.myScoreText}>
-                  {arrangedPlayers[2].tricksWon} / {arrangedPlayers[2].bid ?? "-"}
+                  {arrangedPlayers[2].tricksWon} / {arrangedPlayers[2].bid ?? 0}
                 </Text>
               </View>
             </View>
           )}
         </View>
+
+        {/* Hand winner popup overlay */}
+        <HandWinnerOverlay
+          visible={!!handWinner}
+          winnerName={handWinner?.playerName}
+        />
+        </Pressable>
 
         <StatusBar style="light" hidden />
       </ImageBackground>
@@ -561,6 +565,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0a0612",
+  },
+  touchableArea: {
+    flex: 1,
   },
   background: {
     flex: 1,
@@ -574,74 +581,60 @@ const styles = StyleSheet.create({
     top: 16,
     right: 16,
     backgroundColor: "rgba(42, 22, 84, 0.9)",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    borderWidth: 1.5,
     borderColor: "#5E3A9E",
     alignItems: "center",
   },
   roundIndicatorText: {
-    fontSize: 14,
+    fontSize: 17,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
-  handIndicatorText: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    opacity: 0.8,
-    marginTop: 2,
-  },
-  trumpIndicator: {
-    position: "absolute",
-    top: 16,
-    left: 16,
-    backgroundColor: "rgba(42, 22, 84, 0.9)",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#FFD700",
+  trumpRow: {
     flexDirection: "row",
     alignItems: "center",
+    marginTop: 4,
   },
-  trumpIndicatorLabel: {
-    fontSize: 12,
+  trumpRowLabel: {
+    fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
-    marginRight: 8,
+    letterSpacing: 1,
+    marginRight: 7,
   },
-  trumpIndicatorSymbol: {
-    fontSize: 20,
-    color: "#1a1a2e",
+  trumpRowSymbol: {
+    fontSize: 21,
+    color: "#FFD700",
     textShadowColor: "#FFD700",
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
-  trumpIndicatorRed: {
-    color: "#e53935",
-    textShadowColor: "#e53935",
+  trumpRowSymbolRed: {
+    color: "#FF5D6C",
+    textShadowColor: "#FF5D6C",
   },
 
   // Leave button
   leaveButton: {
     position: "absolute",
-    bottom: 16,
+    top: 16,
     left: 16,
     backgroundColor: "rgba(183, 28, 28, 0.8)",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 9,
+    borderWidth: 1.5,
     borderColor: "#e53935",
   },
   leaveButtonText: {
-    fontSize: 12,
+    fontSize: 15,
     fontFamily: "Bangers_400Regular",
     color: "#FFF",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
 
   // Turn banner
@@ -679,10 +672,21 @@ const styles = StyleSheet.create({
     width: 90,
     alignItems: "center",
   },
-  seat0: { // Top
-    top: 0,
-    left: "50%",
-    transform: [{ translateX: -45 }],
+  seatBox: {
+    alignItems: "center",
+    backgroundColor: "rgba(42, 22, 84, 0.85)",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 215, 0, 0.5)",
+  },
+  seat0: { // Top - span the full table width and center the seat box
+    top: -85,
+    left: 0,
+    right: 0,
+    width: "100%",
+    alignItems: "center",
   },
   seat1: { // Right
     right: 0,
@@ -698,6 +702,10 @@ const styles = StyleSheet.create({
     left: 0,
     top: "50%",
     transform: [{ translateY: -50 }],
+  },
+  // For 3 players: raise the left/right seats above the table center.
+  seatSideUp: {
+    top: "40%",
   },
   emptySeat: {
     width: 90,
@@ -724,6 +732,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
+    // Constant border so the turn highlight doesn't change the avatar size.
+    borderWidth: 2.5,
+    borderColor: "transparent",
   },
   avatarGlow: {
     shadowColor: "#FFD700",
@@ -731,17 +742,44 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 8,
   },
+  avatarTurnHighlight: {
+    borderColor: "#FFD700",
+    backgroundColor: "#7E3FF2",
+  },
+  // Solid gold border on the seat box of the player whose turn it is.
+  seatBoxActive: {
+    borderColor: "#FFD700",
+  },
+  // Animated pulsing glow border around the active player's seat box.
+  seatGlowRing: {
+    position: "absolute",
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 14,
+  },
   avatarText: {
     fontSize: 16,
     fontFamily: "Bangers_400Regular",
     color: "#FFF",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   playerName: {
     fontSize: 11,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     textAlign: "center",
-    maxWidth: 70,
+    maxWidth: 80,
+    paddingHorizontal: 5,
   },
   myName: {
     color: "#FFD700",
@@ -757,6 +795,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Bangers_400Regular",
     color: "#4CAF50",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   hostBadge: {
     position: "absolute",
@@ -831,25 +871,42 @@ const styles = StyleSheet.create({
   redCard: {
     color: "#e53935",
   },
-  leadSuitIndicator: {
+  // Lead suit banner (top center)
+  leadBannerContainer: {
     position: "absolute",
-    top: -30,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 90,
+  },
+  leadBanner: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "rgba(42, 22, 84, 0.92)",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFD700",
   },
-  leadSuitLabel: {
-    fontSize: 10,
+  leadBannerLabel: {
+    fontSize: 13,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
-    marginRight: 4,
+    letterSpacing: 1,
+    marginRight: 8,
   },
-  leadSuitSymbol: {
-    fontSize: 14,
-    color: "#1a1a2e",
+  leadBannerSymbol: {
+    fontSize: 22,
+    color: "#FFD700",
+    textShadowColor: "#FFD700",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+  leadBannerSymbolRed: {
+    color: "#FF5D6C",
+    textShadowColor: "#FF5D6C",
   },
 
   // My hand
@@ -862,6 +919,8 @@ const styles = StyleSheet.create({
   },
   myHandScroll: {
     paddingHorizontal: 20,
+    // Leave room above the cards so a selected card can rise without being clipped.
+    paddingTop: 24,
     alignItems: "flex-end",
   },
   handCard: {
@@ -923,16 +982,34 @@ const styles = StyleSheet.create({
   myInfoContainer: {
     position: "absolute",
     bottom: 100,
-    left: "50%",
-    transform: [{ translateX: -40 }],
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  // For 3-4 players: put our own info in the bottom-left corner (90px wide,
+  // starting at the table's left margin) so it clears the centered card hand.
+  myInfoLeft: {
+    left: 20,
+    right: undefined,
+    bottom: 24,
+    width: 90,
+    alignItems: "center",
   },
   myInfo: {
     alignItems: "center",
+    backgroundColor: "rgba(42, 22, 84, 0.85)",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 215, 0, 0.5)",
   },
   myInfoName: {
     fontSize: 12,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
   myScoreContainer: {
     backgroundColor: "rgba(0, 0, 0, 0.4)",
@@ -945,6 +1022,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#4CAF50",
+    textAlign: "center",
+    paddingHorizontal: 5,
   },
 
   // Bidding phase overlay

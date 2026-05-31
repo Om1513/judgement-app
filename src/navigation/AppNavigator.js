@@ -7,6 +7,8 @@ import LobbyScreen from "../screens/LobbyScreen";
 import BiddingScreen from "../screens/BiddingScreen";
 import GameTableScreen from "../screens/GameTableScreen";
 import ScoreBoardScreen from "../screens/ScoreBoardScreen";
+import FinalWinnerScreen from "../screens/FinalWinnerScreen";
+import FinalScoreboardScreen from "../screens/FinalScoreboardScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -70,6 +72,22 @@ export default function AppNavigator() {
       <Stack.Screen
         name="ScoreBoard"
         component={ScoreBoardScreen}
+        options={{
+          animation: "fade",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="FinalWinner"
+        component={FinalWinnerScreen}
+        options={{
+          animation: "fade",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="FinalScoreboard"
+        component={FinalScoreboardScreen}
         options={{
           animation: "fade",
           gestureEnabled: false,

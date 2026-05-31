@@ -8,6 +8,16 @@ import { initializeSocket } from './socket';
 
 const PORT = process.env.PORT || 3001;
 
+// Keep the server alive on unexpected async errors instead of letting Node
+// terminate the process (which would "stop the application" for all players).
+// These log the real cause so it can be diagnosed without a hard crash.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection (server kept alive):', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception (server kept alive):', error);
+});
+
 async function main(): Promise<void> {
   try {
     // Connect to database

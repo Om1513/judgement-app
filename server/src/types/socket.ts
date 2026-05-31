@@ -1,7 +1,7 @@
 // Socket.IO event types for Kachuful game
 
 import { LobbyState, LobbySettings, CreateLobbyInput, JoinLobbyInput } from './lobby';
-import { ClientGameState, SubmitBidInput, PlayCardInput, ScoreboardState } from './game';
+import { ClientGameState, SubmitBidInput, PlayCardInput, ScoreboardState, GameWinner } from './game';
 import { Card } from './player';
 
 // Client to Server events
@@ -26,6 +26,9 @@ export interface ClientToServerEvents {
   // Scoreboard events
   'scoreboard:get-state': () => void;
   'scoreboard:continue': () => void;
+
+  // Final game events
+  'game:get-final-scoreboard': () => void;
 }
 
 // Server to Client events
@@ -56,6 +59,24 @@ export interface ServerToClientEvents {
   'game:round-complete': (data: { roundNumber: number; scores: Record<string, number> }) => void;
   'game:over': (data: { finalScores: Record<string, number>; winner: { id: string; name: string } }) => void;
   'game:completed': (data: { finalScores: Record<string, number>; winner: { id: string; name: string } }) => void;
+
+  // Hand (trick) winner events
+  'hand:winner-announced': (data: { playerId: string; playerName: string; trickNumber: number }) => void;
+  'hand:next-started': (data: { trickNumber: number; leaderId: string }) => void;
+
+  // Final game winner events
+  'game:final-winner': (data: {
+    winners: GameWinner[];
+    winnerIds: string[];
+    winningScore: number;
+    isTie: boolean;
+    finalScores: Record<string, number>;
+  }) => void;
+  'game:final-scoreboard': (data: {
+    scoreboard: ScoreboardState;
+    winnerIds: string[];
+    winningScore: number;
+  }) => void;
 
   // Scoreboard events
   'scoreboard:state': (data: { scoreboard: ScoreboardState }) => void;
