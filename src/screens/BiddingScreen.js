@@ -400,6 +400,30 @@ export default function BiddingScreen({ navigation, route }) {
         {/* My Cards - Bottom */}
         {renderMyCards()}
 
+        {/* Leave button - bottom left */}
+        <TouchableOpacity
+          style={styles.leaveButton}
+          onPress={() => {
+            Alert.alert(
+              "Leave Game",
+              "Are you sure you want to leave the game?",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Leave",
+                  style: "destructive",
+                  onPress: () => {
+                    socketService.leaveLobby();
+                    navigation.navigate("Home");
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={styles.leaveButtonText}>LEAVE</Text>
+        </TouchableOpacity>
+
         <StatusBar style="light" hidden />
       </ImageBackground>
     </View>
@@ -436,6 +460,27 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
+  // Leave button
+  leaveButton: {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    backgroundColor: "rgba(183, 28, 28, 0.8)",
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: "#e53935",
+    zIndex: 100,
+    elevation: 100,
+  },
+  leaveButtonText: {
+    fontSize: 15,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFF",
+    letterSpacing: 1.5,
+  },
+
   // Modal
   modalOverlay: {
     position: "absolute",
@@ -448,7 +493,7 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: "100%",
-    maxWidth: 500,
+    maxWidth: 820,
     maxHeight: "100%",
     borderRadius: 16,
     overflow: "hidden",

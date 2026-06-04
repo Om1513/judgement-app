@@ -104,6 +104,65 @@ export default function GameTableScreen({ navigation, route }) {
       ];
     }
 
+    // For 5 players: seat everyone in turn order around the table, going
+    // clockwise from me (bottom-left): left -> top -> right -> bottom-right.
+    if (players.length === 5) {
+      return [
+        { ...players[(myIndex + 2) % 5], seatIndex: 0 }, // Top
+        { ...players[(myIndex + 3) % 5], seatIndex: 1 }, // Right
+        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
+        { ...players[(myIndex + 1) % 5], seatIndex: 3 }, // Left
+        { ...players[(myIndex + 4) % 5], seatIndex: 4 }, // Bottom-right
+      ];
+    }
+
+    // For 6 players: two players share the top row (clustered toward the
+    // center so the top-left leave button and top-right round/trump indicator
+    // stay clear). Going clockwise from me (bottom-left): left -> top-left ->
+    // top-right -> right -> bottom-right.
+    if (players.length === 6) {
+      return [
+        { ...players[(myIndex + 2) % 6], seatIndex: 0 }, // Top-left
+        { ...players[(myIndex + 4) % 6], seatIndex: 1 }, // Right
+        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
+        { ...players[(myIndex + 1) % 6], seatIndex: 3 }, // Left
+        { ...players[(myIndex + 5) % 6], seatIndex: 4 }, // Bottom-right
+        { ...players[(myIndex + 3) % 6], seatIndex: 5 }, // Top-right
+      ];
+    }
+
+    // For 7 players: three players share the top row (top-left, top-center,
+    // top-right). Going clockwise from me (bottom-left): left -> top-left ->
+    // top-center -> top-right -> right -> bottom-right.
+    if (players.length === 7) {
+      return [
+        { ...players[(myIndex + 2) % 7], seatIndex: 0 }, // Top-left
+        { ...players[(myIndex + 5) % 7], seatIndex: 1 }, // Right
+        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
+        { ...players[(myIndex + 1) % 7], seatIndex: 3 }, // Left
+        { ...players[(myIndex + 6) % 7], seatIndex: 4 }, // Bottom-right
+        { ...players[(myIndex + 4) % 7], seatIndex: 5 }, // Top-right
+        { ...players[(myIndex + 3) % 7], seatIndex: 6 }, // Top-center
+      ];
+    }
+
+    // For 8 players: four players share the top row (far-left, center-left,
+    // center-right, far-right). Going clockwise from me (bottom-left): left ->
+    // top far-left -> top center-left -> top center-right -> top far-right ->
+    // right -> bottom-right.
+    if (players.length === 8) {
+      return [
+        { ...players[(myIndex + 2) % 8], seatIndex: 0 }, // Top far-left
+        { ...players[(myIndex + 6) % 8], seatIndex: 1 }, // Right
+        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
+        { ...players[(myIndex + 1) % 8], seatIndex: 3 }, // Left
+        { ...players[(myIndex + 7) % 8], seatIndex: 4 }, // Bottom-right
+        { ...players[(myIndex + 5) % 8], seatIndex: 5 }, // Top far-right
+        { ...players[(myIndex + 3) % 8], seatIndex: 6 }, // Top center-left
+        { ...players[(myIndex + 4) % 8], seatIndex: 7 }, // Top center-right
+      ];
+    }
+
     return arranged;
   }, [players, currentPlayerId]);
 
@@ -261,10 +320,26 @@ export default function GameTableScreen({ navigation, route }) {
     const isThreePlayers = players.length === 3;
     const sideUp = isThreePlayers && (position === 1 || position === 3);
 
+    // For 6/7/8 players, the top seat (0) shares the top row with the other
+    // top seats, so it sits left of center instead of spanning the full width.
+    const isTopRowSplit = players.length >= 6 && players.length <= 8;
+
+    // For 8 players the top-center seat (6) shifts left to make room for the
+    // fourth top seat (7); for 7 players it stays centered.
+    const isEightPlayers = players.length === 8;
+
     return (
       <View
         key={player.id}
-        style={[styles.playerSeat, styles[`seat${position}`], sideUp && styles.seatSideUp]}
+        style={[
+          styles.playerSeat,
+          styles[`seat${position}`],
+          isTopRowSplit && position === 0 && styles.seat0Six,
+          isEightPlayers && position === 0 && styles.seat0Eight,
+          isEightPlayers && position === 5 && styles.seat5Eight,
+          isEightPlayers && position === 6 && styles.seat6Eight,
+          sideUp && styles.seatSideUp,
+        ]}
       >
         <View style={[styles.seatBox, isCurrentTurn && styles.seatBoxActive]}>
           {isCurrentTurn && (
@@ -497,6 +572,15 @@ export default function GameTableScreen({ navigation, route }) {
           {/* Top player (seat 0) */}
           {renderPlayerSeat(arrangedPlayers[0], 0)}
 
+          {/* Top-right player (seat 5) - 6/7-player layout */}
+          {arrangedPlayers[5] && renderPlayerSeat(arrangedPlayers[5], 5)}
+
+          {/* Top-center player (seat 6) - 7/8-player layout */}
+          {arrangedPlayers[6] && renderPlayerSeat(arrangedPlayers[6], 6)}
+
+          {/* Top center-right player (seat 7) - 8-player layout */}
+          {arrangedPlayers[7] && renderPlayerSeat(arrangedPlayers[7], 7)}
+
           {/* Right player (seat 1) */}
           {renderPlayerSeat(arrangedPlayers[1], 1)}
 
@@ -547,6 +631,9 @@ export default function GameTableScreen({ navigation, route }) {
             </View>
           )}
         </View>
+
+        {/* 5th player - bottom-right corner (mirrors "You" at bottom-left) */}
+        {arrangedPlayers[4] && renderPlayerSeat(arrangedPlayers[4], 4)}
 
         {/* Hand winner popup overlay */}
         <HandWinnerOverlay
@@ -702,6 +789,46 @@ const styles = StyleSheet.create({
     left: 0,
     top: "50%",
     transform: [{ translateY: -50 }],
+  },
+  seat4: { // Bottom-right (5th player) - mirrors "You" at bottom-left
+    bottom: 24,
+    right: 20,
+  },
+  seat0Six: { // Top-left of the two top seats (6-player layout)
+    top: -85,
+    left: "50%",
+    right: undefined,
+    width: 90,
+    transform: [{ translateX: -195 }], // left of center, with a gap from seat 5
+  },
+  seat5: { // Top-right of the top seats (6/7-player layout)
+    top: -85,
+    left: "50%",
+    width: 90,
+    transform: [{ translateX: 105 }], // right of center, with a gap from seat 0
+  },
+  seat6: { // Top-center of the three top seats (7-player layout)
+    top: -85,
+    left: "50%",
+    right: undefined,
+    width: 90,
+    transform: [{ translateX: -45 }], // centered on the table midline
+  },
+  seat0Eight: { // Top far-left (8-player layout) - wider than 6/7 layout
+    transform: [{ translateX: -235 }],
+  },
+  seat5Eight: { // Top far-right (8-player layout) - wider than 6/7 layout
+    transform: [{ translateX: 145 }],
+  },
+  seat6Eight: { // Top center-left (8-player layout) - left of midline
+    transform: [{ translateX: -110 }],
+  },
+  seat7: { // Top center-right of the four top seats (8-player layout)
+    top: -85,
+    left: "50%",
+    right: undefined,
+    width: 90,
+    transform: [{ translateX: 20 }], // right of the midline
   },
   // For 3 players: raise the left/right seats above the table center.
   seatSideUp: {

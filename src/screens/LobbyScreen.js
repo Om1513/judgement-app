@@ -272,7 +272,8 @@ export default function LobbyScreen({ navigation, route }) {
 
   const renderPlayers = () => {
     const { layout, host, others } = getPlayerLayout;
-    const isCompact = players.length > 5;
+    // All player counts use the normal card size (cards wrap across rows).
+    const isCompact = false;
 
     if (layout === "row") {
       return (
@@ -300,8 +301,11 @@ export default function LobbyScreen({ navigation, route }) {
     }
 
     if (layout === "twoRows") {
-      const firstRow = others.slice(0, 2);
-      const secondRow = others.slice(2);
+      // Split all players (host first) into a top row of 3 and a bottom row of
+      // the rest, e.g. 5 players => 3 on top, 2 on bottom.
+      const ordered = host ? [host, ...others] : others;
+      const firstRow = ordered.slice(0, 3);
+      const secondRow = ordered.slice(3);
 
       return (
         <View style={styles.playersContainer}>
@@ -313,19 +317,9 @@ export default function LobbyScreen({ navigation, route }) {
                 isHost={isCurrentUserHost}
                 canRemove={isCurrentUserHost}
                 onRemove={handleRemovePlayer}
-                size="compact"
+                size={isCompact ? "compact" : "normal"}
               />
             ))}
-          </View>
-          <View style={styles.playersRow}>
-            {host && (
-              <PlayerCard
-                player={host}
-                isHost={isCurrentUserHost}
-                canRemove={false}
-                size="compact"
-              />
-            )}
           </View>
           <View style={styles.playersRow}>
             {secondRow.map((player) => (
@@ -335,7 +329,7 @@ export default function LobbyScreen({ navigation, route }) {
                 isHost={isCurrentUserHost}
                 canRemove={isCurrentUserHost}
                 onRemove={handleRemovePlayer}
-                size="compact"
+                size={isCompact ? "compact" : "normal"}
               />
             ))}
           </View>
@@ -343,9 +337,11 @@ export default function LobbyScreen({ navigation, route }) {
       );
     }
 
-    // threeRows layout for 7-8 players
-    const topRow = others.slice(0, 3);
-    const bottomRow = others.slice(3);
+    // 7-8 players: split all players (host first) into a top row of 4 and a
+    // bottom row of the rest, e.g. 7 => 4 top / 3 bottom, 8 => 4 top / 4 bottom.
+    const ordered = host ? [host, ...others] : others;
+    const topRow = ordered.slice(0, 4);
+    const bottomRow = ordered.slice(4);
 
     return (
       <View style={styles.playersContainer}>
@@ -357,19 +353,9 @@ export default function LobbyScreen({ navigation, route }) {
               isHost={isCurrentUserHost}
               canRemove={isCurrentUserHost}
               onRemove={handleRemovePlayer}
-              size="compact"
+              size="normal"
             />
           ))}
-        </View>
-        <View style={styles.playersRow}>
-          {host && (
-            <PlayerCard
-              player={host}
-              isHost={isCurrentUserHost}
-              canRemove={false}
-              size="compact"
-            />
-          )}
         </View>
         <View style={styles.playersRow}>
           {bottomRow.map((player) => (
@@ -379,7 +365,7 @@ export default function LobbyScreen({ navigation, route }) {
               isHost={isCurrentUserHost}
               canRemove={isCurrentUserHost}
               onRemove={handleRemovePlayer}
-              size="compact"
+              size="normal"
             />
           ))}
         </View>
@@ -454,23 +440,8 @@ export default function LobbyScreen({ navigation, route }) {
               {/* Bottom Section */}
               <View style={styles.bottomSection}>
                 {isCurrentUserHost ? (
-                  // Host view - Add Bot and Start Game buttons
+                  // Host view - Start Game button
                   <View style={styles.startButtonContainer}>
-                    {/* Add Bot Button - shown when not at max players */}
-                    {players.length < (gameSettings.maxPlayers || 8) && (
-                      <TouchableOpacity
-                        onPress={handleAddBot}
-                        activeOpacity={0.8}
-                        style={styles.addBotButton}
-                      >
-                        <LinearGradient
-                          colors={["#FFB347", "#FF8C00", "#FF6600"]}
-                          style={styles.addBotButtonGradient}
-                        >
-                          <Text style={styles.addBotButtonText}>+ Add Bot</Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    )}
                     <Animated.View
                       style={[
                         styles.buttonGlow,
@@ -534,6 +505,27 @@ export default function LobbyScreen({ navigation, route }) {
                 )}
               </View>
             </Animated.View>
+
+            {/* Add Bot button - top right corner (host only, when not full) */}
+            {isCurrentUserHost &&
+              players.length < (gameSettings.maxPlayers || 8) && (
+                <Animated.View
+                  style={[styles.addBotTopRight, { opacity: fadeAnim }]}
+                >
+                  <TouchableOpacity
+                    onPress={handleAddBot}
+                    activeOpacity={0.8}
+                    style={styles.addBotButton}
+                  >
+                    <LinearGradient
+                      colors={["#FFB347", "#FF8C00", "#FF6600"]}
+                      style={styles.addBotButtonGradient}
+                    >
+                      <Text style={styles.addBotButtonText}>+ Add Bot</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
 
             {/* Leave button */}
             <Animated.View
@@ -646,15 +638,16 @@ const styles = StyleSheet.create({
   playerCount: {
     fontSize: 16,
     fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginTop: 8,
+    color: "#FFFFFF",
+    marginTop: 6,
     letterSpacing: 1,
-    opacity: 0.8,
   },
   centerSection: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    // Shift the player list up a little from the vertical center.
+    paddingBottom: 25,
   },
   playersContainer: {
     alignItems: "center",
@@ -673,8 +666,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
   },
+  addBotTopRight: {
+    position: "absolute",
+    top: "5%",
+    right: "3%",
+  },
   addBotButton: {
-    marginBottom: 15,
     borderRadius: 12,
     overflow: "hidden",
     shadowColor: "#FF6600",
