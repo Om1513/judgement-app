@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 import HandWinnerOverlay from "../components/HandWinnerOverlay";
+import PlayedCard from "../components/PlayedCard";
 
 // Suit symbols
 const SUIT_SYMBOLS = {
@@ -24,13 +25,94 @@ const SUIT_SYMBOLS = {
   clubs: "♣",
 };
 
-// Card position offsets for trick area (4 players)
-const TRICK_POSITIONS = [
-  { top: 0, left: "50%", transform: [{ translateX: -30 }] }, // Top player
-  { top: "50%", right: 0, transform: [{ translateY: -40 }] }, // Right player
-  { bottom: 0, left: "50%", transform: [{ translateX: -30 }] }, // Bottom player (me)
-  { top: "50%", left: 0, transform: [{ translateY: -40 }] }, // Left player
-];
+const CARD_W = 54;
+const CARD_H = 76;
+
+// Horizontal center offset (px from the table midline) for a top-row seat's
+// played card. The seat boxes themselves spread out widely for 6-8 players;
+// the cards use a scaled-in version of that spread so they stay on the table
+// while still sitting roughly under the matching avatar.
+function topCardCenterX(seatIndex, count) {
+  if (count <= 5) return 0; // single, centered top seat
+  const factor = 0.8;
+  if (count === 6 || count === 7) {
+    if (seatIndex === 0) return -150 * factor;
+    if (seatIndex === 5) return 150 * factor;
+    return 0; // seat 6 (top-center, 7 players)
+  }
+  // count === 8
+  if (seatIndex === 0) return -190 * factor;
+  if (seatIndex === 6) return -50 * factor;
+  if (seatIndex === 7) return 50 * factor;
+  if (seatIndex === 5) return 190 * factor;
+  return 0;
+}
+
+// Where a given seat's played card sits, anchored inside the table area and
+// pulled toward the center so it never covers the avatar or score badge.
+//   style     - absolute anchor within the table area
+//   baseX/Y   - static px offset to center the card on its anchor
+//   enterFrom - direction the card animates in from (toward its player)
+//   point     - approximate center (px from table midline) used to compute the
+//               slide direction when cards collect to the trick winner
+function getCardZone(seatIndex, count) {
+  switch (seatIndex) {
+    case 0: // top (single or far-left)
+    case 5: // top far-right
+    case 6: // top-center / center-left
+    case 7: { // top center-right
+      // Top avatars sit just above the table; the card hangs directly below.
+      const cx = topCardCenterX(seatIndex, count);
+      return {
+        style: { top: 16, left: "50%" },
+        baseX: cx - CARD_W / 2,
+        baseY: 0,
+        enterFrom: { x: 0, y: -26 },
+        point: { x: cx, y: -120 },
+      };
+    }
+    case 1: // right - card sits just inboard of the right avatar (~8px gap),
+            // vertically centered in line with that avatar
+      return {
+        style: { top: "50%", right: 90 },
+        baseX: 0,
+        baseY: -CARD_H / 2 - 3,
+        enterFrom: { x: 30, y: 0 },
+        point: { x: 130, y: 0 },
+      };
+    case 3: // left - card sits just inboard of the left avatar (~8px gap),
+            // vertically centered in line with that avatar
+      return {
+        style: { top: "50%", left: 90 },
+        baseX: 0,
+        baseY: -CARD_H / 2 - 3,
+        enterFrom: { x: -30, y: 0 },
+        point: { x: -130, y: 0 },
+      };
+    case 4: // bottom-right avatar (mirror of "You", e.g. Maya). Card sits in
+            // the right column (same line as the right player's card) but down
+            // near the bottom, just in front of Maya's bottom-right avatar.
+      return {
+        style: { bottom: -110, right: 90 },
+        baseX: 0,
+        baseY: 0,
+        enterFrom: { x: 22, y: 24 },
+        point: { x: 130, y: 120 },
+      };
+    case 2: // bottom (me)
+    default:
+      // The "You" avatar stays in the bottom-left corner, but our played card
+      // sits center-bottom - just above our hand and directly below the top
+      // player's card - to complete the diamond.
+      return {
+        style: { bottom: -42, left: "50%" },
+        baseX: -CARD_W / 2,
+        baseY: 0,
+        enterFrom: { x: 0, y: 26 },
+        point: { x: 0, y: 130 },
+      };
+  }
+}
 
 export default function GameTableScreen({ navigation, route }) {
   const {
@@ -377,53 +459,58 @@ export default function GameTableScreen({ navigation, route }) {
     );
   };
 
-  const renderTrickArea = () => {
+  // Render each played card in front of its own player's seat (never stacked
+  // in the center). Empty seats show a faint placeholder slot, highlighted
+  // gold while it is that player's turn.
+  const renderPlayedCards = () => {
+    if (gameState?.status !== "PLAYING") return null;
+
     const cardsPlayed = currentTrick?.cardsPlayed || [];
+    const seated = arrangedPlayers.filter(Boolean);
+    const count = players.length;
 
-    return (
-      <View style={styles.trickArea}>
-        {cardsPlayed.map((play, index) => {
-          // Find player's seat position
-          const player = arrangedPlayers.find(p => p && p.id === play.playerId);
-          const seatIndex = player?.seatIndex ?? index;
-          const isRed = play.card.suit === "hearts" || play.card.suit === "diamonds";
+    // When a trick has a winner, every card slides toward that seat.
+    const winnerSeat = handWinner
+      ? arrangedPlayers.find((p) => p && p.id === handWinner.playerId)
+      : null;
+    const winnerPoint = winnerSeat
+      ? getCardZone(winnerSeat.seatIndex, count).point
+      : null;
 
-          return (
-            <View
-              key={`${play.playerId}-${play.card.suit}-${play.card.rank}`}
-              style={[styles.trickCard, getTrickCardPosition(seatIndex)]}
-            >
-              <LinearGradient
-                colors={["#FFFFFF", "#F5F5F5", "#EEEEEE"]}
-                style={styles.trickCardInner}
-              >
-                <Text style={[styles.trickCardRank, isRed && styles.redCard]}>
-                  {play.card.rank}
-                </Text>
-                <Text style={[styles.trickCardSuit, isRed && styles.redCard]}>
-                  {SUIT_SYMBOLS[play.card.suit]}
-                </Text>
-              </LinearGradient>
-            </View>
-          );
-        })}
-      </View>
-    );
-  };
+    return seated.map((player) => {
+      const zone = getCardZone(player.seatIndex, count);
+      const play = cardsPlayed.find((c) => c.playerId === player.id);
+      const isTurn = player.id === gameState?.currentTurnPlayerId;
 
-  const getTrickCardPosition = (seatIndex) => {
-    switch (seatIndex) {
-      case 0: // Top
-        return { top: 10 };
-      case 1: // Right
-        return { right: 10 };
-      case 2: // Bottom
-        return { bottom: 10 };
-      case 3: // Left
-        return { left: 10 };
-      default:
-        return {};
-    }
+      if (!play) {
+        return (
+          <View
+            key={`slot-${player.id}`}
+            pointerEvents="none"
+            style={[
+              styles.cardSlot,
+              zone.style,
+              { transform: [{ translateX: zone.baseX }, { translateY: zone.baseY }] },
+              isTurn && styles.cardSlotActive,
+            ]}
+          />
+        );
+      }
+
+      const resolveDelta = winnerPoint
+        ? { x: winnerPoint.x - zone.point.x, y: winnerPoint.y - zone.point.y }
+        : null;
+
+      return (
+        <PlayedCard
+          key={`card-${player.id}-${play.card.suit}-${play.card.rank}`}
+          card={play.card}
+          zone={zone}
+          resolving={!!handWinner}
+          resolveDelta={resolveDelta}
+        />
+      );
+    });
   };
 
   const renderMyHand = () => {
@@ -587,8 +674,8 @@ export default function GameTableScreen({ navigation, route }) {
           {/* Left player (seat 3) */}
           {renderPlayerSeat(arrangedPlayers[3], 3)}
 
-          {/* Trick area in center */}
-          {renderTrickArea()}
+          {/* Played cards - one in front of each player's seat */}
+          {renderPlayedCards()}
         </View>
 
         {/* My hand at bottom */}
@@ -958,42 +1045,25 @@ const styles = StyleSheet.create({
     color: "#FFF",
   },
 
-  // Trick area
-  trickArea: {
+  // Played-card placeholder slot (shown until a player plays this trick)
+  cardSlot: {
     position: "absolute",
-    top: "50%",
-    left: "50%",
-    width: 140,
-    height: 140,
-    transform: [{ translateX: -70 }, { translateY: -70 }],
-    alignItems: "center",
-    justifyContent: "center",
+    width: CARD_W,
+    height: CARD_H,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
-  trickCard: {
-    position: "absolute",
-    width: 50,
-    height: 70,
-    borderRadius: 6,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  trickCardInner: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  trickCardRank: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1a1a2e",
-  },
-  trickCardSuit: {
-    fontSize: 16,
-    color: "#1a1a2e",
+  cardSlotActive: {
+    borderStyle: "solid",
+    borderColor: "rgba(255, 215, 0, 0.8)",
+    backgroundColor: "rgba(255, 215, 0, 0.06)",
+    shadowColor: "#FFD700",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 6,
   },
   redCard: {
     color: "#e53935",
