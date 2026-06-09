@@ -29,22 +29,20 @@ const CARD_W = 54;
 const CARD_H = 76;
 
 // Horizontal center offset (px from the table midline) for a top-row seat's
-// played card. The seat boxes themselves spread out widely for 6-8 players;
-// the cards use a scaled-in version of that spread so they stay on the table
-// while still sitting roughly under the matching avatar.
+// played card, lined up under that seat's avatar for 6-8 players.
 function topCardCenterX(seatIndex, count) {
   if (count <= 5) return 0; // single, centered top seat
-  const factor = 0.8;
   if (count === 6 || count === 7) {
-    if (seatIndex === 0) return -150 * factor;
-    if (seatIndex === 5) return 150 * factor;
+    if (seatIndex === 0) return -150;
+    if (seatIndex === 5) return 150;
     return 0; // seat 6 (top-center, 7 players)
   }
-  // count === 8
-  if (seatIndex === 0) return -190 * factor;
-  if (seatIndex === 6) return -50 * factor;
-  if (seatIndex === 7) return 50 * factor;
-  if (seatIndex === 5) return 190 * factor;
+  // count === 8: all four top cards sit under their avatars (far-left,
+  // center-left, center-right, far-right).
+  if (seatIndex === 0) return -190;
+  if (seatIndex === 6) return -65;
+  if (seatIndex === 7) return 65;
+  if (seatIndex === 5) return 190;
   return 0;
 }
 
