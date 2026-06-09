@@ -389,15 +389,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 15,
-    paddingTop: 20,
-    paddingBottom: 10,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
   titleContainer: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
     textShadowColor: "rgba(255, 165, 0, 0.5)",
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 6,
     borderBottomWidth: 2,
     borderBottomColor: "#FFD700",
   },
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
   totalGradient: {
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 14,
+    paddingVertical: 9,
   },
   totalRow: {
     flexDirection: "row",
@@ -568,9 +568,9 @@ const styles = StyleSheet.create({
 
   // Continue button
   buttonContainer: {
-    marginTop: 16,
+    marginTop: 8,
     alignItems: "center",
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   continueButton: {
     borderRadius: 14,
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   continueButtonGradient: {
-    paddingVertical: 11,
+    paddingVertical: 9,
     paddingHorizontal: 50,
     borderRadius: 12,
   },
