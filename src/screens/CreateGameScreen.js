@@ -162,6 +162,7 @@ export default function CreateGameScreen({ navigation, route }) {
       <ImageBackground
         source={require("../../assets/background_without_title.png")}
         style={styles.background}
+        imageStyle={styles.backgroundImage}
         resizeMode="cover"
       >
         {/* Only show content after transition completes */}
@@ -280,6 +281,9 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     overflow: "visible",
+  },
+  backgroundImage: {
+    opacity: 0.85,
   },
   overlayGradient: {
     ...StyleSheet.absoluteFillObject,

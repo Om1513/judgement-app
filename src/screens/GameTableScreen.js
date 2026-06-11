@@ -129,6 +129,11 @@ export default function GameTableScreen({ navigation, route }) {
   // Animations
   const turnGlow = useRef(new Animated.Value(0.6)).current;
 
+  // Pending timers used to hold the completed trick on screen for a beat so the
+  // last card played is visible before the winner popup / scoreboard appears.
+  const winnerTimerRef = useRef(null);
+  const navTimerRef = useRef(null);
+
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
   });
@@ -312,17 +317,27 @@ export default function GameTableScreen({ navigation, route }) {
 
     const unsubscribeHandWinner = socketService.on("hand:winner-announced", (data) => {
       console.log(`Hand ${data.trickNumber} won by ${data.playerName}`);
-      setHandWinner({
-        playerId: data.playerId,
-        playerName: data.playerName,
-        trickNumber: data.trickNumber,
-      });
       // Clear any pending card selection so play is fully blocked.
       setSelectedCard(null);
+      // Hold the completed trick on screen briefly so the last card played is
+      // visible before the winner popup appears.
+      if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
+      winnerTimerRef.current = setTimeout(() => {
+        winnerTimerRef.current = null;
+        setHandWinner({
+          playerId: data.playerId,
+          playerName: data.playerName,
+          trickNumber: data.trickNumber,
+        });
+      }, 900);
     });
 
     const unsubscribeHandNext = socketService.on("hand:next-started", () => {
       console.log("Next hand started");
+      if (winnerTimerRef.current) {
+        clearTimeout(winnerTimerRef.current);
+        winnerTimerRef.current = null;
+      }
       setHandWinner(null);
     });
 
@@ -332,24 +347,34 @@ export default function GameTableScreen({ navigation, route }) {
 
     const unsubscribeScoreboard = socketService.on("scoreboard:state", (data) => {
       console.log("Scoreboard state received, navigating to ScoreBoard");
-      navigation.replace("ScoreBoard", {
-        scoreboard: data.scoreboard,
-        currentPlayerId,
-        currentPlayerName,
-      });
+      // Wait a beat so the last card of the final trick is visible first.
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+      navTimerRef.current = setTimeout(() => {
+        navTimerRef.current = null;
+        navigation.replace("ScoreBoard", {
+          scoreboard: data.scoreboard,
+          currentPlayerId,
+          currentPlayerName,
+        });
+      }, 1800);
     });
 
     // Final round skips the scoreboard - go straight to the winner screen.
     const unsubscribeFinalWinner = socketService.on("game:final-winner", (data) => {
       console.log("Final winner:", data);
-      navigation.replace("FinalWinner", {
-        winners: data.winners,
-        winningScore: data.winningScore,
-        isTie: data.isTie,
-        finalScores: data.finalScores,
-        currentPlayerId,
-        currentPlayerName,
-      });
+      // Wait a beat so the last card of the final trick is visible first.
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+      navTimerRef.current = setTimeout(() => {
+        navTimerRef.current = null;
+        navigation.replace("FinalWinner", {
+          winners: data.winners,
+          winningScore: data.winningScore,
+          isTie: data.isTie,
+          finalScores: data.finalScores,
+          currentPlayerId,
+          currentPlayerName,
+        });
+      }, 1800);
     });
 
     const unsubscribeGameOver = socketService.on("game:over", (data) => {
@@ -369,6 +394,8 @@ export default function GameTableScreen({ navigation, route }) {
       unsubscribeScoreboard();
       unsubscribeFinalWinner();
       unsubscribeGameOver();
+      if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
     };
   }, [navigation, currentPlayerId, currentPlayerName]);
 

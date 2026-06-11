@@ -10,6 +10,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
+import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 
 const TRUMP_DISPLAY = {
@@ -36,7 +37,11 @@ export default function FinalScoreboardScreen({ navigation, route }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  const [fontsLoaded] = useFonts({ Bangers_400Regular });
+  const [fontsLoaded] = useFonts({
+    Bangers_400Regular,
+    Inter_400Regular,
+    Inter_700Bold,
+  });
 
   useEffect(() => {
     socketService.getFinalScoreboard();
@@ -113,25 +118,27 @@ export default function FinalScoreboardScreen({ navigation, route }) {
               {/* Header Row */}
               <View style={styles.headerRow}>
                 <View style={[styles.cell, styles.trumpCell]}>
-                  <Text style={styles.headerText}>Trump</Text>
+                  <Text style={styles.headerText} numberOfLines={1}>Trump</Text>
                 </View>
                 <View style={[styles.cell, styles.roundCell]}>
-                  <Text style={styles.headerText}>Round</Text>
+                  <Text style={styles.headerText} numberOfLines={1}>Round</Text>
                 </View>
                 {scoreboard.players.map((player) => (
                   <View key={player.id} style={[styles.cell, styles.playerCell]}>
-                    {isWinner(player.id) && <Text style={styles.crownHeader}>👑</Text>}
-                    <Text
-                      style={[
-                        styles.headerText,
-                        styles.playerHeaderText,
-                        player.id === currentPlayerId && styles.currentPlayerText,
-                        isWinner(player.id) && styles.winnerHeaderText,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {player.name}
-                    </Text>
+                    <View style={styles.headerNameWrap}>
+                      {isWinner(player.id) && <Text style={styles.crownHeader}>👑</Text>}
+                      <Text
+                        style={[
+                          styles.headerText,
+                          styles.playerHeaderText,
+                          player.id === currentPlayerId && styles.currentPlayerText,
+                          isWinner(player.id) && styles.winnerHeaderText,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {player.name}
+                      </Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -187,38 +194,31 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                     </View>
                   );
                 })}
-              </View>
-            </LinearGradient>
-          </View>
 
-          {/* Total Row */}
-          <View style={styles.totalContainer}>
-            <LinearGradient
-              colors={["rgba(61, 34, 114, 0.95)", "rgba(42, 22, 84, 0.98)"]}
-              style={styles.totalGradient}
-            >
-              <View style={styles.totalRow}>
-                <View style={[styles.cell, styles.totalLabelCell]}>
-                  <Text style={styles.totalLabel}>Total</Text>
-                </View>
-                {scoreboard.players.map((player) => {
-                  const winnerCol = isWinner(player.id);
-                  return (
-                    <View
-                      key={player.id}
-                      style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
-                    >
-                      <View style={styles.totalScoreContainer}>
-                        {winnerCol && <Text style={styles.crownIcon}>👑</Text>}
-                        <Text
-                          style={[styles.totalScoreText, winnerCol && styles.leadingScore]}
-                        >
-                          {player.totalScore}
-                        </Text>
+                {/* Total - an equal-height row after the rounds, below a divider */}
+                <View style={styles.totalRow}>
+                  <View style={[styles.cell, styles.totalLabelCell]}>
+                    <Text style={styles.totalLabel} numberOfLines={1}>Total</Text>
+                  </View>
+                  {scoreboard.players.map((player) => {
+                    const winnerCol = isWinner(player.id);
+                    return (
+                      <View
+                        key={player.id}
+                        style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
+                      >
+                        <View style={styles.totalScoreWrap}>
+                          {winnerCol && <Text style={styles.crownIcon}>👑</Text>}
+                          <Text
+                            style={[styles.totalScoreText, winnerCol && styles.leadingScore]}
+                          >
+                            {player.totalScore}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  );
-                })}
+                    );
+                  })}
+                </View>
               </View>
             </LinearGradient>
           </View>
@@ -261,16 +261,16 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 15,
-    paddingTop: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 2,
   },
   titleContainer: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
     textShadowColor: "rgba(255, 165, 0, 0.5)",
@@ -288,7 +288,8 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 2,
   },
   cell: {
     paddingHorizontal: 4,
@@ -296,12 +297,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   trumpCell: {
-    flex: 1.8,
+    flex: 2.4,
     flexDirection: "row",
     justifyContent: "flex-start",
   },
   roundCell: {
-    flex: 1,
+    flex: 1.4,
   },
   playerCell: {
     flex: 1.2,
@@ -313,17 +314,20 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 6,
     borderBottomWidth: 2,
     borderBottomColor: "#FFD700",
   },
   headerText: {
-    fontSize: 16,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: "Inter_700Bold",
     color: "#FFF8E7",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     textAlign: "center",
-    paddingHorizontal: 5,
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    paddingHorizontal: 3,
   },
   playerHeaderText: {
     color: "#FFD700",
@@ -337,13 +341,19 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
+  headerNameWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   crownHeader: {
-    fontSize: 14,
-    marginBottom: 2,
+    fontSize: 12,
+    marginRight: 3,
   },
   rowsContainer: {
     flex: 1,
-    paddingVertical: 4,
+    paddingTop: 4,
+    paddingBottom: 0,
   },
   dataRow: {
     flex: 1,
@@ -357,29 +367,39 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(42, 22, 84, 0.4)",
   },
   trumpSymbol: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginRight: 8,
+    fontSize: 18,
+    lineHeight: 22,
+    marginRight: 6,
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
   trumpName: {
-    fontSize: 15,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: "Inter_400Regular",
     color: "#FFF8E7",
-    letterSpacing: 0.5,
-    paddingHorizontal: 4,
+    letterSpacing: 0,
+    paddingHorizontal: 2,
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
   roundNumber: {
-    fontSize: 17,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: "Inter_400Regular",
     color: "#FFF8E7",
     textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
     paddingHorizontal: 5,
   },
   scoreText: {
     fontSize: 18,
-    lineHeight: 26,
-    fontFamily: "Bangers_400Regular",
+    lineHeight: 22,
+    fontFamily: "Inter_400Regular",
     textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
     paddingHorizontal: 5,
   },
   scorePositive: {
@@ -389,49 +409,53 @@ const styles = StyleSheet.create({
     color: "#C9BEDC",
   },
   scoreEmpty: {
-    fontSize: 16,
+    fontSize: 18,
+    lineHeight: 22,
     color: "#6E5C94",
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
-  totalContainer: {
-    marginTop: 4,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#FFD700",
-  },
-  totalGradient: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-  },
+  // Total - an equal-height row (like the data rows) after the rounds,
+  // separated by a gold divider line.
   totalRow: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#FFD700",
   },
   totalLabelCell: {
-    flex: 2.8,
+    flex: 3.8,
     alignItems: "flex-start",
   },
   totalLabel: {
-    fontSize: 20,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: "Inter_700Bold",
     color: "#FFD700",
-    letterSpacing: 2,
-    paddingHorizontal: 5,
+    letterSpacing: 1,
+    paddingHorizontal: 3,
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
-  totalScoreContainer: {
-    flexDirection: "row",
+  totalScoreWrap: {
+    justifyContent: "center",
     alignItems: "center",
   },
   crownIcon: {
-    fontSize: 15,
-    marginRight: 4,
+    position: "absolute",
+    left: -16,
+    top: 3,
+    fontSize: 12,
   },
   totalScoreText: {
-    fontSize: 22,
-    lineHeight: 30,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: "Inter_700Bold",
     color: "#FFF8E7",
     textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
     paddingHorizontal: 5,
   },
   leadingScore: {
@@ -441,31 +465,32 @@ const styles = StyleSheet.create({
     textShadowRadius: 10,
   },
   buttonContainer: {
-    marginTop: 16,
-    alignItems: "center",
-    paddingBottom: 16,
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 10,
   },
   homeButton: {
-    borderRadius: 14,
+    borderRadius: 10,
     overflow: "hidden",
     shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowRadius: 8,
+    elevation: 8,
   },
   homeButtonGradient: {
-    paddingVertical: 11,
-    paddingHorizontal: 50,
-    borderRadius: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
   homeButtonText: {
-    fontSize: 19,
+    fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#FFFFFF",
     textShadowColor: "rgba(0, 0, 0, 0.5)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 4,
-    letterSpacing: 3,
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+    letterSpacing: 1.5,
   },
 });
