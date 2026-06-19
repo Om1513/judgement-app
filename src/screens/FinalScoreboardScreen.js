@@ -223,19 +223,14 @@ export default function FinalScoreboardScreen({ navigation, route }) {
             </LinearGradient>
           </View>
 
-          {/* Home button */}
+          {/* Home link - plain text with a back arrow, not a button */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               onPress={() => navigation.navigate("Home")}
-              activeOpacity={0.8}
-              style={styles.homeButton}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <LinearGradient
-                colors={["#FF8C00", "#FF6600", "#E65500"]}
-                style={styles.homeButtonGradient}
-              >
-                <Text style={styles.homeButtonText}>RETURN TO HOME</Text>
-              </LinearGradient>
+              <Text style={styles.homeLinkText}>‹ Return to Home</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -467,30 +462,13 @@ const styles = StyleSheet.create({
   buttonContainer: {
     position: "absolute",
     top: 10,
-    right: 10,
+    left: 10,
     zIndex: 10,
   },
-  homeButton: {
-    borderRadius: 10,
-    overflow: "hidden",
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  homeButtonGradient: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  homeButtonText: {
-    fontSize: 14,
+  homeLinkText: {
+    fontSize: 15,
     fontFamily: "Bangers_400Regular",
-    color: "#FFFFFF",
-    textShadowColor: "rgba(0, 0, 0, 0.5)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-    letterSpacing: 1.5,
+    color: "#FFD700",
+    letterSpacing: 1,
   },
 });

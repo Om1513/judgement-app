@@ -37,7 +37,7 @@ export default function PlayerCard({
             style={styles.avatarGradient}
           >
             <Text style={[styles.avatarText, isCompact && styles.avatarTextCompact]}>
-              {isBot ? "🤖" : player.name.charAt(0).toUpperCase()}
+              {isBot ? "🤖" : (player.name || "?").charAt(0).toUpperCase()}
             </Text>
           </LinearGradient>
         </View>

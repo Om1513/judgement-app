@@ -34,7 +34,6 @@ export default function LobbyScreen({ navigation, route }) {
 
   const [isReady, setIsReady] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [removeModalVisible, setRemoveModalVisible] = useState(false);
   const [playerToRemove, setPlayerToRemove] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
 
@@ -192,21 +191,18 @@ export default function LobbyScreen({ navigation, route }) {
   };
 
   const handleRemovePlayer = (player) => {
+    if (!player) return;
     setPlayerToRemove(player);
-    setRemoveModalVisible(true);
   };
 
   const confirmRemovePlayer = () => {
     if (playerToRemove) {
-      // Send kick event to backend
       socketService.kickPlayer(playerToRemove.id);
     }
-    setRemoveModalVisible(false);
     setPlayerToRemove(null);
   };
 
   const cancelRemovePlayer = () => {
-    setRemoveModalVisible(false);
     setPlayerToRemove(null);
   };
 
@@ -544,9 +540,10 @@ export default function LobbyScreen({ navigation, route }) {
               </TouchableOpacity>
             </Animated.View>
 
-            {/* Remove Player Modal */}
+            {/* Remove Player confirmation - an in-screen overlay (no native
+                Modal), so it stays in landscape with no orientation flicker. */}
             <RemovePlayerModal
-              visible={removeModalVisible}
+              visible={!!playerToRemove}
               playerName={playerToRemove?.name || ""}
               onConfirm={confirmRemovePlayer}
               onCancel={cancelRemovePlayer}
