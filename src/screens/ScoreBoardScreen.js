@@ -289,27 +289,27 @@ export default function ScoreBoardScreen({ navigation, route }) {
                     </View>
                   );
                 })}
-                {/* Total - an equal-height row after the rounds, below a divider */}
+                {/* Total - an equal-height row after the rounds, below a divider.
+                    Uses the same trump + round cell structure as the data rows so
+                    the player columns line up exactly with the scores above. */}
                 <View style={styles.totalRow}>
-                  <View style={[styles.cell, styles.totalLabelCell]}>
+                  <View style={[styles.cell, styles.trumpCell]}>
                     <Text style={styles.totalLabel} numberOfLines={1}>Total</Text>
                   </View>
+                  <View style={[styles.cell, styles.roundCell]} />
                   {scoreboard.players.map((player) => {
                     const isLeading = player.id === leadingPlayer?.id;
 
                     return (
                       <View key={player.id} style={[styles.cell, styles.playerCell]}>
-                        <View style={styles.totalScoreWrap}>
-                          {isLeading && <Text style={styles.crownIcon}>👑</Text>}
-                          <Text
-                            style={[
-                              styles.totalScoreText,
-                              isLeading && styles.leadingScore,
-                            ]}
-                          >
-                            {player.totalScore}
-                          </Text>
-                        </View>
+                        <Text
+                          style={[
+                            styles.totalScoreText,
+                            isLeading && styles.leadingScore,
+                          ]}
+                        >
+                          {player.totalScore}
+                        </Text>
                       </View>
                     );
                   })}
@@ -534,10 +534,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#FFD700",
   },
-  totalLabelCell: {
-    flex: 3.8,
-    alignItems: "flex-start",
-  },
   totalLabel: {
     fontSize: 18,
     lineHeight: 22,
@@ -548,18 +544,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
     includeFontPadding: false,
   },
-  // The number is centered in the cell (aligned with the score columns); the
-  // crown is anchored just to the left of the number so they read as a unit.
-  totalScoreWrap: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  crownIcon: {
-    position: "absolute",
-    left: -16,
-    top: 3,
-    fontSize: 12,
-  },
+  // The number is centered in its cell so it lines up exactly with the
+  // per-round score columns above it. The leading total is highlighted gold.
   totalScoreText: {
     fontSize: 18,
     lineHeight: 22,

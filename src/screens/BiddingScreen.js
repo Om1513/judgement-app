@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
+import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 
 // Display trump by its English suit name rather than the local name.
@@ -37,7 +37,8 @@ export default function BiddingScreen({ navigation, route }) {
   const modalScale = useRef(new Animated.Value(0.9)).current;
 
   const [fontsLoaded] = useFonts({
-    Bangers_400Regular,
+    Inter_400Regular,
+    Inter_700Bold,
   });
 
   // Get current round state
@@ -49,6 +50,9 @@ export default function BiddingScreen({ navigation, route }) {
   const trump = roundState?.trump;
   const currentRound = roundState?.roundNumber || 1;
   const totalRounds = gameState?.totalRounds || 4;
+
+  // With many players the bidding table gets cramped, so shrink text/padding to fit.
+  const isCompactTable = players.length >= 7;
 
   // Calculate forbidden bid for last bidder
   const forbiddenBid = useMemo(() => {
@@ -198,7 +202,7 @@ export default function BiddingScreen({ navigation, route }) {
         {/* Header Row */}
         <View style={styles.tableRow}>
           <View style={[styles.tableCell, styles.tableLabelCell]}>
-            <Text style={styles.tableLabelText}>Player</Text>
+            <Text style={[styles.tableLabelText, isCompactTable && styles.tableLabelTextCompact]}>Player</Text>
           </View>
           {players.map((player) => (
             <View
@@ -206,12 +210,14 @@ export default function BiddingScreen({ navigation, route }) {
               style={[
                 styles.tableCell,
                 styles.tablePlayerCell,
+                isCompactTable && styles.tableCellCompact,
                 player.id === currentPlayerId && styles.tableCurrentPlayerCell,
               ]}
             >
               <Text
                 style={[
                   styles.tablePlayerName,
+                  isCompactTable && styles.tablePlayerNameCompact,
                   player.id === currentPlayerId && styles.tableCurrentPlayerName,
                 ]}
                 numberOfLines={1}
@@ -233,7 +239,7 @@ export default function BiddingScreen({ navigation, route }) {
         {/* Bids Row */}
         <View style={styles.tableRow}>
           <View style={[styles.tableCell, styles.tableLabelCell]}>
-            <Text style={styles.tableLabelText}>Bid</Text>
+            <Text style={[styles.tableLabelText, isCompactTable && styles.tableLabelTextCompact]}>Bid</Text>
           </View>
           {players.map((player) => {
             const hasBid = player.hasBid;
@@ -246,19 +252,20 @@ export default function BiddingScreen({ navigation, route }) {
                 style={[
                   styles.tableCell,
                   styles.tableBidCell,
+                  isCompactTable && styles.tableCellCompact,
                   player.id === currentPlayerId && styles.tableCurrentPlayerCell,
                 ]}
               >
                 {isCurrentBidder ? (
-                  <View style={styles.biddingIndicator}>
-                    <Text style={styles.biddingDots}>...</Text>
+                  <View style={[styles.biddingIndicator, isCompactTable && styles.bidBadgeCompact]}>
+                    <Text style={[styles.biddingDots, isCompactTable && styles.biddingDotsCompact]}>...</Text>
                   </View>
                 ) : hasBid ? (
-                  <View style={styles.bidValueContainer}>
-                    <Text style={styles.bidValueText}>{bid}</Text>
+                  <View style={[styles.bidValueContainer, isCompactTable && styles.bidBadgeCompact]}>
+                    <Text style={[styles.bidValueText, isCompactTable && styles.bidValueTextCompact]}>{bid}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.noBidText}>-</Text>
+                  <Text style={[styles.noBidText, isCompactTable && styles.noBidTextCompact]}>-</Text>
                 )}
               </View>
             );
@@ -455,7 +462,7 @@ const styles = StyleSheet.create({
   },
   roundIndicatorText: {
     fontSize: 22,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFD700",
     letterSpacing: 1.5,
   },
@@ -476,7 +483,7 @@ const styles = StyleSheet.create({
   },
   leaveButtonText: {
     fontSize: 15,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFF",
     letterSpacing: 1.5,
   },
@@ -484,16 +491,16 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     position: "absolute",
-    top: 20,
-    left: 16,
-    right: 16,
-    bottom: 90,
+    top: 12,
+    left: 10,
+    right: 10,
+    bottom: 80,
     justifyContent: "center",
     alignItems: "center",
   },
   modalContainer: {
     width: "100%",
-    maxWidth: 820,
+    maxWidth: 960,
     maxHeight: "100%",
     borderRadius: 16,
     overflow: "hidden",
@@ -502,18 +509,18 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(26, 16, 48, 0.98)",
   },
   modalGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
   },
 
   // Title
   titleContainer: {
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 6,
   },
   titleText: {
     fontSize: 20,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFD700",
     textAlign: "center",
     letterSpacing: 1,
@@ -524,7 +531,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     flexWrap: "wrap",
-    marginBottom: 10,
+    marginBottom: 4,
   },
   bidButtonWrapper: {
     margin: 4,
@@ -544,7 +551,7 @@ const styles = StyleSheet.create({
   },
   bidButtonText: {
     fontSize: 20,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFF8E7",
     textAlign: "center",
     paddingHorizontal: 5,
@@ -560,7 +567,7 @@ const styles = StyleSheet.create({
   },
   submittingText: {
     fontSize: 16,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_400Regular",
     color: "#FFD700",
     letterSpacing: 1,
   },
@@ -571,8 +578,8 @@ const styles = StyleSheet.create({
     marginVertical: 16,
   },
   waitingText: {
-    fontSize: 16,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 22,
+    fontFamily: "Inter_400Regular",
     color: "#FFF8E7",
   },
   waitingPlayerName: {
@@ -587,13 +594,13 @@ const styles = StyleSheet.create({
   },
   completedText: {
     fontSize: 20,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#4CAF50",
     textAlign: "center",
   },
   completedSubtext: {
     fontSize: 14,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_400Regular",
     color: "#FFF8E7",
     textAlign: "center",
     marginTop: 4,
@@ -617,7 +624,7 @@ const styles = StyleSheet.create({
   },
   trumpLabel: {
     fontSize: 14,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFF8E7",
     letterSpacing: 2,
     marginRight: 10,
@@ -636,7 +643,7 @@ const styles = StyleSheet.create({
   },
   trumpName: {
     fontSize: 14,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFD700",
     textAlign: "center",
     paddingHorizontal: 5,
@@ -666,16 +673,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 4,
   },
+  tableCellCompact: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
   tableLabelCell: {
     flex: 0.6,
     alignItems: "flex-start",
     paddingLeft: 8,
   },
   tableLabelText: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
     color: "#FFF8E7",
     opacity: 0.7,
+  },
+  tableLabelTextCompact: {
+    fontSize: 15,
   },
   tablePlayerCell: {
     borderLeftWidth: 1,
@@ -685,10 +699,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 215, 0, 0.1)",
   },
   tablePlayerName: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 16,
+    fontFamily: "Inter_400Regular",
     color: "#FFF8E7",
     textAlign: "center",
+  },
+  tablePlayerNameCompact: {
+    fontSize: 15,
   },
   tableCurrentPlayerName: {
     color: "#FFD700",
@@ -702,7 +719,7 @@ const styles = StyleSheet.create({
   },
   hostBadgeText: {
     fontSize: 8,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#2A1654",
   },
   tableBidCell: {
@@ -718,7 +735,7 @@ const styles = StyleSheet.create({
   },
   biddingDots: {
     fontSize: 14,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#2A1654",
   },
   bidValueContainer: {
@@ -727,17 +744,30 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
+  bidBadgeCompact: {
+    paddingHorizontal: 6,
+  },
   bidValueText: {
-    fontSize: 16,
-    fontFamily: "Bangers_400Regular",
+    fontSize: 20,
+    fontFamily: "Inter_700Bold",
     color: "#FFF",
     textAlign: "center",
     paddingHorizontal: 5,
   },
+  bidValueTextCompact: {
+    fontSize: 18,
+    paddingHorizontal: 2,
+  },
+  biddingDotsCompact: {
+    fontSize: 16,
+  },
   noBidText: {
     fontSize: 16,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_400Regular",
     color: "#666",
+  },
+  noBidTextCompact: {
+    fontSize: 16,
   },
 
   // My Cards
@@ -750,7 +780,7 @@ const styles = StyleSheet.create({
   },
   myCardsLabel: {
     fontSize: 12,
-    fontFamily: "Bangers_400Regular",
+    fontFamily: "Inter_700Bold",
     color: "#FFD700",
     marginBottom: 6,
     letterSpacing: 1,

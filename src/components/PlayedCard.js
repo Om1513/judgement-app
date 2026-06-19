@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, memo } from "react";
 import { Animated, StyleSheet, Easing, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -22,7 +22,7 @@ const SUIT_SYMBOLS = {
  *   baseX/Y  - static offset used to center the card on its anchor (px)
  *   enterFrom- direction the card slides in from (px), toward its player
  */
-export default function PlayedCard({ card, zone, resolving, resolveDelta }) {
+function PlayedCard({ card, zone, resolving, resolveDelta }) {
   const enter = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
   const resolve = useRef(new Animated.Value(0)).current; // 0 -> 1 collect-to-winner
   const glow = useRef(new Animated.Value(0)).current;
@@ -102,12 +102,32 @@ export default function PlayedCard({ card, zone, resolving, resolveDelta }) {
   );
 }
 
+// Settled cards keep stable visuals, so only re-render when this card's own
+// identity, its collect-to-winner state, or its slide target changes. Without
+// this, mounting one new card re-renders every other played card — at 8 players
+// that re-render storm (plus the new gradient/elevated view) can flash the
+// whole table black for a frame.
+function areEqual(prev, next) {
+  return (
+    prev.card?.suit === next.card?.suit &&
+    prev.card?.rank === next.card?.rank &&
+    prev.resolving === next.resolving &&
+    (prev.resolveDelta?.x ?? null) === (next.resolveDelta?.x ?? null) &&
+    (prev.resolveDelta?.y ?? null) === (next.resolveDelta?.y ?? null)
+  );
+}
+
+export default memo(PlayedCard, areEqual);
+
 const styles = StyleSheet.create({
   card: {
     position: "absolute",
     width: 54,
     height: 76,
     borderRadius: 7,
+    // Solid surface so Android renders the elevation shadow correctly instead
+    // of painting it as a black box during the entrance transform.
+    backgroundColor: "#FFFFFF",
     zIndex: 50,
     elevation: 10,
     shadowColor: "#000",

@@ -488,7 +488,17 @@ export default function GameTableScreen({ navigation, route }) {
   // in the center). Empty seats show a faint placeholder slot, highlighted
   // gold while it is that player's turn.
   const renderPlayedCards = () => {
-    if (gameState?.status !== "PLAYING") return null;
+    // Keep showing the cards on the table not only during active play, but also
+    // once the final trick of a round has completed. When the last card of a
+    // round is played the server flips status to ROUND_SCOREBOARD (or GAME_OVER
+    // on the final round) before the hand-winner popup; if we stopped rendering
+    // here, that last card would never be seen - the trick would just vanish and
+    // the winner would appear. Keep the completed trick visible through those
+    // wrap-up states so the last play is shown just like every other trick.
+    const status = gameState?.status;
+    if (status !== "PLAYING" && status !== "ROUND_SCOREBOARD" && status !== "GAME_OVER") {
+      return null;
+    }
 
     const cardsPlayed = currentTrick?.cardsPlayed || [];
     const seated = arrangedPlayers.filter(Boolean);
