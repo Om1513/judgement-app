@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Share,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -188,6 +189,21 @@ export default function LobbyScreen({ navigation, route }) {
     await Clipboard.setStringAsync(lobbyCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareCode = async () => {
+    // Keep the code on the clipboard too, so it's ready to paste after sharing.
+    await Clipboard.setStringAsync(lobbyCode);
+    try {
+      await Share.share({
+        // Put the code alone on its own line so it's a single long-press to
+        // select and copy in any messaging app.
+        message: `Come play Judgement with me! 🃏\n\nJoin my game with this lobby code:\n${lobbyCode}`,
+      });
+    } catch (error) {
+      // User dismissed the share sheet or it failed - nothing to do.
+      console.log("Share cancelled or failed:", error?.message);
+    }
   };
 
   const handleRemovePlayer = (player) => {
@@ -415,8 +431,20 @@ export default function LobbyScreen({ navigation, route }) {
                         style={styles.copyButtonGradient}
                       >
                         <Text style={styles.copyButtonText}>
-                          {copied ? "OK" : "COPY"}
+                          {copied ? "COPIED" : "COPY"}
                         </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.shareButton}
+                      onPress={handleShareCode}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={["#5E3A9E", "#3D2272"]}
+                        style={styles.shareButtonGradient}
+                      >
+                        <Text style={styles.shareButtonText}>SHARE</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   </View>
@@ -630,6 +658,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Bangers_400Regular",
     color: "#2A1654",
+    letterSpacing: 1,
+  },
+  shareButton: {
+    borderRadius: 8,
+    overflow: "hidden",
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: "#FFD700",
+  },
+  shareButtonGradient: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  shareButtonText: {
+    fontSize: 12,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFD700",
     letterSpacing: 1,
   },
   playerCount: {
