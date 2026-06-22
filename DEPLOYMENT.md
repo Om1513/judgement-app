@@ -124,6 +124,50 @@ The client logs its negotiated transport on connect (e.g.
 
 ---
 
+## 7. iOS App Store submission
+
+Prereq: your Apple Developer Program membership must show **active** (not
+"Pending") at https://developer.apple.com/account.
+
+### Privacy policy (required by the App Store)
+`PRIVACY.md` is an accurate policy for what this app collects (display name +
+a random device id; no ads/analytics/tracking). Host it for free and use the URL
+in App Store Connect:
+
+- **GitHub Pages:** repo → Settings → Pages → deploy from `main`. The file is
+  served at `https://om1513.github.io/judgement-app/PRIVACY` (Pages renders
+  Markdown), or convert to `privacy.html`. Any public URL works.
+- Edit the contact email in `PRIVACY.md` first.
+
+### Non-interactive submit (App Store Connect API key)
+`eas.json` is pre-wired for API-key submission. Generate the key once:
+
+1. App Store Connect → **Users and Access → Integrations → App Store Connect
+   API** → **+** to create a key (role: App Manager).
+2. Download the `.p8` file, save it in the repo root as **`asc-api-key.p8`**
+   (already gitignored — never commit it).
+3. Copy the **Key ID** and **Issuer ID** into `eas.json` →
+   `submit.production.ios` (`ascApiKeyId`, `ascApiKeyIssuerId`).
+
+Then:
+```bash
+eas build  --profile production --platform ios
+eas submit --profile production --platform ios   # uploads to App Store Connect + TestFlight
+```
+(If you'd rather not use an API key, delete the `ios` block from
+`submit.production` and `eas submit` will prompt for your Apple ID interactively.)
+
+### In App Store Connect (browser)
+- Create/confirm the app record (bundle id `com.omsinghan25.judgement`).
+- Add name, description, keywords, category (Games → Card).
+- **Landscape** screenshots (6.7" iPhone, and 12.9" iPad since `supportsTablet`).
+- Privacy Policy URL (from above) + App Privacy answers: collects **Name** and a
+  **User ID** (the device play id), not used for tracking.
+- Age rating: trick-taking card game, **no real-money gambling** → low rating.
+- **App Review notes — important:** multiplayer is solo-testable via bots, e.g.
+  *"To test multiplayer: Create Game → Add Bot three times → Start Game."*
+- Keep the Railway server up during review (reviewers run the live app).
+
 ## Known limitations / recommended next steps
 
 1. **Lobby (pre-game) disconnects still remove the player.** Only *in-progress

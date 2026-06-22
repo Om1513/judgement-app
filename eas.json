@@ -25,6 +25,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "./asc-api-key.p8",
+        "ascApiKeyId": "REPLACE_WITH_ASC_KEY_ID",
+        "ascApiKeyIssuerId": "REPLACE_WITH_ASC_ISSUER_ID"
+      }
+    }
   }
 }

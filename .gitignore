@@ -18,6 +18,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# App Store Connect API key (used by `eas submit`) - never commit
+asc-api-key.p8
+
 # Metro
 .metro-health-check*
 
