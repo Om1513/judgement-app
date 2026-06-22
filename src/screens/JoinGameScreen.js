@@ -178,8 +178,25 @@ export default function JoinGameScreen({ navigation, route }) {
         await socketService.connect(playerName);
       }
 
-      // Join lobby
-      const lobby = await socketService.joinLobby(lobbyCode, playerName);
+      // Leave any previous lobby/game still attached to this player before
+      // joining a new one (stable identity survives reconnects).
+      if (socketService.lastSession?.lobby) {
+        await socketService.leaveCurrentSession();
+      }
+
+      // Join lobby. If the server still reports an existing membership,
+      // leave it and retry once.
+      let lobby;
+      try {
+        lobby = await socketService.joinLobby(lobbyCode, playerName);
+      } catch (err) {
+        if (/already in a/i.test(err.message || "")) {
+          await socketService.leaveCurrentSession();
+          lobby = await socketService.joinLobby(lobbyCode, playerName);
+        } else {
+          throw err;
+        }
+      }
 
       console.log("Joined lobby:", lobby);
 

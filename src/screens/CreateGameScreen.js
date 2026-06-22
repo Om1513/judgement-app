@@ -111,13 +111,28 @@ export default function CreateGameScreen({ navigation, route }) {
         await socketService.connect(playerName);
       }
 
-      // Create lobby with settings
-      const lobby = await socketService.createLobby(playerName, {
-        maxPlayers,
-        rounds,
-        orderMode,
-        scoringMode,
-      });
+      // A returning player may still be attached to a previous lobby/game on
+      // the server (stable identity survives reconnects). Creating a NEW game
+      // means leaving that one first.
+      if (socketService.lastSession?.lobby) {
+        await socketService.leaveCurrentSession();
+      }
+
+      const settings = { maxPlayers, rounds, orderMode, scoringMode };
+
+      // Create lobby. If the server still reports an existing membership
+      // (race / stale session), leave it and retry once.
+      let lobby;
+      try {
+        lobby = await socketService.createLobby(playerName, settings);
+      } catch (err) {
+        if (/already in a/i.test(err.message || "")) {
+          await socketService.leaveCurrentSession();
+          lobby = await socketService.createLobby(playerName, settings);
+        } else {
+          throw err;
+        }
+      }
 
       console.log("Lobby created:", lobby);
 

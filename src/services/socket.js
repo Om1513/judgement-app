@@ -215,6 +215,22 @@ class SocketService {
   }
 
   /**
+   * Leaves whatever lobby/game the server still has this player attached to
+   * (e.g. a previous session restored on reconnect), and clears the cached
+   * session. Resolves after a short grace period so the server can process the
+   * removal before a subsequent create/join.
+   */
+  leaveCurrentSession() {
+    return new Promise((resolve) => {
+      if (this.socket?.connected) {
+        this.socket.emit('lobby:leave');
+      }
+      this.lastSession = null;
+      setTimeout(resolve, 600);
+    });
+  }
+
+  /**
    * Kicks a player from the lobby (host only).
    */
   kickPlayer(playerId) {
