@@ -14,6 +14,12 @@ datasource db {
 model Player {
   id            String   @id @default(cuid())
   name          String
+  // Stable, client-generated identity that survives reconnects and new socket
+  // ids. This is what we match a returning player on (socketId changes on every
+  // reconnection, so it can't be used as identity).
+  clientId      String?  @unique
+  // The player's CURRENT live connection. Mutable: updated on (re)connect,
+  // cleared on disconnect.
   socketId      String?  @unique
   isBot         Boolean  @default(false)
   botDifficulty String?
@@ -28,6 +34,7 @@ model Player {
   roundBids     RoundBid[]
 
   @@index([socketId])
+  @@index([clientId])
 }
 
 // Lobby model - represents a game lobby

@@ -6,8 +6,10 @@ import { Card } from './player';
 
 // Client to Server events
 export interface ClientToServerEvents {
-  // Player events
-  'player:connect': (data: { name: string }) => void;
+  // Player events. `clientId` is a stable, app-generated id used to recover the
+  // same player across reconnects; `playerId` is an optional hint from a prior
+  // session. Older clients may send neither.
+  'player:connect': (data: { name: string; clientId?: string; playerId?: string }) => void;
 
   // Lobby events
   'lobby:create': (data: { playerName: string; settings?: Partial<LobbySettings> }) => void;
@@ -34,8 +36,15 @@ export interface ClientToServerEvents {
 // Server to Client events
 export interface ServerToClientEvents {
   // Connection events
-  'connected': (data: { playerId: string }) => void;
+  'connected': (data: { playerId: string; reconnected?: boolean }) => void;
   'error': (data: { message: string; code?: string }) => void;
+
+  // Emitted right after (re)connect when the player was already in a lobby or
+  // an in-progress game, so the client can restore the correct screen/state.
+  'session:restore': (data: {
+    lobby: LobbyState | null;
+    gameState: ClientGameState | null;
+  }) => void;
 
   // Lobby events
   'lobby:created': (data: { lobby: LobbyState }) => void;

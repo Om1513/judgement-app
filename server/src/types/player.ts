@@ -3,6 +3,7 @@
 export interface Player {
   id: string;
   name: string;
+  clientId?: string | null;
   socketId: string | null;
   isBot: boolean;
   botDifficulty?: string | null;
@@ -11,6 +12,7 @@ export interface Player {
 
 export interface CreatePlayerInput {
   name: string;
+  clientId?: string | null;
   socketId?: string;
   isBot?: boolean;
   botDifficulty?: string;
@@ -18,6 +20,7 @@ export interface CreatePlayerInput {
 
 export interface UpdatePlayerInput {
   name?: string;
+  clientId?: string | null;
   socketId?: string | null;
 }
 

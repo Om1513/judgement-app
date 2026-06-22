@@ -6,14 +6,18 @@ import { playerService } from './services/player.service';
 import { lobbyService } from './services/lobby.service';
 import { validatePlayerName } from './utils/validateLobby';
 import { isValidLobbyCode } from './utils/generateLobbyCode';
+import { getCorsOrigin } from './utils/corsOrigin';
 
 const app = express();
 
 // Middleware
+const corsOrigin = getCorsOrigin();
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true,
+  // Only send credentials when we have an explicit origin allowlist - the CORS
+  // spec forbids credentials together with a "*" origin.
+  credentials: corsOrigin !== '*',
 }));
 app.use(express.json());
 

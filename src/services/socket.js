@@ -1,20 +1,61 @@
 // Socket.IO client service for React Native
 
 import { io } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SERVER_URL } from '../config';
+
+const CLIENT_ID_KEY = '@kachuful_client_id';
+
+/**
+ * Generates a stable, reasonably-unique client id without requiring a crypto
+ * polyfill (not always available in React Native).
+ */
+function generateClientId() {
+  const rand = () => Math.random().toString(36).slice(2, 10);
+  return `c_${Date.now().toString(36)}_${rand()}${rand()}`;
+}
 
 class SocketService {
   constructor() {
     this.socket = null;
     this.playerId = null;
+    this.clientId = null;
     this.isConnected = false;
     this.listeners = new Map();
+    // Last session payload pushed by the server on (re)connect, so screens can
+    // restore the correct view after a drop.
+    this.lastSession = null;
+  }
+
+  /**
+   * Loads (or lazily creates and persists) this device's stable client id.
+   * Used so the server can recover the same player across reconnects.
+   */
+  async getClientId() {
+    if (this.clientId) {
+      return this.clientId;
+    }
+    try {
+      let id = await AsyncStorage.getItem(CLIENT_ID_KEY);
+      if (!id) {
+        id = generateClientId();
+        await AsyncStorage.setItem(CLIENT_ID_KEY, id);
+      }
+      this.clientId = id;
+    } catch (error) {
+      // If storage fails, fall back to an in-memory id for this run.
+      this.clientId = this.clientId || generateClientId();
+    }
+    return this.clientId;
   }
 
   /**
    * Connects to the server with player name.
    */
-  connect(playerName) {
+  async connect(playerName) {
+    // Ensure we have a stable identity before opening the socket.
+    const clientId = await this.getClientId();
+
     return new Promise((resolve, reject) => {
       if (this.socket?.connected) {
         resolve({ playerId: this.playerId });
@@ -22,20 +63,36 @@ class SocketService {
       }
 
       this.socket = io(SERVER_URL, {
-        transports: ['websocket'],
+        // WebSocket first, with long-polling fallback for networks/proxies that
+        // block raw WS upgrades (common on mobile data / corporate WiFi).
+        transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
         timeout: 10000,
       });
 
-      // Handle connection
+      // Handle connection. This fires on the initial connect AND on every
+      // automatic reconnect, so we always (re)authenticate with our stable
+      // clientId, which lets the server restore our lobby/game session.
       this.socket.on('connect', () => {
         console.log('Socket connected:', this.socket.id);
         this.isConnected = true;
 
-        // Send player connect event
-        this.socket.emit('player:connect', { name: playerName });
+        this.socket.emit('player:connect', {
+          name: playerName,
+          clientId,
+          playerId: this.playerId || undefined,
+        });
+      });
+
+      // Server-pushed session recovery (lobby/game state after a reconnect).
+      // Cache only - screens that need it subscribe via socketService.on(),
+      // which attaches directly to the socket, so we must not re-dispatch here.
+      this.socket.on('session:restore', (data) => {
+        console.log('Session restored:', data?.lobby?.code, !!data?.gameState);
+        this.lastSession = data;
       });
 
       // Handle player connected confirmation

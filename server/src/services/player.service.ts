@@ -20,20 +20,14 @@ export class PlayerService {
     const player = await db.player.create({
       data: {
         name: nameValidation.sanitized,
+        clientId: input.clientId || null,
         socketId: input.socketId || null,
         isBot: input.isBot || false,
         botDifficulty: input.botDifficulty || null,
       },
     });
 
-    return {
-      id: player.id,
-      name: player.name,
-      socketId: player.socketId,
-      isBot: player.isBot,
-      botDifficulty: player.botDifficulty,
-      createdAt: player.createdAt,
-    };
+    return this.toPlayer(player);
   }
 
   /**
@@ -46,18 +40,7 @@ export class PlayerService {
       where: { id: playerId },
     });
 
-    if (!player) {
-      return null;
-    }
-
-    return {
-      id: player.id,
-      name: player.name,
-      socketId: player.socketId,
-      isBot: player.isBot,
-      botDifficulty: player.botDifficulty,
-      createdAt: player.createdAt,
-    };
+    return player ? this.toPlayer(player) : null;
   }
 
   /**
@@ -70,13 +53,38 @@ export class PlayerService {
       where: { socketId },
     });
 
-    if (!player) {
-      return null;
-    }
+    return player ? this.toPlayer(player) : null;
+  }
 
+  /**
+   * Gets a player by their stable client ID.
+   */
+  async getPlayerByClientId(clientId: string): Promise<Player | null> {
+    const db = getDB();
+
+    const player = await db.player.findUnique({
+      where: { clientId },
+    });
+
+    return player ? this.toPlayer(player) : null;
+  }
+
+  /**
+   * Maps a Prisma player row to the Player domain type.
+   */
+  private toPlayer(player: {
+    id: string;
+    name: string;
+    clientId: string | null;
+    socketId: string | null;
+    isBot: boolean;
+    botDifficulty: string | null;
+    createdAt: Date;
+  }): Player {
     return {
       id: player.id,
       name: player.name,
+      clientId: player.clientId,
       socketId: player.socketId,
       isBot: player.isBot,
       botDifficulty: player.botDifficulty,
@@ -104,19 +112,16 @@ export class PlayerService {
       updateData.socketId = input.socketId;
     }
 
+    if (input.clientId !== undefined) {
+      updateData.clientId = input.clientId;
+    }
+
     const player = await db.player.update({
       where: { id: playerId },
       data: updateData,
     });
 
-    return {
-      id: player.id,
-      name: player.name,
-      socketId: player.socketId,
-      isBot: player.isBot,
-      botDifficulty: player.botDifficulty,
-      createdAt: player.createdAt,
-    };
+    return this.toPlayer(player);
   }
 
   /**
@@ -127,24 +132,40 @@ export class PlayerService {
   }
 
   /**
-   * Gets or creates a player by name.
-   * If a player with the same socket exists, updates their name.
+   * Resolves the player for a (re)connecting socket.
+   *
+   * Identity is keyed on the stable, client-generated `clientId` so a player
+   * keeps the same Player row (and therefore their lobby seat / hand) across
+   * reconnects, network switches and new socket ids. The `socketId` is just the
+   * current live connection and is refreshed here on every connect.
+   *
+   * Falls back to socket-id matching when no clientId is supplied (older
+   * clients), preserving previous behaviour.
    */
-  async getOrCreatePlayer(name: string, socketId: string): Promise<Player> {
-    const db = getDB();
+  async getOrCreatePlayer(
+    name: string,
+    socketId: string,
+    clientId?: string | null
+  ): Promise<Player> {
+    if (clientId) {
+      const existing = await this.getPlayerByClientId(clientId);
+      if (existing) {
+        // Returning player: refresh their live socket and name.
+        return this.updatePlayer(existing.id, { socketId, name });
+      }
+      // First time we've seen this clientId: create and bind it.
+      return this.createPlayer({ name, socketId, clientId });
+    }
 
-    // Check if player with this socket exists
+    // Legacy path: no stable identity supplied, match on socket id.
     const existingPlayer = await this.getPlayerBySocketId(socketId);
-
     if (existingPlayer) {
-      // Update name if different
       if (existingPlayer.name !== name) {
         return this.updatePlayer(existingPlayer.id, { name });
       }
       return existingPlayer;
     }
 
-    // Create new player
     return this.createPlayer({ name, socketId });
   }
 
