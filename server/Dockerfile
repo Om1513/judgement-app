@@ -16,14 +16,14 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# ---- Runtime stage: production deps + compiled output + Prisma client ----
+# ---- Runtime stage: compiled output + full deps (incl. Prisma CLI/engines) ----
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev
-# Bring the generated Prisma client over from the build stage.
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
+# Reuse the build stage's installed modules so the Prisma CLI, query/migration
+# engines, and the generated client are all present at runtime. (A pruned
+# --omit=dev install would drop the `prisma` CLI, which the boot command needs.)
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
 
@@ -31,5 +31,6 @@ COPY prisma ./prisma
 EXPOSE 3001
 
 # On boot, sync the schema to the database (creates tables on a fresh DB),
-# then start the server. For stricter control, switch to `prisma migrate deploy`.
-CMD ["sh", "-c", "npx prisma db push && node dist/server.js"]
+# then start the server. Client is already generated, so skip regeneration.
+# For stricter control later, switch to `prisma migrate deploy`.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js db push --skip-generate && node dist/server.js"]
