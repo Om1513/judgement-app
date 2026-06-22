@@ -13,6 +13,7 @@ import {
 } from '../types/socket';
 import { gameService } from '../services/game.service';
 import { scoreboardService } from '../services/scoreboard.service';
+import { perfEnabled, perfLog, payloadSize } from '../utils/perf';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -45,9 +46,21 @@ export async function broadcastGameUpdate(
   }
 
   const sockets = await io.in(`lobby:${ref.code}`).fetchSockets();
+  let lastSize = 0;
   for (const s of sockets) {
     const clientState = gameService.getClientGameState(game, s.data.playerId);
+    if (perfEnabled) {
+      lastSize = payloadSize({ gameState: clientState });
+    }
     s.emit('game:update', { gameState: clientState });
+  }
+
+  if (perfEnabled) {
+    perfLog('broadcast game:update', {
+      room: ref.code,
+      players: sockets.length,
+      bytesPerPlayer: lastSize,
+    });
   }
 }
 

@@ -16,6 +16,7 @@ import { registerLobbyEvents, handleLobbyDisconnect } from './lobby.events';
 import { registerGameEvents, handleGameDisconnect } from './game.events';
 import { registerScoreboardEvents } from './scoreboard.events';
 import { getCorsOrigin } from '../utils/corsOrigin';
+import { perfEnabled, perfLog } from '../utils/perf';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -45,6 +46,21 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
   // Connection handler
   io.on('connection', async (socket: TypedSocket) => {
     console.log(`New connection: ${socket.id}`);
+
+    // Observability: which transport did this client land on, and did it
+    // upgrade to WebSocket? (Enabled only when PERF_LOG is set.)
+    if (perfEnabled) {
+      perfLog('socket connected', {
+        id: socket.id,
+        transport: socket.conn.transport.name,
+      });
+      socket.conn.on('upgrade', () => {
+        perfLog('socket transport upgraded', {
+          id: socket.id,
+          transport: socket.conn.transport.name,
+        });
+      });
+    }
 
     // Initialize socket data
     socket.data.playerId = '';

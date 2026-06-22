@@ -77,7 +77,13 @@ class SocketService {
       // automatic reconnect, so we always (re)authenticate with our stable
       // clientId, which lets the server restore our lobby/game session.
       this.socket.on('connect', () => {
-        console.log('Socket connected:', this.socket.id);
+        // Log the negotiated transport so production issues (e.g. stuck on
+        // HTTP long-polling instead of WebSocket) are easy to spot.
+        const transport = this.socket.io?.engine?.transport?.name;
+        console.log('Socket connected:', this.socket.id, 'transport:', transport);
+        this.socket.io?.engine?.once('upgrade', () => {
+          console.log('Socket transport upgraded:', this.socket.io.engine.transport.name);
+        });
         this.isConnected = true;
 
         this.socket.emit('player:connect', {

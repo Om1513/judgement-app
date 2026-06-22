@@ -89,6 +89,39 @@ socket → same player, game state restored). To see it in the app: start a game
 toggle the phone between WiFi and mobile data; the socket reconnects, the server
 re-emits your hand and the current turn, and play continues.
 
+## 6. Performance / latency
+
+The biggest production latency lever for this app is **network round-trip
+distance**, because each game action is server-authoritative and touches the
+database. To minimize it:
+
+- **Co-locate the database with the server, in a region near your players.**
+  Server↔DB should be ~1ms (same region); player↔server is the unavoidable
+  internet hop, so pick the region closest to your audience. With Neon, match
+  the Railway service region to your Neon project's region.
+- The server keeps the (serverless) DB warm with a periodic `SELECT 1` to avoid
+  Neon autosuspend cold-start spikes.
+
+### Observability (env-gated, off by default)
+Set on the server to measure where time goes (safe to leave off in normal prod):
+
+- `PERF_LOG=1` — logs negotiated transport, per-handler timing for
+  `game:submit-bid` / `game:play-card`, and broadcast payload size + room size.
+- `PERF_WARN_MS=100` — handlers slower than this are logged as `SLOW`.
+
+The client logs its negotiated transport on connect (e.g.
+`Socket connected: <id> transport: websocket`) and any upgrade.
+
+### Production WebSocket health checklist
+1. Open the app (or two clients) and confirm the client log shows
+   `transport: websocket` (not `polling`). Polling = much higher latency.
+2. With `PERF_LOG=1`, confirm `game:submit-bid` / `game:play-card` handler times
+   are low (tens of ms). If they're high, the DB is too far from the server →
+   fix region co-location.
+3. Confirm `broadcast game:update` `bytesPerPlayer` stays small (a few KB).
+4. Single Railway instance → no Redis/sticky-session needed. Only add the
+   Socket.IO Redis adapter if you scale to **more than one** backend instance.
+
 ---
 
 ## Known limitations / recommended next steps

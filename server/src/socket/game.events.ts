@@ -13,6 +13,7 @@ import { scoreboardService } from '../services/scoreboard.service';
 import { lobbyService } from '../services/lobby.service';
 import { botService } from '../services/bot.service';
 import { handleAfterCardPlay, broadcastGameUpdate } from './playFlow';
+import { perfStart, perfEnd } from '../utils/perf';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -25,6 +26,7 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
    * Submits a bid during bidding phase.
    */
   socket.on('game:submit-bid', async (data) => {
+    const _t = perfStart();
     try {
       const { bid } = data;
 
@@ -50,6 +52,8 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
 
       // Process pending bot actions
       await botService.processPendingBotActions(socket.data.gameId);
+
+      perfEnd(_t, 'game:submit-bid');
     } catch (error) {
       console.error('Error submitting bid:', error);
       socket.emit('game:error', {
@@ -65,6 +69,7 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
    * Plays a card during playing phase.
    */
   socket.on('game:play-card', async (data) => {
+    const _t = perfStart();
     try {
       const { card } = data;
 
@@ -88,6 +93,8 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       // Broadcast the new state, run the hand-winner popup / inter-hand pause,
       // and drive any pending bot actions.
       await handleAfterCardPlay(io, socket.data.gameId, { trickComplete, roundComplete });
+
+      perfEnd(_t, 'game:play-card', { trickComplete, roundComplete });
     } catch (error) {
       console.error('Error playing card:', error);
       socket.emit('game:error', {
