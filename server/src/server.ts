@@ -3,7 +3,7 @@
 import 'dotenv/config';
 import { createServer } from 'http';
 import app from './app';
-import { connectDB, disconnectDB } from './db/connection';
+import { connectDB, disconnectDB, getDB } from './db/connection';
 import { initializeSocket } from './socket';
 
 const PORT = process.env.PORT || 3001;
@@ -22,6 +22,18 @@ async function main(): Promise<void> {
   try {
     // Connect to database
     await connectDB();
+
+    // Keep the (serverless) database warm. Neon and similar autosuspend after a
+    // few minutes idle, and the first query after suspend pays a cold-start
+    // penalty that shows up as laggy game actions. A cheap periodic ping keeps
+    // the compute active. unref() so it never blocks process exit.
+    const KEEPALIVE_MS = 4 * 60 * 1000;
+    const dbKeepAlive = setInterval(() => {
+      getDB().$queryRaw`SELECT 1`.catch((err) => {
+        console.error('DB keep-alive ping failed:', err);
+      });
+    }, KEEPALIVE_MS);
+    dbKeepAlive.unref();
 
     // Create HTTP server
     const httpServer = createServer(app);

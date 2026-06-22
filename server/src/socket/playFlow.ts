@@ -13,7 +13,6 @@ import {
 } from '../types/socket';
 import { gameService } from '../services/game.service';
 import { scoreboardService } from '../services/scoreboard.service';
-import { lobbyService } from '../services/lobby.service';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -27,19 +26,25 @@ export const HAND_WINNER_DURATION = 1800;
 
 /**
  * Sends a personalized game state update to every player in the game's lobby.
+ * Pass `preloadedGame` when the caller already has the fresh game in hand to
+ * avoid a redundant re-fetch.
  */
-export async function broadcastGameUpdate(io: TypedServer, gameId: string): Promise<void> {
-  const game = await gameService.getGameById(gameId);
+export async function broadcastGameUpdate(
+  io: TypedServer,
+  gameId: string,
+  preloadedGame?: Awaited<ReturnType<typeof gameService.getGameById>>
+): Promise<void> {
+  const game = preloadedGame ?? (await gameService.getGameById(gameId));
   if (!game) {
     return;
   }
 
-  const lobby = await lobbyService.getLobbyById(game.lobbyId);
-  if (!lobby) {
+  const ref = await gameService.getLobbyRef(gameId);
+  if (!ref) {
     return;
   }
 
-  const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();
+  const sockets = await io.in(`lobby:${ref.code}`).fetchSockets();
   for (const s of sockets) {
     const clientState = gameService.getClientGameState(game, s.data.playerId);
     s.emit('game:update', { gameState: clientState });
@@ -78,8 +83,8 @@ export async function handleAfterCardPlay(
   if (!game) {
     return;
   }
-  const lobby = await lobbyService.getLobbyById(game.lobbyId);
-  if (!lobby) {
+  const ref = await gameService.getLobbyRef(gameId);
+  if (!ref) {
     return;
   }
 
@@ -93,7 +98,7 @@ export async function handleAfterCardPlay(
   // play, then announce the hand winner.
   setTimeout(() => {
   if (winnerId && winner) {
-    io.to(`lobby:${lobby.code}`).emit('hand:winner-announced', {
+    io.to(`lobby:${ref.code}`).emit('hand:winner-announced', {
       playerId: winnerId,
       playerName: winner.name,
       trickNumber,
@@ -114,7 +119,7 @@ export async function handleAfterCardPlay(
           await broadcastFinalWinner(io, gameId);
         } else {
           // Round is over - reveal the scoreboard now (after the popup).
-          io.to(`lobby:${lobby.code}`).emit('game:round-complete', {
+          io.to(`lobby:${ref.code}`).emit('game:round-complete', {
             roundNumber: game.gameState.currentRound,
             scores: game.gameState.scores,
           });
@@ -126,7 +131,7 @@ export async function handleAfterCardPlay(
         const state = await gameService.advanceToNextTrick(gameId);
         await broadcastGameUpdate(io, gameId);
         if (state && winnerId) {
-          io.to(`lobby:${lobby.code}`).emit('hand:next-started', {
+          io.to(`lobby:${ref.code}`).emit('hand:next-started', {
             trickNumber: state.roundState?.trickNumber ?? trickNumber + 1,
             leaderId: winnerId,
           });
@@ -149,8 +154,8 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
   if (!game) {
     return;
   }
-  const lobby = await lobbyService.getLobbyById(game.lobbyId);
-  if (!lobby) {
+  const ref = await gameService.getLobbyRef(gameId);
+  if (!ref) {
     return;
   }
 
@@ -161,11 +166,11 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
   }
 
   console.log(
-    `Broadcasting final winner for ${gameId} to lobby:${lobby.code}:`,
+    `Broadcasting final winner for ${gameId} to lobby:${ref.code}:`,
     result.winners.map(w => w.name).join(', ')
   );
 
-  io.to(`lobby:${lobby.code}`).emit('game:final-winner', {
+  io.to(`lobby:${ref.code}`).emit('game:final-winner', {
     winners: result.winners,
     winnerIds: result.winnerIds,
     winningScore: result.winningScore,
@@ -174,8 +179,11 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
   });
 
   // Keep the legacy event for any older clients / logging.
-  io.to(`lobby:${lobby.code}`).emit('game:completed', {
+  io.to(`lobby:${ref.code}`).emit('game:completed', {
     finalScores: result.finalScores,
     winner: result.winners[0] || { id: '', name: 'Unknown' },
   });
+
+  // Game is over - drop the cached lobby ref to bound memory.
+  gameService.clearLobbyRef(gameId);
 }

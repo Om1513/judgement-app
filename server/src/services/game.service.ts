@@ -32,6 +32,41 @@ import {
 } from '../utils/trump';
 
 export class GameService {
+  // A game's lobby id and code never change, so we cache them per game to avoid
+  // a join-heavy lobby lookup on every single action/broadcast (hot path,
+  // especially costly against a remote/serverless database).
+  private lobbyRefCache = new Map<string, { lobbyId: string; code: string }>();
+
+  /**
+   * Returns the (immutable) lobby id + code for a game, used to address the
+   * Socket.IO room. Cached in memory; one lightweight query on a cache miss.
+   */
+  async getLobbyRef(gameId: string): Promise<{ lobbyId: string; code: string } | null> {
+    const cached = this.lobbyRefCache.get(gameId);
+    if (cached) {
+      return cached;
+    }
+
+    const db = getDB();
+    const game = await db.game.findUnique({
+      where: { id: gameId },
+      select: { lobbyId: true, lobby: { select: { code: true } } },
+    });
+
+    if (!game) {
+      return null;
+    }
+
+    const ref = { lobbyId: game.lobbyId, code: game.lobby.code };
+    this.lobbyRefCache.set(gameId, ref);
+    return ref;
+  }
+
+  /** Drops a game's cached lobby ref (call when the game is over). */
+  clearLobbyRef(gameId: string): void {
+    this.lobbyRefCache.delete(gameId);
+  }
+
   /**
    * Initializes a new game from a lobby.
    */
@@ -42,6 +77,9 @@ export class GameService {
     if (!lobby) {
       throw new Error('Lobby not found');
     }
+
+    // Warm the lobby-ref cache so the first broadcast doesn't need a DB lookup.
+    this.lobbyRefCache.set(gameId, { lobbyId, code: lobby.code });
 
     const settings = lobby.settings;
     const playerCount = lobby.players.length;

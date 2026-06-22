@@ -12,7 +12,7 @@ import { gameService } from '../services/game.service';
 import { scoreboardService } from '../services/scoreboard.service';
 import { lobbyService } from '../services/lobby.service';
 import { botService } from '../services/bot.service';
-import { handleAfterCardPlay } from './playFlow';
+import { handleAfterCardPlay, broadcastGameUpdate } from './playFlow';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -37,7 +37,7 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       }
 
       // Submit bid
-      const state = await gameService.submitBid({
+      await gameService.submitBid({
         gameId: socket.data.gameId,
         playerId: socket.data.playerId,
         bid,
@@ -45,24 +45,8 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
 
       console.log(`Player ${socket.data.playerName} bid ${bid}`);
 
-      // Get the game to send personalized states
-      const game = await gameService.getGameById(socket.data.gameId);
-      if (!game) {
-        throw new Error('Game not found after bid');
-      }
-
-      // Get lobby for room name
-      const lobby = await lobbyService.getLobbyById(game.lobbyId);
-      if (!lobby) {
-        throw new Error('Lobby not found');
-      }
-
-      // Send personalized game state to each player
-      const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();
-      for (const s of sockets) {
-        const clientState = gameService.getClientGameState(game, s.data.playerId);
-        s.emit('game:update', { gameState: clientState });
-      }
+      // Broadcast personalized state to everyone (uses the cached lobby ref).
+      await broadcastGameUpdate(io, socket.data.gameId);
 
       // Process pending bot actions
       await botService.processPendingBotActions(socket.data.gameId);

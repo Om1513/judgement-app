@@ -147,13 +147,13 @@ export class BotService {
       return;
     }
 
-    const lobby = await lobbyService.getLobbyById(game.lobbyId);
-    if (!lobby) {
+    const ref = await gameService.getLobbyRef(gameId);
+    if (!ref) {
       return;
     }
 
     // Get all sockets in the lobby room
-    const sockets = await this.io.in(`lobby:${lobby.code}`).fetchSockets();
+    const sockets = await this.io.in(`lobby:${ref.code}`).fetchSockets();
 
     // Send personalized game state to each player
     for (const socket of sockets) {
