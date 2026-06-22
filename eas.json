@@ -14,13 +14,13 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_SERVER_URL": "https://REPLACE-WITH-YOUR-API-HOST"
+        "EXPO_PUBLIC_SERVER_URL": "https://judgement-server-production.up.railway.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_SERVER_URL": "https://REPLACE-WITH-YOUR-API-HOST"
+        "EXPO_PUBLIC_SERVER_URL": "https://judgement-server-production.up.railway.app"
       }
     }
   },
