@@ -8,7 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
  * backend hand:winner-announced / hand:next-started events) so bots and humans
  * stay in sync. Pops in, then fades out when `visible` becomes false.
  */
-export default function HandWinnerOverlay({ visible, winnerName }) {
+export default function HandWinnerOverlay({ visible, winnerName, onShown }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.6)).current;
   const glow = useRef(new Animated.Value(0.4)).current;
@@ -35,7 +35,11 @@ export default function HandWinnerOverlay({ visible, winnerName }) {
           tension: 90,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(({ finished }) => {
+        // Lets the parent hold anything that should land with the announcement
+        // rather than before it (the avatars' trick counts).
+        if (finished && onShown) onShown();
+      });
     } else {
       Animated.parallel([
         Animated.timing(opacity, {

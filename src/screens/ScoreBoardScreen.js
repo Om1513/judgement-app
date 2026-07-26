@@ -33,7 +33,12 @@ export default function ScoreBoardScreen({ navigation, route }) {
   // Check if current player has already continued based on initial scoreboard
   const initialContinued = initialScoreboard?.players?.find(p => p.id === currentPlayerId)?.hasContinued || false;
   const [hasContinued, setHasContinued] = useState(initialContinued);
-  const [isWaiting, setIsWaiting] = useState(initialContinued);
+
+  // Measured height of the score-rows area. Row text is scaled to whatever this
+  // works out to per row, so the table fits on one screen for any round count
+  // (4 up to ~17) instead of overflowing once the rows outgrow a fixed 22px
+  // line height.
+  const [rowsAreaHeight, setRowsAreaHeight] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -61,7 +66,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
       const currentPlayer = data.scoreboard.players.find(p => p.id === currentPlayerId);
       if (currentPlayer?.hasContinued) {
         setHasContinued(true);
-        setIsWaiting(true);
       }
     });
 
@@ -155,7 +159,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
   const handleContinue = () => {
     if (hasContinued) return;
     setHasContinued(true);
-    setIsWaiting(true);
     socketService.scoreboardContinue();
   };
 
@@ -181,6 +184,18 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
   const leadingPlayer = getLeadingPlayer();
 
+  // Scale the row text to the space actually available. The rows share the area
+  // evenly via flex, so each one gets (area / rowCount); sizing the text off
+  // that keeps every round visible without scrolling. The +1 accounts for the
+  // Total row, which is the same height as a data row. Clamped so long games
+  // stay legible and short ones don't blow the text up.
+  const rowCount = scoreboard.rows.length + 1;
+  const rowHeight = rowsAreaHeight > 0 ? rowsAreaHeight / rowCount : 0;
+  const cellFontSize = rowHeight > 0
+    ? Math.max(9, Math.min(18, Math.floor(rowHeight * 0.5)))
+    : 14;
+  const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
+
   return (
     <View style={styles.container}>
       <ImageBackground
@@ -204,6 +219,10 @@ export default function ScoreBoardScreen({ navigation, route }) {
           ]}
         >
 
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>SCOREBOARD</Text>
+          </View>
+
           {/* Scoreboard Table Card */}
           <View style={styles.tableContainer}>
             <LinearGradient
@@ -213,16 +232,17 @@ export default function ScoreBoardScreen({ navigation, route }) {
               {/* Header Row */}
               <View style={styles.headerRow}>
                 <View style={[styles.cell, styles.trumpCell]}>
-                  <Text style={styles.headerText} numberOfLines={1}>Trump</Text>
+                  <Text style={[styles.headerText, cellText]} numberOfLines={1}>Trump</Text>
                 </View>
                 <View style={[styles.cell, styles.roundCell]}>
-                  <Text style={styles.headerText} numberOfLines={1}>Round</Text>
+                  <Text style={[styles.headerText, cellText]} numberOfLines={1}>Round</Text>
                 </View>
                 {scoreboard.players.map((player) => (
                   <View key={player.id} style={[styles.cell, styles.playerCell]}>
                     <Text
                       style={[
                         styles.headerText,
+                        cellText,
                         styles.playerHeaderText,
                         player.id === currentPlayerId && styles.currentPlayerText,
                       ]}
@@ -235,7 +255,10 @@ export default function ScoreBoardScreen({ navigation, route }) {
               </View>
 
               {/* Score Rows */}
-              <View style={styles.rowsContainer}>
+              <View
+                style={styles.rowsContainer}
+                onLayout={(e) => setRowsAreaHeight(e.nativeEvent.layout.height)}
+              >
                 {scoreboard.rows.map((row, index) => {
                   const isCurrentRound = row.roundNumber === scoreboard.currentRound;
                   const trumpInfo = TRUMP_DISPLAY[row.trump.suit] || { symbol: "?", color: "#FFF8E7" };
@@ -251,17 +274,17 @@ export default function ScoreBoardScreen({ navigation, route }) {
                     >
                       {/* Trump */}
                       <View style={[styles.cell, styles.trumpCell]}>
-                        <Text style={[styles.trumpSymbol, { color: trumpInfo.color }]}>
+                        <Text style={[styles.trumpSymbol, cellText, { color: trumpInfo.color }]}>
                           {trumpInfo.symbol}
                         </Text>
-                        <Text style={styles.trumpName} numberOfLines={1}>
+                        <Text style={[styles.trumpName, cellText]} numberOfLines={1}>
                           {row.trump.name || row.trump.suit}
                         </Text>
                       </View>
 
                       {/* Round number */}
                       <View style={[styles.cell, styles.roundCell]}>
-                        <Text style={styles.roundNumber}>{row.roundNumber}</Text>
+                        <Text style={[styles.roundNumber, cellText]}>{row.roundNumber}</Text>
                       </View>
 
                       {/* Player scores */}
@@ -275,13 +298,14 @@ export default function ScoreBoardScreen({ navigation, route }) {
                               <Text
                                 style={[
                                   styles.scoreText,
+                                  cellText,
                                   madeBid ? styles.scorePositive : styles.scoreZero,
                                 ]}
                               >
                                 {score.score}
                               </Text>
                             ) : (
-                              <Text style={styles.scoreEmpty}>–</Text>
+                              <Text style={[styles.scoreEmpty, cellText]}>–</Text>
                             )}
                           </View>
                         );
@@ -294,7 +318,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
                     the player columns line up exactly with the scores above. */}
                 <View style={styles.totalRow}>
                   <View style={[styles.cell, styles.trumpCell]}>
-                    <Text style={styles.totalLabel} numberOfLines={1}>Total</Text>
+                    <Text style={[styles.totalLabel, cellText]} numberOfLines={1}>Total</Text>
                   </View>
                   <View style={[styles.cell, styles.roundCell]} />
                   {scoreboard.players.map((player) => {
@@ -305,6 +329,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
                         <Text
                           style={[
                             styles.totalScoreText,
+                            cellText,
                             isLeading && styles.leadingScore,
                           ]}
                         >
@@ -336,23 +361,11 @@ export default function ScoreBoardScreen({ navigation, route }) {
                 </TouchableOpacity>
               </Animated.View>
             ) : (
-              <View style={styles.waitingContainer}>
-                <Text style={styles.waitingText}>Waiting for other players...</Text>
-                <View style={styles.continuedList}>
-                  {scoreboard.players.map((player) => (
-                    <View key={player.id} style={styles.continuedItem}>
-                      <Text style={styles.continuedName}>{player.name}</Text>
-                      <Text
-                        style={[
-                          styles.continuedStatus,
-                          player.hasContinued ? styles.continuedYes : styles.continuedNo,
-                        ]}
-                      >
-                        {player.hasContinued ? "Ready" : "..."}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
+              /* Same footprint as the button above, so committing to the round
+                 never resizes the table. The server tracks who is ready and
+                 advances everyone once the last player is in. */
+              <View style={styles.readyPill}>
+                <Text style={styles.readyPillText}>READY ✓</Text>
               </View>
             )}
           </View>
@@ -383,12 +396,14 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 2,
   },
+  // Kept deliberately compact: the app is landscape-locked, so every pixel here
+  // comes straight out of the table's height.
   titleContainer: {
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 26,
+    fontSize: 22,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
     textShadowColor: "rgba(255, 165, 0, 0.5)",
@@ -563,11 +578,14 @@ const styles = StyleSheet.create({
     textShadowRadius: 10,
   },
 
-  // Continue button
+  // Continue button. Fixed height on purpose: the table above is flex:1, so any
+  // change in this row's height would resize the table. Pinning it keeps the
+  // board identical before and after the player commits to the round.
   buttonContainer: {
+    height: 52,
     marginTop: 4,
     alignItems: "center",
-    paddingBottom: 4,
+    justifyContent: "center",
   },
   continueButton: {
     borderRadius: 14,
@@ -592,45 +610,20 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     letterSpacing: 3,
   },
-  waitingContainer: {
-    alignItems: "center",
-    backgroundColor: "rgba(42, 22, 84, 0.8)",
-    padding: 15,
+  // Mirrors continueButtonGradient's padding so the swap is pixel-neutral.
+  readyPill: {
+    paddingVertical: 9,
+    paddingHorizontal: 50,
     borderRadius: 12,
+    backgroundColor: "rgba(42, 22, 84, 0.8)",
     borderWidth: 1,
     borderColor: "#5E3A9E",
   },
-  waitingText: {
-    fontSize: 16,
+  readyPillText: {
+    fontSize: 19,
     fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginBottom: 10,
-  },
-  continuedList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  continuedItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 8,
-    marginVertical: 4,
-  },
-  continuedName: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    marginRight: 5,
-  },
-  continuedStatus: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-  },
-  continuedYes: {
     color: "#4CAF50",
-  },
-  continuedNo: {
-    color: "#888888",
+    letterSpacing: 3,
+    textAlign: "center",
   },
 });

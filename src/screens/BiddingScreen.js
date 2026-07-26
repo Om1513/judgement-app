@@ -363,14 +363,10 @@ export default function BiddingScreen({ navigation, route }) {
 
               {/* Bid Buttons */}
               {isMyTurn && gameState?.status === "BIDDING" ? (
-                <>
-                  {renderBidButtons()}
-                  {isSubmitting && (
-                    <View style={styles.submittingContainer}>
-                      <Text style={styles.submittingText}>Submitting...</Text>
-                    </View>
-                  )}
-                </>
+                /* No "submitting" state: the bid landing in the table below is
+                   the confirmation. isSubmitting still disables the buttons so
+                   a double tap can't send two bids. */
+                renderBidButtons()
               ) : gameState?.status === "PLAYING" ? (
                 <View style={styles.waitingMessageContainer}>
                   <LinearGradient
@@ -558,18 +554,6 @@ const styles = StyleSheet.create({
   },
   bidButtonTextForbidden: {
     color: "#888",
-  },
-
-  // Submitting Indicator
-  submittingContainer: {
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  submittingText: {
-    fontSize: 16,
-    fontFamily: "Inter_400Regular",
-    color: "#FFD700",
-    letterSpacing: 1,
   },
 
   // Waiting Message

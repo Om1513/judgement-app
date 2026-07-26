@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -126,6 +126,16 @@ export default function GameTableScreen({ navigation, route }) {
   // disabled during this window (the backend also pauses, so bots wait too).
   const [handWinner, setHandWinner] = useState(null);
 
+  // Trick counts frozen at their pre-trick values, or null when the live values
+  // should show. The server increments tricksWon the moment a trick resolves,
+  // which is ~1.9s before the winner popup appears, so an avatar would flip
+  // "0/1" -> "1/1" well before the animation that explains it. Holding the old
+  // counts here lets the number tick up as the popup lands instead.
+  const [heldTricks, setHeldTricks] = useState(null);
+  // Counts carried by the previous game:update - i.e. what is still on screen
+  // at the moment a trick-resolved update arrives.
+  const prevTrickCountsRef = useRef({});
+
   // Animations
   const turnGlow = useRef(new Animated.Value(0.6)).current;
 
@@ -150,6 +160,18 @@ export default function GameTableScreen({ navigation, route }) {
   const handSize = roundState?.cardsPerPlayer || 1;
   const isMyTurn = gameState?.isMyTurn;
   const leadSuit = currentTrick?.leadSuit;
+
+  // Fired by the winner popup once its entrance animation settles. That is the
+  // beat the new count belongs on: the player sees "X wins the hand!" and their
+  // tally ticks up underneath it.
+  const handleWinnerShown = useCallback(() => setHeldTricks(null), []);
+
+  // Tricks to show for a seat: the frozen count while a win is being announced,
+  // otherwise whatever the server last sent.
+  const displayedTricks = (player) =>
+    heldTricks && heldTricks[player.id] !== undefined
+      ? heldTricks[player.id]
+      : player.tricksWon;
 
   // Arrange players in seat positions (4 player layout)
   // Current player is always at bottom (position 2)
@@ -295,6 +317,21 @@ export default function GameTableScreen({ navigation, route }) {
   useEffect(() => {
     const unsubscribeUpdate = socketService.on("game:update", (data) => {
       console.log("Game update:", data.gameState?.status);
+
+      // A resolved trick (currentTrick already has a winner) is the update that
+      // carries the bumped tricksWon. Pin the avatars to the counts we were
+      // already showing; they are released when the winner popup finishes
+      // animating in. Any other update means nothing is pending, so show live.
+      const incomingPlayers = data.gameState?.players || [];
+      if (data.gameState?.roundState?.currentTrick?.winnerId) {
+        setHeldTricks((held) => held ?? prevTrickCountsRef.current);
+      } else {
+        setHeldTricks(null);
+      }
+      prevTrickCountsRef.current = Object.fromEntries(
+        incomingPlayers.map((p) => [p.id, p.tricksWon])
+      );
+
       setGameState(data.gameState);
       setIsPlayingCard(false);
       setSelectedCard(null);
@@ -476,7 +513,7 @@ export default function GameTableScreen({ navigation, route }) {
           {/* Bid / Hands Made */}
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreText}>
-              {player.tricksWon} / {player.bid ?? 0}
+              {displayedTricks(player)} / {player.bid ?? 0}
             </Text>
           </View>
         </View>
@@ -747,7 +784,7 @@ export default function GameTableScreen({ navigation, route }) {
               <Text style={styles.myInfoName}>You</Text>
               <View style={styles.myScoreContainer}>
                 <Text style={styles.myScoreText}>
-                  {arrangedPlayers[2].tricksWon} / {arrangedPlayers[2].bid ?? 0}
+                  {displayedTricks(arrangedPlayers[2])} / {arrangedPlayers[2].bid ?? 0}
                 </Text>
               </View>
             </View>
@@ -761,6 +798,7 @@ export default function GameTableScreen({ navigation, route }) {
         <HandWinnerOverlay
           visible={!!handWinner}
           winnerName={handWinner?.playerName}
+          onShown={handleWinnerShown}
         />
         </Pressable>
 
