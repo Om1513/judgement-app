@@ -1,7 +1,7 @@
 # Deployment Guide — Judgement (Kachuful)
 
 This guide takes the game from "works on my WiFi" to "playable anywhere in the
-world." Recommended stack: **Railway** (backend) + **Neon** (Postgres) + **EAS**
+world." Recommended stack: **Railway** (backend) + **Supabase** (Postgres) + **EAS**
 (mobile builds). Render config is also included if you prefer it.
 
 The codebase has already been prepared for this:
@@ -18,14 +18,34 @@ The codebase has already been prepared for this:
 
 ---
 
-## 1. Provision the database (Neon)
+## 1. Provision the database (Supabase)
 
-1. Create a project at https://neon.tech → you get a Postgres database.
-2. Copy the **pooled** connection string (host contains `-pooler`). It looks like:
-   `postgresql://USER:PASS@ep-xxx-pooler.REGION.aws.neon.tech/DB?sslmode=require`
-3. Keep it handy — it becomes `DATABASE_URL` on the backend.
+1. Create a project at https://supabase.com → you get a Postgres database.
+   Save the database password it shows you; it is only displayed once.
+2. Click **Connect** (top bar) → **ORMs** tab → **Prisma**. It hands you exactly
+   the two strings this project expects:
+   ```
+   DATABASE_URL="postgresql://postgres.PROJECT_REF:PASS@aws-0-REGION.pooler.supabase.com:6543/postgres?pgbouncer=true"
+   DIRECT_URL="postgresql://postgres.PROJECT_REF:PASS@aws-0-REGION.pooler.supabase.com:5432/postgres"
+   ```
+3. Substitute your real password (URL-encode any `@ : / ? # & %` in it).
+4. Keep both handy — they become `DATABASE_URL` and `DIRECT_URL` on the backend.
 
-(Supabase or Render Postgres work identically — just grab their connection string.)
+Why two: `DATABASE_URL` is the **transaction-mode** pooler (6543) used for
+runtime queries; `pgbouncer=true` makes Prisma disable prepared statements,
+which that mode doesn't support. `DIRECT_URL` is the **session-mode** pooler
+(5432), which `prisma db push` needs because transaction mode can't run DDL.
+`schema.prisma` wires them up via `url` and `directUrl`.
+
+**Never use the direct host** `db.PROJECT_REF.supabase.co` — it is IPv6-only and
+Railway cannot reach it. Both pooler hosts resolve to IPv4.
+
+Note: the transaction pooler is incompatible with Prisma *interactive*
+transactions (`prisma.$transaction(async (tx) => ...)`). This codebase uses
+none. If you add one, route it through `DIRECT_URL` or switch `DATABASE_URL` to
+the session pooler.
+
+(Neon or Render Postgres work identically — just grab their connection string.)
 
 ## 2. Deploy the backend (Railway)
 
@@ -34,12 +54,13 @@ The codebase has already been prepared for this:
 3. In the service settings set **Root Directory = `server`**. Railway detects
    `server/Dockerfile` and `server/railway.json` automatically.
 4. Add environment variables (Variables tab):
-   - `DATABASE_URL` = your Neon pooled string
+   - `DATABASE_URL` = Supabase transaction-pooler string (port 6543, `?pgbouncer=true`)
+   - `DIRECT_URL` = Supabase session-pooler string (port 5432)
    - `NODE_ENV` = `production`
    - `CORS_ORIGIN` = `*` (tighten later if you ship a web build)
    - `PORT` is injected by Railway automatically — do **not** set it.
 5. Deploy. On boot the container runs `prisma db push` (creates all tables on the
-   fresh Neon DB) then starts the server. Health check: `GET /health`.
+   fresh Supabase DB) then starts the server. Health check: `GET /health`.
 6. Under **Settings → Networking**, generate a public domain. You'll get something
    like `https://judgement-server-production.up.railway.app`. TLS/`wss://` is
    automatic. **This URL is your API host.**
@@ -97,10 +118,10 @@ database. To minimize it:
 
 - **Co-locate the database with the server, in a region near your players.**
   Server↔DB should be ~1ms (same region); player↔server is the unavoidable
-  internet hop, so pick the region closest to your audience. With Neon, match
-  the Railway service region to your Neon project's region.
-- The server keeps the (serverless) DB warm with a periodic `SELECT 1` to avoid
-  Neon autosuspend cold-start spikes.
+  internet hop, so pick the region closest to your audience. Match the Railway
+  service region to your Supabase project's region.
+- The server keeps the DB connection warm with a periodic `SELECT 1` so the
+  first query after an idle stretch doesn't pay a reconnect penalty.
 
 ### Observability (env-gated, off by default)
 Set on the server to measure where time goes (safe to leave off in normal prod):

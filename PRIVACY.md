@@ -41,7 +41,7 @@ we do **not** use it to track you across other apps or websites.
 - The display name and device play ID are stored **on your device** (so you
   don't have to retype them).
 - Gameplay data is processed by our server and database, hosted by our
-  infrastructure providers (Railway and Neon) on servers located in the United
+  infrastructure providers (Railway and Supabase) on servers located in the United
   States. These providers process data on our behalf as service providers.
 
 ## Data retention

@@ -23,10 +23,10 @@ async function main(): Promise<void> {
     // Connect to database
     await connectDB();
 
-    // Keep the (serverless) database warm. Neon and similar autosuspend after a
-    // few minutes idle, and the first query after suspend pays a cold-start
-    // penalty that shows up as laggy game actions. A cheap periodic ping keeps
-    // the compute active. unref() so it never blocks process exit.
+    // Keep the database connection warm. Managed Postgres (Supabase, Neon and
+    // similar) idles out pooled connections, and the first query afterwards
+    // pays a reconnect penalty that shows up as laggy game actions. A cheap
+    // periodic ping keeps it live. unref() so it never blocks process exit.
     const KEEPALIVE_MS = 4 * 60 * 1000;
     const dbKeepAlive = setInterval(() => {
       getDB().$queryRaw`SELECT 1`.catch((err) => {

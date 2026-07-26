@@ -7,7 +7,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime queries: Supabase transaction-mode pooler (port 6543, ?pgbouncer=true).
+  url       = env("DATABASE_URL")
+  // Schema changes (`prisma db push` / `migrate`): transaction mode can't run DDL,
+  // so these go through the session-mode pooler (port 5432) instead.
+  directUrl = env("DIRECT_URL")
 }
 
 // Player model - stores player information
