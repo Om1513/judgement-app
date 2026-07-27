@@ -12,7 +12,6 @@ import {
 import { LobbySettings } from '../types/lobby';
 import { gameService } from './game.service';
 import { lobbyService } from './lobby.service';
-import { calculateScore } from '../utils/cardUtils';
 
 // Trump suit display mappings
 const TRUMP_DISPLAY: Record<string, { name: string; symbol: string }> = {

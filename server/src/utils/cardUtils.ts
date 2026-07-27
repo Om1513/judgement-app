@@ -173,34 +173,36 @@ export function canPlayCard(
 }
 
 /**
- * Calculates score for a round.
+ * The single authoritative round scoring rule. Every score in the game - human
+ * or bot, live round or scoreboard - comes from here; nothing recomputes it.
  *
- * For +10 scoring mode:
- * - If player's handsMade equals bid: score = bid * 10 (or 10 if bid is 0)
- * - If player misses their bid: score = 0
+ * A score is only ever awarded for an exact judgement. Missing the bid in
+ * either direction scores nothing, however close.
  *
- * For +1 scoring mode:
- * - If player's handsMade equals bid: score = bid (or 1 if bid is 0)
- * - If player misses their bid: score = 0
+ *   '+10'  multiplies the bid:  bid x 10, with a correct zero bid worth 10.
+ *   '+1'   adds to a flat base: 10 + bid, so a correct zero bid is also 10.
+ *
+ * So the modes differ in how much a big bid is worth, not in whether a zero bid
+ * pays: bidding 3 and making it is 30 under '+10' but 13 under '+1'.
  */
 export function calculateScore(
   bid: number,
   tricksWon: number,
   scoringMode: '+10' | '+1'
 ): number {
-  if (bid === tricksWon) {
-    // Made the bid exactly
-    if (scoringMode === '+10') {
-      // Bid 0 and made 0 = 10 points, else bid * 10
-      return bid === 0 ? 10 : bid * 10;
-    } else {
-      // Bid 0 and made 0 = 1 point, else bid
-      return bid === 0 ? 1 : bid;
-    }
-  } else {
-    // Failed to make bid - 0 points
+  if (bid !== tricksWon) {
     return 0;
   }
+
+  if (scoringMode === '+10') {
+    return bid === 0 ? 10 : bid * 10;
+  }
+
+  if (scoringMode === '+1') {
+    return 10 + bid;
+  }
+
+  throw new Error(`Unknown scoring mode: ${scoringMode}`);
 }
 
 /**

@@ -189,8 +189,8 @@ export default function HowToPlayScreen({ navigation }) {
         You only score when your judgement is exact. A wrong prediction scores
         nothing, however close it was.
       </RuleText>
-      <ScoringExample mode="+10 mode" multiplier={10} />
-      <ScoringExample mode="+1 mode" multiplier={1} />
+      <ScoringExample mode="+10 mode  ·  10 x Bid" score={(bid) => (bid === 0 ? 10 : bid * 10)} />
+      <ScoringExample mode="+1 mode  ·  10 + Bid" score={(bid) => 10 + bid} />
     </RuleSection>,
 
     // 9 - Scoreboard

@@ -31,11 +31,16 @@ export const TRUMP_SUITS = {
 export type TrumpKey = keyof typeof TRUMP_SUITS;
 export type TrumpSuit = typeof TRUMP_SUITS[TrumpKey];
 
-// Kachuful trump order: Falli → Chukat → Kari → Lal (repeating)
-export const KACHUFUL_TRUMP_ORDER: TrumpKey[] = ['Falli', 'Chukat', 'Kari', 'Lal'];
+// Kachuful trump order: Kari → Chukat → Falli → Lal (repeating)
+export const KACHUFUL_TRUMP_ORDER: TrumpKey[] = ['Kari', 'Chukat', 'Falli', 'Lal'];
 
-// Generate trump sequence for a game based on total rounds
-export function generateTrumpOrder(totalRounds: number): TrumpSuit[] {
+const ALL_TRUMP_KEYS: TrumpKey[] = ['Kari', 'Chukat', 'Falli', 'Lal'];
+
+/**
+ * Deterministic Kachuful sequence, repeating every four rounds.
+ * Round 1 Kari, 2 Chukat, 3 Falli, 4 Lal, 5 Kari, ...
+ */
+export function generateKachufulTrumpOrder(totalRounds: number): TrumpSuit[] {
   const trumpOrder: TrumpSuit[] = [];
   for (let i = 0; i < totalRounds; i++) {
     const trumpKey = KACHUFUL_TRUMP_ORDER[i % KACHUFUL_TRUMP_ORDER.length];
@@ -44,11 +49,34 @@ export function generateTrumpOrder(totalRounds: number): TrumpSuit[] {
   return trumpOrder;
 }
 
-// Get trump for a specific round (1-indexed)
-export function getTrumpForRound(roundNumber: number): TrumpSuit {
-  const index = (roundNumber - 1) % KACHUFUL_TRUMP_ORDER.length;
-  const trumpKey = KACHUFUL_TRUMP_ORDER[index];
-  return TRUMP_SUITS[trumpKey];
+/**
+ * One random suit per round. Repeats are allowed - a round's trump is drawn
+ * independently of the others.
+ *
+ * Called exactly once, when the game is created; the result is persisted on the
+ * game so reconnects, re-renders and state rebroadcasts all see the same suits.
+ */
+export function generateRandomTrumpOrder(totalRounds: number): TrumpSuit[] {
+  const trumpOrder: TrumpSuit[] = [];
+  for (let i = 0; i < totalRounds; i++) {
+    const trumpKey = ALL_TRUMP_KEYS[Math.floor(Math.random() * ALL_TRUMP_KEYS.length)];
+    trumpOrder.push(TRUMP_SUITS[trumpKey]);
+  }
+  return trumpOrder;
+}
+
+/**
+ * Builds the whole game's trump sequence up front, honouring the lobby's order
+ * setting. This is the only place trump is decided - every later read goes
+ * through the persisted array, so nothing can re-roll a Random game mid-play.
+ */
+export function generateTrumpOrder(
+  totalRounds: number,
+  orderMode: 'Kachuful' | 'Random' = 'Kachuful'
+): TrumpSuit[] {
+  return orderMode === 'Random'
+    ? generateRandomTrumpOrder(totalRounds)
+    : generateKachufulTrumpOrder(totalRounds);
 }
 
 // Calculate hand size for a round in Kachuful mode

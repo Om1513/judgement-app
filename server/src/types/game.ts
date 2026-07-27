@@ -151,6 +151,12 @@ export interface ClientGameState {
   scores: Record<string, number>;
   isMyTurn: boolean;
   trumpOrder: TrumpInfo[];
+  // Echoed so the UI can label the active modes. The server remains
+  // authoritative for both trump selection and scoring.
+  settings: {
+    orderMode: LobbySettings['orderMode'];
+    scoringMode: LobbySettings['scoringMode'];
+  };
 }
 
 // Scoreboard types

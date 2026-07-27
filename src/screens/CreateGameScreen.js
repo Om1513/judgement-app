@@ -254,6 +254,11 @@ export default function CreateGameScreen({ navigation, route }) {
                       value={orderMode}
                       onChange={setOrderMode}
                     />
+                    <Text style={styles.settingHint}>
+                      {orderMode === "Random"
+                        ? "Trump drawn fresh each round"
+                        : "Kari → Chukat → Falli → Lal"}
+                    </Text>
                   </SettingCard>
 
                   <SettingCard label="Scoring" compact>
@@ -261,6 +266,11 @@ export default function CreateGameScreen({ navigation, route }) {
                       value={scoringMode}
                       onChange={setScoringMode}
                     />
+                    <Text style={styles.settingHint}>
+                      {scoringMode === "+1"
+                        ? "Exact bid → 10 + Bid"
+                        : "Exact bid → 10 × Bid"}
+                    </Text>
                   </SettingCard>
                 </View>
               </View>
@@ -292,6 +302,15 @@ export default function CreateGameScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  // Spells out what the selected mode actually does, so the difference between
+  // the two scoring modes isn't guesswork.
+  settingHint: {
+    marginTop: 6,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: "#C9BEDC",
+    textAlign: "center",
+  },
   container: {
     flex: 1,
     backgroundColor: "#1a1030",

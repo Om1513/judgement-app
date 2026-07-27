@@ -14,11 +14,13 @@ export const SUITS = [
   { local: "Lal", english: "Hearts", symbol: "♥", red: true },
 ];
 
-// The fixed Kachuful trump rotation, repeating past round 4.
+// The fixed Kachuful trump rotation, repeating past round 4. Mirrors
+// KACHUFUL_TRUMP_ORDER in server/src/utils/trump.ts - the server decides trump,
+// this is only the explanation of it.
 export const KACHUFUL_ORDER = [
-  { round: 1, local: "Falli", english: "Clubs", symbol: "♣", red: false },
+  { round: 1, local: "Kari", english: "Spades", symbol: "♠", red: false },
   { round: 2, local: "Chukat", english: "Diamonds", symbol: "♦", red: true },
-  { round: 3, local: "Kari", english: "Spades", symbol: "♠", red: false },
+  { round: 3, local: "Falli", english: "Clubs", symbol: "♣", red: false },
   { round: 4, local: "Lal", english: "Hearts", symbol: "♥", red: true },
 ];
 

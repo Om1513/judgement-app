@@ -22,10 +22,12 @@ export function ScoreRow({ bid, made, points }) {
 }
 
 /**
- * A labelled mode block. `multiplier` is the points awarded per hand bid, so
- * +10 mode and +1 mode share one component.
+ * A labelled mode block. `score(bid)` is the points for an exact judgement in
+ * this mode, so +10 and +1 share one component. Mirrors calculateScore in
+ * server/src/utils/cardUtils.ts - the server is authoritative; this only
+ * explains it.
  */
-export default function ScoringExample({ mode, multiplier }) {
+export default function ScoringExample({ mode, score }) {
   return (
     <View style={styles.block}>
       <Text style={styles.mode}>{mode}</Text>
@@ -34,11 +36,11 @@ export default function ScoringExample({ mode, multiplier }) {
         <Text style={styles.headerCell}>Made</Text>
         <Text style={styles.headerPoints}>Score</Text>
       </View>
-      {/* Bidding zero and taking zero still scores, at the one-hand rate. */}
-      <ScoreRow bid={0} made={0} points={multiplier} />
-      <ScoreRow bid={1} made={1} points={multiplier} />
-      <ScoreRow bid={2} made={2} points={multiplier * 2} />
-      <ScoreRow bid={3} made={3} points={multiplier * 3} />
+      {/* A correct zero bid still scores in both modes. */}
+      <ScoreRow bid={0} made={0} points={score(0)} />
+      <ScoreRow bid={1} made={1} points={score(1)} />
+      <ScoreRow bid={2} made={2} points={score(2)} />
+      <ScoreRow bid={3} made={3} points={score(3)} />
       <ScoreRow bid={2} made={1} points={0} />
     </View>
   );

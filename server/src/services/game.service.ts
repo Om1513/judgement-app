@@ -27,7 +27,6 @@ import {
 import { validateBid } from '../utils/validateLobby';
 import {
   generateTrumpOrder,
-  getTrumpForRound,
   canBidValue,
 } from '../utils/trump';
 
@@ -89,8 +88,10 @@ export class GameService {
       .sort((a, b) => a.seatPosition - b.seatPosition)
       .map(p => p.playerId);
 
-    // Generate trump order for all rounds
-    const trumpOrder = generateTrumpOrder(settings.rounds).map(trump => ({
+    // Generate the whole game's trump order once, honouring the lobby's order
+    // setting. Persisted below, so a Random game keeps the same suits across
+    // reconnects and rebroadcasts.
+    const trumpOrder = generateTrumpOrder(settings.rounds, settings.orderMode).map(trump => ({
       key: trump.key,
       name: trump.name,
       suit: trump.suit,
@@ -302,6 +303,12 @@ export class GameService {
       scores: state.scores,
       isMyTurn: game.currentTurnPlayerId === playerId,
       trumpOrder: state.trumpOrder,
+      // Clients display these; they never act on them. Trump and scores are
+      // decided server-side.
+      settings: {
+        orderMode: state.settings.orderMode,
+        scoringMode: state.settings.scoringMode,
+      },
     };
   }
 
