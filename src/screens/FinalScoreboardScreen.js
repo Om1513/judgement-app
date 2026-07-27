@@ -4,7 +4,6 @@ import {
   Text,
   ImageBackground,
   StyleSheet,
-  TouchableOpacity,
   Animated,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -12,6 +11,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 const TRUMP_DISPLAY = {
   spades: { symbol: "♠", color: "#FFF8E7" },
@@ -33,6 +34,12 @@ export default function FinalScoreboardScreen({ navigation, route }) {
 
   const [scoreboard, setScoreboard] = useState(null);
   const [winnerIds, setWinnerIds] = useState(initialWinnerIds);
+
+  // Measured height of the score-rows area. Row text is scaled to whatever this
+  // works out to per row, matching the round scoreboard. It matters more here:
+  // this screen always lists every round, so a fixed line height overflows on
+  // any decent-length game.
+  const [rowsAreaHeight, setRowsAreaHeight] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -60,7 +67,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: 250,
         useNativeDriver: true,
       }),
       Animated.spring(slideAnim, {
@@ -86,6 +93,15 @@ export default function FinalScoreboardScreen({ navigation, route }) {
 
   const isWinner = (playerId) => winnerIds.includes(playerId);
 
+  // Same fit-to-space sizing as the round scoreboard. The +1 accounts for the
+  // Total row, which is the same height as a data row.
+  const rowCount = scoreboard.rows.length + 1;
+  const rowHeight = rowsAreaHeight > 0 ? rowsAreaHeight / rowCount : 0;
+  const cellFontSize = rowHeight > 0
+    ? Math.max(9, Math.min(18, Math.floor(rowHeight * 0.5)))
+    : 14;
+  const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
+
   return (
     <View style={styles.container}>
       <ImageBackground
@@ -107,6 +123,19 @@ export default function FinalScoreboardScreen({ navigation, route }) {
         >
           <View style={styles.titleContainer}>
             <Text style={styles.title}>Final Results</Text>
+
+            {/* Exit on the extreme right with sound just inboard of it. Inside
+                the title row rather than floating, so they stay off the table's
+                last column. The game is already over here, so this goes
+                straight home with no "are you sure". */}
+            <CircleIconButton
+              glyph="›"
+              glyphStyle={styles.backGlyph}
+              style={styles.backButton}
+              accessibilityLabel="Return to home"
+              onPress={() => navigation.navigate("Home")}
+            />
+            <SoundToggleButton style={styles.soundButton} />
           </View>
 
           {/* Scoreboard Table Card */}
@@ -118,10 +147,10 @@ export default function FinalScoreboardScreen({ navigation, route }) {
               {/* Header Row */}
               <View style={styles.headerRow}>
                 <View style={[styles.cell, styles.trumpCell]}>
-                  <Text style={styles.headerText} numberOfLines={1}>Trump</Text>
+                  <Text style={[styles.headerText, cellText]} numberOfLines={1}>Trump</Text>
                 </View>
                 <View style={[styles.cell, styles.roundCell]}>
-                  <Text style={styles.headerText} numberOfLines={1}>Round</Text>
+                  <Text style={[styles.headerText, cellText]} numberOfLines={1}>Round</Text>
                 </View>
                 {scoreboard.players.map((player) => (
                   <View key={player.id} style={[styles.cell, styles.playerCell]}>
@@ -130,6 +159,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                       <Text
                         style={[
                           styles.headerText,
+                          cellText,
                           styles.playerHeaderText,
                           player.id === currentPlayerId && styles.currentPlayerText,
                           isWinner(player.id) && styles.winnerHeaderText,
@@ -144,7 +174,10 @@ export default function FinalScoreboardScreen({ navigation, route }) {
               </View>
 
               {/* Score Rows */}
-              <View style={styles.rowsContainer}>
+              <View
+                style={styles.rowsContainer}
+                onLayout={(e) => setRowsAreaHeight(e.nativeEvent.layout.height)}
+              >
                 {scoreboard.rows.map((row, index) => {
                   const trumpInfo = TRUMP_DISPLAY[row.trump.suit] || { symbol: "?", color: "#FFF8E7" };
 
@@ -154,39 +187,33 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                       style={[styles.dataRow, index % 2 === 1 && styles.alternateRow]}
                     >
                       <View style={[styles.cell, styles.trumpCell]}>
-                        <Text style={[styles.trumpSymbol, { color: trumpInfo.color }]}>
+                        <Text style={[styles.trumpSymbol, cellText, { color: trumpInfo.color }]}>
                           {trumpInfo.symbol}
                         </Text>
-                        <Text style={styles.trumpName} numberOfLines={1}>
+                        <Text style={[styles.trumpName, cellText]} numberOfLines={1}>
                           {row.trump.name || row.trump.suit}
                         </Text>
                       </View>
 
                       <View style={[styles.cell, styles.roundCell]}>
-                        <Text style={styles.roundNumber}>{row.roundNumber}</Text>
+                        <Text style={[styles.roundNumber, cellText]}>{row.roundNumber}</Text>
                       </View>
 
+                      {/* Per-round scores are rendered flat here: no made-bid
+                          colouring and no winner tint. The crown and the total
+                          carry the result; highlighting every cell as well made
+                          the table hard to read. */}
                       {row.scores.map((score) => {
                         const hasScore = score.score !== null;
-                        const madeBid = hasScore && score.bid === score.handsMade;
-                        const winnerCol = isWinner(score.playerId);
 
                         return (
-                          <View
-                            key={score.playerId}
-                            style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
-                          >
+                          <View key={score.playerId} style={[styles.cell, styles.playerCell]}>
                             {hasScore ? (
-                              <Text
-                                style={[
-                                  styles.scoreText,
-                                  madeBid ? styles.scorePositive : styles.scoreZero,
-                                ]}
-                              >
+                              <Text style={[styles.scoreText, cellText, styles.scoreNeutral]}>
                                 {score.score}
                               </Text>
                             ) : (
-                              <Text style={styles.scoreEmpty}>–</Text>
+                              <Text style={[styles.scoreEmpty, cellText]}>–</Text>
                             )}
                           </View>
                         );
@@ -198,7 +225,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                 {/* Total - an equal-height row after the rounds, below a divider */}
                 <View style={styles.totalRow}>
                   <View style={[styles.cell, styles.totalLabelCell]}>
-                    <Text style={styles.totalLabel} numberOfLines={1}>Total</Text>
+                    <Text style={[styles.totalLabel, cellText]} numberOfLines={1}>Total</Text>
                   </View>
                   {scoreboard.players.map((player) => {
                     const winnerCol = isWinner(player.id);
@@ -210,7 +237,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                         <View style={styles.totalScoreWrap}>
                           {winnerCol && <Text style={styles.crownIcon}>👑</Text>}
                           <Text
-                            style={[styles.totalScoreText, winnerCol && styles.leadingScore]}
+                            style={[styles.totalScoreText, cellText, winnerCol && styles.leadingScore]}
                           >
                             {player.totalScore}
                           </Text>
@@ -223,16 +250,6 @@ export default function FinalScoreboardScreen({ navigation, route }) {
             </LinearGradient>
           </View>
 
-          {/* Home link - plain text with a back arrow, not a button */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate("Home")}
-              activeOpacity={0.6}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.homeLinkText}>‹ Return to Home</Text>
-            </TouchableOpacity>
-          </View>
         </Animated.View>
 
         <StatusBar style="light" hidden />
@@ -244,7 +261,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,
@@ -260,9 +277,30 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 2,
   },
+  // Tall enough to hold the 52px circles; the table below flexes to whatever is
+  // left over.
   titleContainer: {
+    height: 56,
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
+  },
+  // Exit sits hard against the right edge, sound immediately inboard of it.
+  // 52px circle plus a 12px gap, same spacing as everywhere else.
+  backButton: {
+    top: 2,
+    right: 0,
+  },
+  soundButton: {
+    top: 2,
+    right: 64,
+  },
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
   title: {
     fontSize: 26,
@@ -397,11 +435,9 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     paddingHorizontal: 5,
   },
-  scorePositive: {
-    color: "#FFD700",
-  },
-  scoreZero: {
-    color: "#C9BEDC",
+  // One colour for every round score - the crown and total mark the winner.
+  scoreNeutral: {
+    color: "#FFF8E7",
   },
   scoreEmpty: {
     fontSize: 18,
@@ -458,17 +494,5 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(255, 215, 0, 0.5)",
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
-  },
-  buttonContainer: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    zIndex: 10,
-  },
-  homeLinkText: {
-    fontSize: 15,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    letterSpacing: 1,
   },
 });

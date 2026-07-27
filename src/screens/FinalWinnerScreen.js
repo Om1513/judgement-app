@@ -89,7 +89,17 @@ export default function FinalWinnerScreen({ navigation, route }) {
   }, []);
 
   if (!fontsLoaded) {
-    return <View style={styles.container} />;
+    // Show the artwork, not a bare container. An empty View here is a solid
+    // black rectangle, which is exactly the flash this screen used to open on.
+    return (
+      <View style={styles.container}>
+        <ImageBackground
+          source={require("../../assets/winner_screen.png")}
+          style={styles.background}
+          resizeMode="cover"
+        />
+      </View>
+    );
   }
 
   return (
@@ -145,7 +155,7 @@ export default function FinalWinnerScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,

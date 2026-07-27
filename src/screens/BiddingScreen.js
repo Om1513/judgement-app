@@ -13,6 +13,8 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 // Display trump by its English suit name rather than the local name.
 const TRUMP_SUIT_NAMES = {
@@ -99,7 +101,7 @@ export default function BiddingScreen({ navigation, route }) {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: 250,
         useNativeDriver: true,
       }),
       Animated.spring(modalScale, {
@@ -403,9 +405,14 @@ export default function BiddingScreen({ navigation, route }) {
         {/* My Cards - Bottom */}
         {renderMyCards()}
 
-        {/* Leave button - bottom left */}
-        <TouchableOpacity
-          style={styles.leaveButton}
+        {/* Back (leave) then sound, paired in the bottom-left. Same
+            confirmation as the old LEAVE button. Rendered after the modal so
+            both layer above it. */}
+        <CircleIconButton
+          glyph="‹"
+          glyphStyle={styles.backGlyph}
+          style={styles.backButton}
+          accessibilityLabel="Leave game"
           onPress={() => {
             Alert.alert(
               "Leave Game",
@@ -423,9 +430,10 @@ export default function BiddingScreen({ navigation, route }) {
               ]
             );
           }}
-        >
-          <Text style={styles.leaveButtonText}>LEAVE</Text>
-        </TouchableOpacity>
+        />
+
+        {/* Sound toggle - immediately right of the back button */}
+        <SoundToggleButton style={styles.soundButton} />
 
         <StatusBar style="light" hidden />
       </ImageBackground>
@@ -436,7 +444,7 @@ export default function BiddingScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,
@@ -463,25 +471,23 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Leave button
-  leaveButton: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-    backgroundColor: "rgba(183, 28, 28, 0.8)",
-    paddingVertical: 9,
-    paddingHorizontal: 16,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: "#e53935",
-    zIndex: 100,
-    elevation: 100,
+  // Back and sound sit as a pair in the bottom-left, back on the outside.
+  // The offsets are the 52px circle plus a 12px gap, so they stay evenly
+  // spaced if either is repositioned.
+  backButton: {
+    bottom: 18,
+    left: 18,
   },
-  leaveButtonText: {
-    fontSize: 15,
-    fontFamily: "Inter_700Bold",
-    color: "#FFF",
-    letterSpacing: 1.5,
+  soundButton: {
+    bottom: 18,
+    left: 82,
+  },
+  // The chevron sits high in its em box, so nudge it onto the optical centre
+  // and size it up to balance the note glyph on the sound button.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
 
   // Modal

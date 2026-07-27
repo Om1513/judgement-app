@@ -5,7 +5,6 @@ import {
   ImageBackground,
   StyleSheet,
   Animated,
-  TouchableOpacity,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -18,6 +17,8 @@ import OrderModeToggle from "../components/OrderModeToggle";
 import ScoringModeToggle from "../components/ScoringModeToggle";
 import GameButton from "../components/GameButton";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 export default function CreateGameScreen({ navigation, route }) {
   const playerName = route.params?.playerName || "Player";
@@ -82,7 +83,7 @@ export default function CreateGameScreen({ navigation, route }) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 400,
+          duration: 250,
           useNativeDriver: true,
         }),
         Animated.spring(slideAnim, {
@@ -261,22 +262,18 @@ export default function CreateGameScreen({ navigation, route }) {
               </View>
             </Animated.View>
 
-            {/* Back button */}
-            <Animated.View
-              style={[
-                styles.backButtonContainer,
-                { opacity: fadeAnim },
-              ]}
-            >
-              <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-                <LinearGradient
-                  colors={["#5E3A9E", "#3D2272"]}
-                  style={styles.backButtonGradient}
-                >
-                  <Text style={styles.backButtonText}>Back</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
+            {/* Back then sound, paired in the top-left as on the game screens.
+                Back keeps the existing behaviour: disconnect, then go back. */}
+            <CircleIconButton
+              glyph="‹"
+              glyphStyle={styles.backGlyph}
+              style={styles.backButton}
+              accessibilityLabel="Go back"
+              onPress={handleGoBack}
+            />
+
+            {/* Sound toggle - immediately right of the back button */}
+            <SoundToggleButton style={styles.soundButton} />
           </>
         )}
 
@@ -289,7 +286,7 @@ export default function CreateGameScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,
@@ -341,29 +338,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingBottom: 15,
   },
-  backButtonContainer: {
-    position: "absolute",
-    bottom: "5%",
-    left: "3%",
-  },
+  // Back and sound as a pair in the top-left, back on the outside. The offsets
+  // are the 52px circle plus a 12px gap, matching the game screens.
   backButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 8,
+    top: 16,
+    left: 16,
   },
-  backButtonGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 12,
+  soundButton: {
+    top: 16,
+    left: 82,
   },
-  backButtonText: {
-    fontSize: 18,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
   loadingContainer: {
     alignItems: "center",

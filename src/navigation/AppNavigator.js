@@ -19,10 +19,17 @@ export default function AppNavigator() {
       screenOptions={{
         headerShown: false,
         animation: "fade",
-        animationDuration: 400,
+        // 400ms of cross-dissolve was long enough to read as a dim gap between
+        // screens. Short enough that the two screens overlap rather than the
+        // transition having a visible middle.
+        animationDuration: 220,
         gestureEnabled: true,
         gestureDirection: "horizontal",
-        contentStyle: { backgroundColor: "#0a0612" },
+        // Whatever is briefly visible under/between screens. The artwork purple
+        // blends into the backgrounds; the previous near-black did not, which
+        // is what made every transition look like it passed through a black
+        // frame.
+        contentStyle: { backgroundColor: "#1a1030" },
       }}
     >
       <Stack.Screen

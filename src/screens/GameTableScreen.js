@@ -15,6 +15,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 import HandWinnerOverlay from "../components/HandWinnerOverlay";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
+import audioManager from "../services/audioManager";
 import PlayedCard from "../components/PlayedCard";
 
 // Suit symbols
@@ -135,6 +138,13 @@ export default function GameTableScreen({ navigation, route }) {
   // Counts carried by the previous game:update - i.e. what is still on screen
   // at the moment a trick-resolved update arrives.
   const prevTrickCountsRef = useRef({});
+
+  // Who had already played into the current trick as of the last update, used
+  // to spot new cards and sound them. Seeded from the state we arrived with so
+  // joining or reconnecting mid-trick doesn't replay the cards already down.
+  const playedCardIdsRef = useRef(
+    (initialGameState?.roundState?.currentTrick?.cardsPlayed || []).map((c) => c.playerId)
+  );
 
   // Animations
   const turnGlow = useRef(new Animated.Value(0.6)).current;
@@ -332,6 +342,22 @@ export default function GameTableScreen({ navigation, route }) {
         incomingPlayers.map((p) => [p.id, p.tricksWon])
       );
 
+      // Sound anyone else's card hitting the table - humans and bots alike.
+      // My own card already sounded on tap, so it is excluded here rather than
+      // played twice. Comparing player ids (not a count) means the reset to an
+      // empty trick between hands can't be mistaken for a play.
+      const playedNow =
+        data.gameState?.roundState?.currentTrick?.cardsPlayed || [];
+      const idsNow = playedNow.map((c) => c.playerId);
+      const idsBefore = playedCardIdsRef.current;
+      const newIds = idsNow.filter((id) => !idsBefore.includes(id));
+      playedCardIdsRef.current = idsNow;
+      // One hit per update even if several arrive at once, so a burst of bot
+      // plays doesn't stack into a clatter.
+      if (newIds.some((id) => id !== currentPlayerId)) {
+        audioManager.playSound("cardPlay");
+      }
+
       setGameState(data.gameState);
       setIsPlayingCard(false);
       setSelectedCard(null);
@@ -448,6 +474,8 @@ export default function GameTableScreen({ navigation, route }) {
     // First tap selects the card; tapping the already-selected card plays it.
     if (selectedCard === index) {
       setIsPlayingCard(true);
+      // No-ops when sound is off; purely local feedback, nothing is sent.
+      audioManager.playSound("cardPlay");
       socketService.playCard(card);
     } else {
       setSelectedCard(index);
@@ -701,9 +729,13 @@ export default function GameTableScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Leave button - bottom left */}
-        <TouchableOpacity
-          style={styles.leaveButton}
+        {/* Back (leave) then sound, paired in the top-left. Same pairing as the
+            bidding screen, same confirmation as the old LEAVE button. */}
+        <CircleIconButton
+          glyph="‹"
+          glyphStyle={styles.backGlyph}
+          style={styles.backButton}
+          accessibilityLabel="Leave game"
           onPress={() => {
             Alert.alert(
               "Leave Game",
@@ -721,9 +753,10 @@ export default function GameTableScreen({ navigation, route }) {
               ]
             );
           }}
-        >
-          <Text style={styles.leaveButtonText}>LEAVE</Text>
-        </TouchableOpacity>
+        />
+
+        {/* Sound toggle - immediately right of the back button */}
+        <SoundToggleButton style={styles.soundButton} />
 
 
         {/* Player seats */}
@@ -811,7 +844,7 @@ export default function GameTableScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   touchableArea: {
     flex: 1,
@@ -865,23 +898,22 @@ const styles = StyleSheet.create({
     textShadowColor: "#FF5D6C",
   },
 
-  // Leave button
-  leaveButton: {
-    position: "absolute",
+  // Back and sound sit as a pair in the top-left, back on the outside. The
+  // offsets are the 52px circle plus a 12px gap, matching the bidding screen.
+  backButton: {
     top: 16,
     left: 16,
-    backgroundColor: "rgba(183, 28, 28, 0.8)",
-    paddingVertical: 9,
-    paddingHorizontal: 16,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: "#e53935",
   },
-  leaveButtonText: {
-    fontSize: 15,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF",
-    letterSpacing: 1.5,
+  soundButton: {
+    top: 16,
+    left: 82,
+  },
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
 
   // Turn banner

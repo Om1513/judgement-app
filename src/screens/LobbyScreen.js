@@ -18,6 +18,8 @@ import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import PlayerCard from "../components/PlayerCard";
 import RemovePlayerModal from "../components/RemovePlayerModal";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 export default function LobbyScreen({ navigation, route }) {
   // Get params from navigation
@@ -170,7 +172,7 @@ export default function LobbyScreen({ navigation, route }) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 400,
+          duration: 250,
           useNativeDriver: true,
         }),
         Animated.spring(slideAnim, {
@@ -551,22 +553,19 @@ export default function LobbyScreen({ navigation, route }) {
                 </Animated.View>
               )}
 
-            {/* Leave button */}
-            <Animated.View
-              style={[styles.leaveButtonContainer, { opacity: fadeAnim }]}
-            >
-              <TouchableOpacity
-                style={styles.leaveButton}
-                onPress={handleLeaveLobby}
-              >
-                <LinearGradient
-                  colors={["#5E3A9E", "#3D2272"]}
-                  style={styles.leaveButtonGradient}
-                >
-                  <Text style={styles.leaveButtonText}>Leave</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
+            {/* Back then sound, paired in the top-left as on the other
+                screens. Back keeps the existing behaviour: leave the lobby,
+                then go back. */}
+            <CircleIconButton
+              glyph="‹"
+              glyphStyle={styles.backGlyph}
+              style={styles.backButton}
+              accessibilityLabel="Leave lobby"
+              onPress={handleLeaveLobby}
+            />
+
+            {/* Sound toggle - immediately right of the back button */}
+            <SoundToggleButton style={styles.soundButton} />
 
             {/* Remove Player confirmation - an in-screen overlay (no native
                 Modal), so it stays in landscape with no orientation flicker. */}
@@ -588,7 +587,7 @@ export default function LobbyScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,
@@ -828,28 +827,21 @@ const styles = StyleSheet.create({
     color: "#FFF8E7",
     letterSpacing: 0.5,
   },
-  leaveButtonContainer: {
-    position: "absolute",
-    bottom: "5%",
-    left: "3%",
+  // Back and sound as a pair in the top-left, back on the outside. The offsets
+  // are the 52px circle plus a 12px gap, matching the other screens.
+  backButton: {
+    top: 16,
+    left: 16,
   },
-  leaveButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 8,
+  soundButton: {
+    top: 16,
+    left: 82,
   },
-  leaveButtonGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 12,
-  },
-  leaveButtonText: {
-    fontSize: 16,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
 });

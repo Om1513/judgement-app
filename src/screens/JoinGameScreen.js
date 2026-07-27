@@ -122,7 +122,7 @@ export default function JoinGameScreen({ navigation, route }) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 400,
+          duration: 250,
           useNativeDriver: true,
         }),
         Animated.spring(slideAnim, {
@@ -440,7 +440,7 @@ export default function JoinGameScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,

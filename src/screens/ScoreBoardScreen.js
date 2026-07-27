@@ -6,12 +6,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 // Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
@@ -122,7 +125,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: 250,
         useNativeDriver: true,
       }),
       Animated.spring(slideAnim, {
@@ -220,6 +223,33 @@ export default function ScoreBoardScreen({ navigation, route }) {
         >
 
           <View style={styles.titleContainer}>
+            {/* Back then sound, same pair and order as the game screen. They
+                live inside the title row rather than floating over the table,
+                which is what keeps them off the Trump column. */}
+            <CircleIconButton
+              glyph="‹"
+              glyphStyle={styles.backGlyph}
+              style={styles.backButton}
+              accessibilityLabel="Leave game"
+              onPress={() => {
+                Alert.alert(
+                  "Leave Game",
+                  "Are you sure you want to leave the game?",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Leave",
+                      style: "destructive",
+                      onPress: () => {
+                        socketService.leaveLobby();
+                        navigation.navigate("Home");
+                      },
+                    },
+                  ]
+                );
+              }}
+            />
+            <SoundToggleButton style={styles.soundButton} />
             <Text style={styles.title}>SCOREBOARD</Text>
           </View>
 
@@ -380,7 +410,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0612",
+    backgroundColor: "#1a1030",
   },
   background: {
     flex: 1,
@@ -398,9 +428,29 @@ const styles = StyleSheet.create({
   },
   // Kept deliberately compact: the app is landscape-locked, so every pixel here
   // comes straight out of the table's height.
+  // Tall enough to hold the 52px circles; the table below flexes to whatever is
+  // left, so the extra height costs a little row size rather than overflowing.
   titleContainer: {
+    height: 56,
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 2,
+  },
+  // Same 52px circle + 12px gap as the other screens, centred in the row.
+  backButton: {
+    top: 2,
+    left: 0,
+  },
+  soundButton: {
+    top: 2,
+    left: 64,
+  },
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
   title: {
     fontSize: 22,

@@ -18,6 +18,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import GameButton from "../components/GameButton";
 import Sparkles from "../components/Sparkles";
 import PlayerNameInput from "../components/PlayerNameInput";
+import SoundToggleButton from "../components/SoundToggleButton";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
@@ -198,6 +199,10 @@ export default function HomeScreen({ navigation }) {
             </View>
           </KeyboardAvoidingView>
 
+          {/* Sound toggle - bottom left. Hidden with the buttons while the
+              keyboard is up, since it would sit behind it anyway. */}
+          {!isKeyboardVisible && <SoundToggleButton style={styles.soundButton} />}
+
           <StatusBar style="light" hidden />
         </ImageBackground>
       </View>
@@ -254,5 +259,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+  },
+  soundButton: {
+    bottom: 18,
+    left: 18,
   },
 });
