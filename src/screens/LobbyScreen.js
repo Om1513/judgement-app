@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 
+import GameButton from "../components/GameButton";
 import PlayerCard from "../components/PlayerCard";
 import RemovePlayerModal from "../components/RemovePlayerModal";
 import socketService from "../services/socket";
@@ -58,7 +59,6 @@ export default function LobbyScreen({ navigation, route }) {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  const buttonGlowAnim = useRef(new Animated.Value(0.5)).current;
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -130,27 +130,6 @@ export default function LobbyScreen({ navigation, route }) {
       unsubscribeError();
     };
   }, [navigation, currentPlayerId, currentPlayerName]);
-
-  // Button glow animation
-  useEffect(() => {
-    if (canStartGame && isCurrentUserHost) {
-      const pulseGlow = () => {
-        Animated.sequence([
-          Animated.timing(buttonGlowAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(buttonGlowAnim, {
-            toValue: 0.5,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ]).start(() => pulseGlow());
-      };
-      pulseGlow();
-    }
-  }, [canStartGame, isCurrentUserHost]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("transitionEnd", () => {
@@ -456,6 +435,17 @@ export default function LobbyScreen({ navigation, route }) {
                 <Text style={styles.playerCount}>
                   Players: {players.length}/{gameSettings.maxPlayers || 8}
                 </Text>
+
+                {/* Why Start Game is disabled, sitting with the count it refers
+                    to. The slot keeps its height when the message clears, so
+                    nothing below it shifts as players join. */}
+                <View style={styles.minPlayersSlot}>
+                  {isCurrentUserHost && !canStartGame && (
+                    <Text style={styles.minPlayersText}>
+                      Need at least 2 players to start
+                    </Text>
+                  )}
+                </View>
               </View>
 
               {/* Center Section - Player List */}
@@ -468,58 +458,15 @@ export default function LobbyScreen({ navigation, route }) {
                 {isCurrentUserHost ? (
                   // Host view - Start Game button
                   <View style={styles.startButtonContainer}>
-                    <Animated.View
-                      style={[
-                        styles.buttonGlow,
-                        canStartGame && {
-                          opacity: buttonGlowAnim,
-                        },
-                      ]}
-                    />
-                    <TouchableOpacity
+                    {/* Same GameButton as Create/Join on the home screen, so
+                        the primary action looks the same everywhere. Disabled
+                        only recolours it - the geometry is identical, so
+                        enabling it as players join moves nothing. */}
+                    <GameButton
+                      title="Start Game"
                       onPress={handleStartGame}
-                      activeOpacity={0.8}
                       disabled={!canStartGame}
-                      style={styles.startButton}
-                    >
-                      <View
-                        style={[
-                          styles.startButtonShadow,
-                          !canStartGame && styles.startButtonDisabled,
-                        ]}
-                      >
-                        <LinearGradient
-                          colors={
-                            canStartGame
-                              ? ["#FFE55C", "#FFCC00", "#FFB800", "#F5A623"]
-                              : ["#6A6A6A", "#4A4A4A", "#3A3A3A", "#2A2A2A"]
-                          }
-                          style={styles.startButtonGradient}
-                        >
-                          <LinearGradient
-                            colors={[
-                              "rgba(255,255,255,0.5)",
-                              "rgba(255,255,255,0.2)",
-                              "transparent",
-                            ]}
-                            style={styles.glossOverlay}
-                          />
-                          <Text
-                            style={[
-                              styles.startButtonText,
-                              !canStartGame && styles.startButtonTextDisabled,
-                            ]}
-                          >
-                            Start Game
-                          </Text>
-                        </LinearGradient>
-                      </View>
-                    </TouchableOpacity>
-                    {!canStartGame && (
-                      <Text style={styles.minPlayersText}>
-                        Need at least 2 players to start
-                      </Text>
-                    )}
+                    />
                   </View>
                 ) : (
                   // Non-host view - Waiting message
@@ -531,27 +478,6 @@ export default function LobbyScreen({ navigation, route }) {
                 )}
               </View>
             </Animated.View>
-
-            {/* Add Bot button - top right corner (host only, when not full) */}
-            {isCurrentUserHost &&
-              players.length < (gameSettings.maxPlayers || 8) && (
-                <Animated.View
-                  style={[styles.addBotTopRight, { opacity: fadeAnim }]}
-                >
-                  <TouchableOpacity
-                    onPress={handleAddBot}
-                    activeOpacity={0.8}
-                    style={styles.addBotButton}
-                  >
-                    <LinearGradient
-                      colors={["#FFB347", "#FF8C00", "#FF6600"]}
-                      style={styles.addBotButtonGradient}
-                    >
-                      <Text style={styles.addBotButtonText}>+ Add Bot</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </Animated.View>
-              )}
 
             {/* Back then sound, paired in the top-left as on the other
                 screens. Back keeps the existing behaviour: leave the lobby,
@@ -566,6 +492,20 @@ export default function LobbyScreen({ navigation, route }) {
 
             {/* Sound toggle - immediately right of the back button */}
             <SoundToggleButton style={styles.soundButton} />
+
+            {/* Add Bot sits opposite the back/sound pair, same circle so the
+                corners match. Host only, and only while there is room for
+                another player. */}
+            {isCurrentUserHost &&
+              players.length < (gameSettings.maxPlayers || 8) && (
+                <CircleIconButton
+                  glyph="🤖"
+                  glyphStyle={styles.addBotGlyph}
+                  style={styles.addBotButton}
+                  accessibilityLabel="Add bot player"
+                  onPress={handleAddBot}
+                />
+              )}
 
             {/* Remove Player confirmation - an in-screen overlay (no native
                 Modal), so it stays in landscape with no orientation flicker. */}
@@ -708,109 +648,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
   },
-  addBotTopRight: {
-    position: "absolute",
-    top: "5%",
-    right: "3%",
-  },
-  addBotButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  addBotButtonGradient: {
-    paddingVertical: 10,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    alignItems: "center",
+  // Fixed height so the row still occupies space once the message clears -
+  // otherwise the player list would jump upward the moment a second player
+  // joined, at the same instant the button changed colour.
+  minPlayersSlot: {
+    height: 20,
     justifyContent: "center",
-  },
-  addBotButtonText: {
-    fontSize: 18,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFFFFF",
-    textShadowColor: "rgba(100, 50, 0, 0.8)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-    letterSpacing: 1,
-    textAlign: "center",
-    paddingHorizontal: 5,
-  },
-  buttonGlow: {
-    position: "absolute",
-    top: -8,
-    left: -8,
-    right: -8,
-    bottom: -8,
-    borderRadius: 26,
-    backgroundColor: "#FFD700",
-    shadowColor: "#FFD700",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    zIndex: -1,
-  },
-  startButton: {
-    borderRadius: 18,
-  },
-  startButtonShadow: {
-    backgroundColor: "#3D2272",
-    borderRadius: 18,
-    padding: 4,
-    shadowColor: "#2A1654",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-    elevation: 15,
-    borderWidth: 3,
-    borderColor: "#5E3A9E",
-  },
-  startButtonDisabled: {
-    backgroundColor: "#2A2A2A",
-    borderColor: "#3A3A3A",
-    shadowOpacity: 0.4,
-  },
-  startButtonGradient: {
-    paddingVertical: 14,
-    paddingHorizontal: 60,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  glossOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: "55%",
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-  },
-  startButtonText: {
-    fontSize: 26,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFFFFF",
-    textShadowColor: "rgba(80, 40, 20, 0.8)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 4,
-    letterSpacing: 1,
-    textAlign: "center",
-    paddingHorizontal: 5,
-  },
-  startButtonTextDisabled: {
-    color: "#888888",
-    textShadowColor: "rgba(0, 0, 0, 0.5)",
   },
   minPlayersText: {
     fontSize: 14,
     fontFamily: "Bangers_400Regular",
     color: "#FF6B6B",
-    marginTop: 10,
     letterSpacing: 0.5,
   },
   waitingContainer: {
@@ -836,6 +684,18 @@ const styles = StyleSheet.create({
   soundButton: {
     top: 16,
     left: 82,
+  },
+  // Opposite corner from the back/sound pair.
+  addBotButton: {
+    top: 16,
+    right: 16,
+  },
+  // Emoji render larger than text glyphs at the same point size and carry their
+  // own colour, so this is sized down and the gold glow dropped.
+  addBotGlyph: {
+    fontSize: 24,
+    lineHeight: 28,
+    textShadowColor: "transparent",
   },
   // The chevron sits high and small in its em box next to the note glyph, so
   // nudge it onto the optical centre and size it up to match.

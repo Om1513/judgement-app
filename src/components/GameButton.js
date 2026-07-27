@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-export default function GameButton({ title, onPress, delay = 0, style }) {
+export default function GameButton({ title, onPress, delay = 0, style, disabled = false }) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -23,6 +23,9 @@ export default function GameButton({ title, onPress, delay = 0, style }) {
   }, []);
 
   const handlePressIn = () => {
+    // No press-in dip when disabled, so the button reads as inert rather than
+    // tappable-but-unresponsive.
+    if (disabled) return;
     Animated.spring(scaleAnim, {
       toValue: 0.95,
       friction: 5,
@@ -54,13 +57,18 @@ export default function GameButton({ title, onPress, delay = 0, style }) {
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}
+        disabled={disabled}
         style={styles.touchable}
       >
         {/* Dark purple border/shadow layer */}
-        <View style={styles.shadowLayer}>
+        <View style={[styles.shadowLayer, disabled && styles.shadowLayerDisabled]}>
           {/* Main button gradient - matching Kachuful logo colors */}
           <LinearGradient
-            colors={["#FFE55C", "#FFCC00", "#FFB800", "#F5A623"]}
+            colors={
+              disabled
+                ? ["#6A6A6A", "#4A4A4A", "#3A3A3A", "#2A2A2A"]
+                : ["#FFE55C", "#FFCC00", "#FFB800", "#F5A623"]
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.gradient}
@@ -74,7 +82,9 @@ export default function GameButton({ title, onPress, delay = 0, style }) {
             />
 
             {/* Button text */}
-            <Text style={styles.buttonText}>{title}</Text>
+            <Text style={[styles.buttonText, disabled && styles.buttonTextDisabled]}>
+              {title}
+            </Text>
 
             {/* Inner bottom highlight */}
             <View style={styles.innerHighlight} />
@@ -122,6 +132,16 @@ const styles = StyleSheet.create({
     height: "55%",
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
+  },
+  // Disabled keeps the exact same geometry - only colours change - so toggling
+  // it never moves anything on screen.
+  shadowLayerDisabled: {
+    borderColor: "#4A4A4A",
+    shadowOpacity: 0.3,
+  },
+  buttonTextDisabled: {
+    color: "#B8B8B8",
+    textShadowColor: "rgba(0, 0, 0, 0.6)",
   },
   buttonText: {
     fontSize: 24,
