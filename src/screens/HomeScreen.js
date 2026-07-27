@@ -19,6 +19,7 @@ import GameButton from "../components/GameButton";
 import Sparkles from "../components/Sparkles";
 import PlayerNameInput from "../components/PlayerNameInput";
 import SoundToggleButton from "../components/SoundToggleButton";
+import CircleIconButton from "../components/CircleIconButton";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
@@ -199,9 +200,20 @@ export default function HomeScreen({ navigation }) {
             </View>
           </KeyboardAvoidingView>
 
-          {/* Sound toggle - bottom left. Hidden with the buttons while the
-              keyboard is up, since it would sit behind it anyway. */}
-          {!isKeyboardVisible && <SoundToggleButton style={styles.soundButton} />}
+          {/* Sound and help, bottom left. Hidden with the buttons while the
+              keyboard is up, since they would sit behind it anyway. */}
+          {!isKeyboardVisible && (
+            <>
+              <SoundToggleButton style={styles.soundButton} />
+              <CircleIconButton
+                glyph="?"
+                glyphStyle={styles.helpGlyph}
+                style={styles.helpButton}
+                accessibilityLabel="How to play"
+                onPress={() => navigation.navigate("HowToPlay")}
+              />
+            </>
+          )}
 
           <StatusBar style="light" hidden />
         </ImageBackground>
@@ -263,5 +275,15 @@ const styles = StyleSheet.create({
   soundButton: {
     bottom: 18,
     left: 18,
+  },
+  // Beside the sound toggle, same 64px stride as the paired controls elsewhere.
+  helpButton: {
+    bottom: 18,
+    left: 82,
+  },
+  // A question mark sits smaller than the note glyph at the same point size.
+  helpGlyph: {
+    fontSize: 28,
+    lineHeight: 32,
   },
 });

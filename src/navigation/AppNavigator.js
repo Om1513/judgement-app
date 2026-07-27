@@ -1,6 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "../screens/HomeScreen";
+import HowToPlayScreen from "../screens/HowToPlayScreen";
 import CreateGameScreen from "../screens/CreateGameScreen";
 import JoinGameScreen from "../screens/JoinGameScreen";
 import LobbyScreen from "../screens/LobbyScreen";
@@ -35,6 +36,13 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Home"
         component={HomeScreen}
+        options={{
+          animation: "fade",
+        }}
+      />
+      <Stack.Screen
+        name="HowToPlay"
+        component={HowToPlayScreen}
         options={{
           animation: "fade",
         }}
