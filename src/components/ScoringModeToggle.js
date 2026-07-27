@@ -7,6 +7,7 @@ import {
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 const OPTIONS = ["+10", "+1"];
 
@@ -32,7 +33,10 @@ export default function ScoringModeToggle({ value, onChange }) {
         return (
           <TouchableOpacity
             key={option}
-            onPress={() => onChange(option)}
+            onPress={() => {
+              audioManager.playSound("buttonPop");
+              onChange(option);
+            }}
             style={styles.optionButton}
           >
             {/* Glow effect for selected */}

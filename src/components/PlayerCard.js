@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 export default function PlayerCard({
   player,
@@ -77,7 +78,10 @@ export default function PlayerCard({
         {canRemove && !player.isHost && (
           <TouchableOpacity
             style={styles.removeButton}
-            onPress={() => onRemove(player)}
+            onPress={() => {
+              audioManager.playSound("buttonPop");
+              onRemove(player);
+            }}
             activeOpacity={0.7}
           >
             <LinearGradient

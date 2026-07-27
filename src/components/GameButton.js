@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 export default function GameButton({ title, onPress, delay = 0, style, disabled = false }) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -53,7 +54,12 @@ export default function GameButton({ title, onPress, delay = 0, style, disabled 
       ]}
     >
       <TouchableOpacity
-        onPress={onPress}
+        // The press sound lives here rather than in each screen's handler, so
+        // every GameButton gets it once and screens never double it up.
+        onPress={(event) => {
+          audioManager.playSound("buttonPop");
+          onPress?.(event);
+        }}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}

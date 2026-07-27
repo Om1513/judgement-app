@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 /**
  * In-screen confirmation overlay for removing a player from the lobby.
@@ -51,7 +52,10 @@ export default function RemovePlayerModal({
             {/* Cancel button */}
             <TouchableOpacity
               style={styles.button}
-              onPress={onCancel}
+              onPress={() => {
+                audioManager.playSound("buttonPop");
+                onCancel?.();
+              }}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -65,7 +69,10 @@ export default function RemovePlayerModal({
             {/* Confirm button */}
             <TouchableOpacity
               style={styles.button}
-              onPress={onConfirm}
+              onPress={() => {
+                audioManager.playSound("buttonPop");
+                onConfirm?.();
+              }}
               activeOpacity={0.8}
             >
               <LinearGradient

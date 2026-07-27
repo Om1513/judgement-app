@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import ConfettiCelebration from "../components/ConfettiCelebration";
+import audioManager from "../services/audioManager";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 // The painted gold ring fills most of the screen height; size the winner
@@ -49,6 +50,8 @@ export default function FinalWinnerScreen({ navigation, route }) {
 
   const names = formatNames(winners.map((w) => w.name));
 
+  // No press sound in here: this also runs from the auto-advance timer, which
+  // would pop with nobody having touched anything.
   const goToScoreboard = () => {
     navigation.replace("FinalScoreboard", {
       currentPlayerId,
@@ -57,7 +60,19 @@ export default function FinalWinnerScreen({ navigation, route }) {
     });
   };
 
+  // Guards the fanfare against a second mount-effect run (React 18 double
+  // invokes effects in dev) or any remount of this screen.
+  const playedFanfareRef = useRef(false);
+
   useEffect(() => {
+    // Fires with the confetti and the winner reveal below. playSound ducks the
+    // background music to 15% and ramps it back up shortly before the auto
+    // advance, so the scoreboard opens at normal volume.
+    if (!playedFanfareRef.current) {
+      playedFanfareRef.current = true;
+      audioManager.playSound("gameWon");
+    }
+
     Animated.parallel([
       Animated.timing(fade, {
         toValue: 1,
@@ -85,6 +100,9 @@ export default function FinalWinnerScreen({ navigation, route }) {
     return () => {
       loop.stop();
       clearTimeout(timer);
+      // Tapping VIEW SCOREBOARD leaves before the duck timer expires, which
+      // would strand the music at 15% on the next screen.
+      audioManager.restoreMusicVolume();
     };
   }, []);
 
@@ -136,7 +154,10 @@ export default function FinalWinnerScreen({ navigation, route }) {
         <TouchableOpacity
           style={styles.viewButton}
           activeOpacity={0.85}
-          onPress={goToScoreboard}
+          onPress={() => {
+            audioManager.playSound("buttonPop");
+            goToScoreboard();
+          }}
         >
           <LinearGradient
             colors={["#FF8C00", "#FF6600", "#E65500"]}

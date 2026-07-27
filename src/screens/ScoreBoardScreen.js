@@ -15,6 +15,7 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import audioManager from "../services/audioManager";
 
 // Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
@@ -161,6 +162,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
   const handleContinue = () => {
     if (hasContinued) return;
+    audioManager.playSound("buttonPop");
     setHasContinued(true);
     socketService.scoreboardContinue();
   };

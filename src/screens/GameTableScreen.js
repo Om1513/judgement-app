@@ -146,6 +146,20 @@ export default function GameTableScreen({ navigation, route }) {
     (initialGameState?.roundState?.currentTrick?.cardsPlayed || []).map((c) => c.playerId)
   );
 
+  // Latest round number, kept in a ref because the socket listeners below are
+  // registered once and would otherwise close over a stale gameState.
+  const currentRoundRef = useRef(initialGameState?.roundState?.roundNumber ?? 1);
+
+  // Which trick last played the hand-won sting, as "round:trick". Trick numbers
+  // restart every round, so the round has to be part of the key. Seeded from
+  // the state we arrive with: if that trick is already resolved we are
+  // reconnecting into a finished hand and must not replay its sound.
+  const lastHandWonKeyRef = useRef(
+    initialGameState?.roundState?.currentTrick?.winnerId
+      ? `${initialGameState?.roundState?.roundNumber}:${initialGameState?.roundState?.trickNumber}`
+      : null
+  );
+
   // Animations
   const turnGlow = useRef(new Animated.Value(0.6)).current;
 
@@ -342,6 +356,10 @@ export default function GameTableScreen({ navigation, route }) {
         incomingPlayers.map((p) => [p.id, p.tricksWon])
       );
 
+      if (data.gameState?.roundState?.roundNumber) {
+        currentRoundRef.current = data.gameState.roundState.roundNumber;
+      }
+
       // Sound anyone else's card hitting the table - humans and bots alike.
       // My own card already sounded on tap, so it is excluded here rather than
       // played twice. Comparing player ids (not a count) means the reset to an
@@ -382,11 +400,22 @@ export default function GameTableScreen({ navigation, route }) {
       console.log(`Hand ${data.trickNumber} won by ${data.playerName}`);
       // Clear any pending card selection so play is fully blocked.
       setSelectedCard(null);
+
+      // One sting per completed trick. A re-emitted or duplicated event for a
+      // trick we have already sounded still shows the popup (harmless and
+      // idempotent) but stays silent.
+      const trickKey = `${currentRoundRef.current}:${data.trickNumber}`;
+      const isNewTrick = lastHandWonKeyRef.current !== trickKey;
+      if (isNewTrick) lastHandWonKeyRef.current = trickKey;
+
       // Hold the completed trick on screen briefly so the last card played is
       // visible before the winner popup appears.
       if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
       winnerTimerRef.current = setTimeout(() => {
         winnerTimerRef.current = null;
+        // Fires with the popup, not with the event 900ms earlier, so the sound
+        // lands on the announcement.
+        if (isNewTrick) audioManager.playSound("handWon");
         setHandWinner({
           playerId: data.playerId,
           playerName: data.playerName,

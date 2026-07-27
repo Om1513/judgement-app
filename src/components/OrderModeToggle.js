@@ -7,6 +7,7 @@ import {
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 export default function OrderModeToggle({ value, onChange }) {
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -35,6 +36,8 @@ export default function OrderModeToggle({ value, onChange }) {
         useNativeDriver: true,
       }),
     ]).start();
+
+    audioManager.playSound("buttonPop");
 
     // Toggle value
     const newValue = value === "Kachuful" ? "Random" : "Kachuful";

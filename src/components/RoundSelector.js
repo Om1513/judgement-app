@@ -7,6 +7,7 @@ import {
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 export default function RoundSelector({
   value,
@@ -33,6 +34,8 @@ export default function RoundSelector({
 
   const handleDecrease = () => {
     if (value > min) {
+      // Inside the guard: a tap at the limit changes nothing, so it stays silent.
+      audioManager.playSound("buttonPop");
       onChange(value - 1);
       animateNumber();
     }
@@ -40,6 +43,7 @@ export default function RoundSelector({
 
   const handleIncrease = () => {
     if (value < max) {
+      audioManager.playSound("buttonPop");
       onChange(value + 1);
       animateNumber();
     }

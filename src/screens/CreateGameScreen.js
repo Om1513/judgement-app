@@ -19,6 +19,7 @@ import GameButton from "../components/GameButton";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import audioManager from "../services/audioManager";
 
 export default function CreateGameScreen({ navigation, route }) {
   const playerName = route.params?.playerName || "Player";
@@ -136,6 +137,12 @@ export default function CreateGameScreen({ navigation, route }) {
       }
 
       console.log("Lobby created:", lobby);
+
+      // Success sting - deliberately here and not in the button handler. The
+      // button's own pop already acknowledged the tap; this only fires once the
+      // backend has actually returned a lobby, so a failed create stays silent
+      // (the catch below never reaches this line).
+      audioManager.playSound("createLobby");
 
       // Navigate to lobby screen with lobby data
       navigation.navigate("Lobby", {

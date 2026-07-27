@@ -22,13 +22,60 @@ const SOUND_ENABLED_KEY = '@kachuful_sound_enabled';
 const DEFAULT_MUSIC_VOLUME = 0.35;
 const DEFAULT_SFX_VOLUME = 0.8;
 
+// Ducking ramps rather than jumps; abrupt volume steps are very audible.
+const DUCK_FADE_MS = 250;
+const RESTORE_FADE_MS = 600;
+const FADE_STEP_MS = 40;
+
 const BACKGROUND_MUSIC = require('../../assets/music/background_music.mp3');
 
-// Registry of one-shot effects. Adding a new sound means dropping the asset in
-// and adding a line here - callers just use playSound('<key>'), and calls for
+// Registry of one-shot effects. Adding a sound means dropping the asset in and
+// adding a line here - callers just use playSound('<key>'), and calls for
 // unknown or disabled sounds are silently ignored.
+//
+//   volume      - relative to soundEffectsVolume
+//   duckMusicTo - fraction of normal music volume to drop to while this plays
+//   duckMs      - how long to hold the duck before ramping back up
+//
+// The duck fields encode the priority tiers: button presses never touch the
+// music, the hand-winner sting leans on it slightly, and the end-of-game
+// fanfare pushes it right down.
 const SOUND_EFFECTS = {
-  cardPlay: require('../../assets/music/card_play_animation.wav'),
+  // LOW - must never interrupt or dip the music.
+  // AAC rather than the original .ogg: iOS AVFoundation, which expo-audio uses,
+  // has no Ogg Vorbis decoder, so the .ogg loaded fine on Android and web but
+  // was silent on iPhone. button_pop.ogg is still in assets as the source.
+  buttonPop: {
+    source: require('../../assets/music/button_pop.m4a'),
+    volume: 0.7,
+  },
+  cardPlay: {
+    source: require('../../assets/music/card_play_animation.wav'),
+    volume: 0.8,
+  },
+  // NORMAL - sits over the music with a light dip so it cuts through.
+  handWon: {
+    source: require('../../assets/music/handwon.mp3'),
+    volume: 0.9,
+    duckMusicTo: 0.55,
+    duckMs: 1600,
+  },
+  // HIGH - success confirmation, no need to disturb the music much.
+  createLobby: {
+    source: require('../../assets/music/create_lobby.mp3'),
+    volume: 0.9,
+    duckMusicTo: 0.5,
+    duckMs: 1800,
+  },
+  // HIGHEST - the celebration owns the mix.
+  gameWon: {
+    source: require('../../assets/music/game_won.mp3'),
+    volume: 1.0,
+    duckMusicTo: 0.15,
+    // Held just under FinalWinnerScreen's 7s auto-advance so the music is back
+    // up by the time the final scoreboard appears.
+    duckMs: 6200,
+  },
 };
 
 class AudioManager {
@@ -49,6 +96,11 @@ class AudioManager {
     // Set only when the OS backgrounded us, so foregrounding knows whether the
     // pause was ours to undo (vs. the player having muted deliberately).
     this.pausedForBackground = false;
+
+    // Ducking state. Kept separate from musicVolume, which stays the baseline
+    // to return to.
+    this.duckFadeTimer = null;
+    this.duckReleaseTimer = null;
 
     this.initialized = false;
     this.initPromise = null;
@@ -89,6 +141,8 @@ class AudioManager {
         console.log('[audio] could not configure audio mode:', error);
       }
 
+      this.preloadSoundEffects();
+
       if (!this.appStateSub) {
         this.appStateSub = AppState.addEventListener('change', this.handleAppStateChange);
       }
@@ -98,6 +152,14 @@ class AudioManager {
     })();
 
     return this.initPromise;
+  }
+
+  // Build every effect player up front. Decoding on first press is exactly the
+  // lag that makes a button feel unresponsive.
+  preloadSoundEffects() {
+    for (const name of Object.keys(SOUND_EFFECTS)) {
+      this.ensureSfxPlayer(name);
+    }
   }
 
   // Phone calls, app switches, screen lock. Only resume what we paused, and
@@ -138,6 +200,21 @@ class AudioManager {
     return this.musicPlayer;
   }
 
+  ensureSfxPlayer(name) {
+    if (this.sfxPlayers[name]) return this.sfxPlayers[name];
+    const spec = SOUND_EFFECTS[name];
+    if (!spec) return null;
+    try {
+      const player = createAudioPlayer(spec.source);
+      player.volume = (spec.volume ?? 1) * this.soundEffectsVolume;
+      this.sfxPlayers[name] = player;
+    } catch (error) {
+      console.log(`[audio] could not preload "${name}":`, error);
+      this.sfxPlayers[name] = null;
+    }
+    return this.sfxPlayers[name];
+  }
+
   safePlay() {
     try {
       this.ensureMusicPlayer()?.play();
@@ -152,6 +229,52 @@ class AudioManager {
     } catch (error) {
       console.log('[audio] pause failed:', error);
     }
+  }
+
+  // --- ducking -------------------------------------------------------------
+
+  // expo-audio has no built-in fade, so step the volume manually. Always clear
+  // the previous ramp first: two overlapping fades fight each other and leave
+  // the volume wherever the loser stopped.
+  fadeMusicTo(target, durationMs) {
+    if (this.duckFadeTimer) {
+      clearInterval(this.duckFadeTimer);
+      this.duckFadeTimer = null;
+    }
+    const player = this.musicPlayer;
+    if (!player) return;
+
+    const from = player.volume ?? this.musicVolume;
+    const steps = Math.max(1, Math.round(durationMs / FADE_STEP_MS));
+    let step = 0;
+
+    this.duckFadeTimer = setInterval(() => {
+      step += 1;
+      const next = from + (target - from) * (step / steps);
+      try {
+        player.volume = Math.max(0, Math.min(1, next));
+      } catch (error) {
+        // Player torn down mid-fade; stop rather than spam.
+      }
+      if (step >= steps) {
+        clearInterval(this.duckFadeTimer);
+        this.duckFadeTimer = null;
+      }
+    }, FADE_STEP_MS);
+  }
+
+  /** Drop the music to a fraction of its normal level. */
+  duckMusic(fraction, fadeMs = DUCK_FADE_MS) {
+    this.fadeMusicTo(this.musicVolume * fraction, fadeMs);
+  }
+
+  /** Ramp the music back to its normal level. */
+  restoreMusicVolume(fadeMs = RESTORE_FADE_MS) {
+    if (this.duckReleaseTimer) {
+      clearTimeout(this.duckReleaseTimer);
+      this.duckReleaseTimer = null;
+    }
+    this.fadeMusicTo(this.musicVolume, fadeMs);
   }
 
   // --- background music ----------------------------------------------------
@@ -198,26 +321,33 @@ class AudioManager {
   // --- sound effects -------------------------------------------------------
 
   // No-ops when sound is off or the key is unknown, so call sites never need
-  // to check anything: audioManager.playSound('cardPlay').
+  // to check anything: audioManager.playSound('buttonPop').
   playSound(name) {
     if (!this.soundEffectsEnabled) return;
 
-    const source = SOUND_EFFECTS[name];
-    if (!source) return;
+    const spec = SOUND_EFFECTS[name];
+    if (!spec) return;
+
+    const player = this.ensureSfxPlayer(name);
+    if (!player) return;
 
     try {
-      let player = this.sfxPlayers[name];
-      if (!player) {
-        player = createAudioPlayer(source);
-        player.volume = this.soundEffectsVolume;
-        this.sfxPlayers[name] = player;
-      }
-      // Rewind so rapid repeats (several cards in a row) retrigger instead of
+      // Rewind so rapid repeats (a run of button taps) retrigger instead of
       // being swallowed by an already-finished player.
       player.seekTo(0)?.catch(() => {});
       player.play();
     } catch (error) {
       console.log(`[audio] could not play "${name}":`, error);
+      return;
+    }
+
+    if (spec.duckMusicTo && this.musicPlayer?.playing) {
+      this.duckMusic(spec.duckMusicTo);
+      if (this.duckReleaseTimer) clearTimeout(this.duckReleaseTimer);
+      this.duckReleaseTimer = setTimeout(() => {
+        this.duckReleaseTimer = null;
+        this.fadeMusicTo(this.musicVolume, RESTORE_FADE_MS);
+      }, spec.duckMs ?? 1500);
     }
   }
 
@@ -237,6 +367,8 @@ class AudioManager {
       this.resumeBackgroundMusic();
     } else {
       this.pauseBackgroundMusic();
+      // Drop any in-flight duck so re-enabling doesn't come back quiet.
+      this.restoreMusicVolume(0);
     }
 
     this.notify();

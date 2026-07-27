@@ -21,6 +21,7 @@ import RemovePlayerModal from "../components/RemovePlayerModal";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import audioManager from "../services/audioManager";
 
 export default function LobbyScreen({ navigation, route }) {
   // Get params from navigation
@@ -167,12 +168,14 @@ export default function LobbyScreen({ navigation, route }) {
   // Real-time updates are handled by socket events above
 
   const handleCopyCode = async () => {
+    audioManager.playSound("buttonPop");
     await Clipboard.setStringAsync(lobbyCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleShareCode = async () => {
+    audioManager.playSound("buttonPop");
     // Keep the code on the clipboard too, so it's ready to paste after sharing.
     await Clipboard.setStringAsync(lobbyCode);
     try {

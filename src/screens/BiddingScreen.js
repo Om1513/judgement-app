@@ -15,6 +15,7 @@ import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/in
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import audioManager from "../services/audioManager";
 
 // Display trump by its English suit name rather than the local name.
 const TRUMP_SUIT_NAMES = {
@@ -125,6 +126,7 @@ export default function BiddingScreen({ navigation, route }) {
       return;
     }
 
+    audioManager.playSound("buttonPop");
     setIsSubmitting(true);
     socketService.submitBid(bid);
   };

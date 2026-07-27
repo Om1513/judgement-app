@@ -10,6 +10,7 @@
 import React, { useRef } from "react";
 import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import audioManager from "../services/audioManager";
 
 export const CIRCLE_BUTTON_SIZE = 52;
 
@@ -41,7 +42,14 @@ export default function CircleIconButton({
       {!dimmed && <View style={styles.glow} pointerEvents="none" />}
 
       <Pressable
-        onPress={onPress}
+        // Press sound lives here so back / sound / add-bot all get it once.
+        // Note this fires before onPress, which matters for the sound toggle:
+        // muting still gives you the pop that confirms the tap, and unmuting
+        // stays silent because sound was off at press time.
+        onPress={(event) => {
+          audioManager.playSound("buttonPop");
+          onPress?.(event);
+        }}
         onPressIn={() => animateTo(0.92)}
         onPressOut={() => animateTo(1)}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

@@ -15,6 +15,7 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
+import audioManager from "../services/audioManager";
 
 // Floating particle component
 const FloatingParticle = ({ delay, startX, startY, size }) => {
@@ -136,6 +137,7 @@ export default function JoinGameScreen({ navigation, route }) {
   }, [isReady]);
 
   const handleGoBack = () => {
+    audioManager.playSound("buttonPop");
     socketService.disconnect();
     navigation.goBack();
   };
@@ -162,6 +164,7 @@ export default function JoinGameScreen({ navigation, route }) {
   };
 
   const handleJoinLobby = async () => {
+    audioManager.playSound("buttonPop");
     if (!isValidCode) {
       triggerShake();
       return;
