@@ -13,7 +13,39 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScreenHeader, { HEADER_HEIGHT, HEADER_MARGIN_BOTTOM } from "../components/ScreenHeader";
 
+// Layout is a mirror of ScoreBoardScreen - same constants, same sizing rules,
+// same styles. The only intended differences are the title, the controls being
+// on the right instead of the left, the winner's crown, and flat round scores.
+// Keep the two in step if either is retuned.
+const BASE_PLAYERS = 4;
+const BASE_ROW_HEIGHT = 34;
+const ROW_HEIGHT_PER_PLAYER = 2; // subtracted per player above BASE_PLAYERS
+const MIN_ROW_HEIGHT = 22;
+
+function maxRowHeightFor(playerCount) {
+  const shrunk = BASE_ROW_HEIGHT - Math.max(0, playerCount - BASE_PLAYERS) * ROW_HEIGHT_PER_PLAYER;
+  return Math.max(MIN_ROW_HEIGHT, shrunk);
+}
+
+// Column flex ratios, mirrored from the styles below.
+const FLEX_TRUMP = 2.4;
+const FLEX_ROUND = 1.4;
+const FLEX_PLAYER = 1.2;
+
+// Card chrome either side of the columns: content padding 4x2, border 2x2,
+// gradient padding 5x2.
+const TABLE_SIDE_CHROME = 22;
+
+// Everything above/around the score rows, totalled from the style values below.
+const CONTENT_PADDING = 6; // content paddingTop 4 + paddingBottom 2
+const HEADER_BLOCK = HEADER_HEIGHT + HEADER_MARGIN_BOTTOM; // shared top bar
+const CARD_CHROME = 10; // border 2x2 + tableGradient paddingTop 4 + paddingBottom 2
+const TABLE_HEADER_ROW = 30; // paddingVertical 3x2 + border 2 + text at max size
+const ROWS_CHROME = CONTENT_PADDING + HEADER_BLOCK + CARD_CHROME + TABLE_HEADER_ROW;
+
+// Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
   spades: { symbol: "♠", color: "#FFF8E7" },
   hearts: { symbol: "♥", color: "#FF5D6C" },
@@ -23,7 +55,7 @@ const TRUMP_DISPLAY = {
 
 /**
  * Read-only final scoreboard for a completed game. Shows every round's scores
- * plus totals, with the winning player column(s) highlighted (crown + glow).
+ * plus totals, with the winning player marked by a crown.
  * Winner(s) come from the backend (authoritative) - never recomputed here.
  */
 export default function FinalScoreboardScreen({ navigation, route }) {
@@ -35,11 +67,10 @@ export default function FinalScoreboardScreen({ navigation, route }) {
   const [scoreboard, setScoreboard] = useState(null);
   const [winnerIds, setWinnerIds] = useState(initialWinnerIds);
 
-  // Measured height of the score-rows area. Row text is scaled to whatever this
-  // works out to per row, matching the round scoreboard. It matters more here:
-  // this screen always lists every round, so a fixed line height overflows on
-  // any decent-length game.
-  const [rowsAreaHeight, setRowsAreaHeight] = useState(0);
+  // Measured content area. Rows are sized from what is left of it after the
+  // header and card chrome, so the table fits on one screen for any round count.
+  const [contentHeight, setContentHeight] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -93,14 +124,26 @@ export default function FinalScoreboardScreen({ navigation, route }) {
 
   const isWinner = (playerId) => winnerIds.includes(playerId);
 
-  // Same fit-to-space sizing as the round scoreboard. The +1 accounts for the
-  // Total row, which is the same height as a data row.
+  // Identical sizing to ScoreBoardScreen. The +1 accounts for the Total row,
+  // which is the same height as a data row.
   const rowCount = scoreboard.rows.length + 1;
-  const rowHeight = rowsAreaHeight > 0 ? rowsAreaHeight / rowCount : 0;
-  const cellFontSize = rowHeight > 0
-    ? Math.max(9, Math.min(18, Math.floor(rowHeight * 0.5)))
-    : 14;
+  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - ROWS_CHROME) : 0;
+  const playerCount = scoreboard.players.length;
+  const rowHeight = availableForRows > 0
+    ? Math.min(maxRowHeightFor(playerCount), availableForRows / rowCount)
+    : 0;
+
+  // Whichever limit is tighter wins: height in a long game, column width in an
+  // eight-player one.
+  const columnUnits = FLEX_TRUMP + FLEX_ROUND + FLEX_PLAYER * playerCount;
+  const playerColumnWidth = contentWidth > 0
+    ? ((contentWidth - TABLE_SIDE_CHROME) * FLEX_PLAYER) / columnUnits
+    : 0;
+  const fontFromHeight = rowHeight > 0 ? Math.floor(rowHeight * 0.5) : 14;
+  const fontFromWidth = playerColumnWidth > 0 ? Math.floor(playerColumnWidth * 0.32) : 99;
+  const cellFontSize = Math.max(9, Math.min(18, fontFromHeight, fontFromWidth));
   const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
+  const rowSize = rowHeight > 0 ? { height: rowHeight } : null;
 
   return (
     <View style={styles.container}>
@@ -116,28 +159,37 @@ export default function FinalScoreboardScreen({ navigation, route }) {
         />
 
         <Animated.View
+          onLayout={(e) => {
+            setContentHeight(e.nativeEvent.layout.height);
+            setContentWidth(e.nativeEvent.layout.width);
+          }}
           style={[
             styles.content,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
           ]}
         >
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Final Results</Text>
 
-            {/* Exit on the extreme right with sound just inboard of it. Inside
-                the title row rather than floating, so they stay off the table's
-                last column. The game is already over here, so this goes
-                straight home with no "are you sure". */}
-            <CircleIconButton
-              glyph="›"
-              glyphStyle={styles.backGlyph}
-              style={styles.backButton}
-              accessibilityLabel="Return to home"
-              onPress={() => navigation.navigate("Home")}
-            />
-            <SoundToggleButton style={styles.soundButton} />
-          </View>
+          <ScreenHeader
+            title="FINAL RESULTS"
+            right={
+              <>
+                <SoundToggleButton inline />
+                <CircleIconButton
+                  inline
+                  glyph="›"
+                  glyphStyle={styles.backGlyph}
+                  accessibilityLabel="Return to home"
+                  onPress={() => navigation.navigate("Home")}
+                />
+              </>
+            }
+          />
 
+          {/* Fills the space left under the header and centres the card in it. */}
+          <View style={styles.tableArea}>
           {/* Scoreboard Table Card */}
           <View style={styles.tableContainer}>
             <LinearGradient
@@ -174,18 +226,20 @@ export default function FinalScoreboardScreen({ navigation, route }) {
               </View>
 
               {/* Score Rows */}
-              <View
-                style={styles.rowsContainer}
-                onLayout={(e) => setRowsAreaHeight(e.nativeEvent.layout.height)}
-              >
+              <View style={styles.rowsContainer}>
                 {scoreboard.rows.map((row, index) => {
                   const trumpInfo = TRUMP_DISPLAY[row.trump.suit] || { symbol: "?", color: "#FFF8E7" };
 
                   return (
                     <View
                       key={row.roundNumber}
-                      style={[styles.dataRow, index % 2 === 1 && styles.alternateRow]}
+                      style={[
+                        styles.dataRow,
+                        rowSize,
+                        index % 2 === 1 && styles.alternateRow,
+                      ]}
                     >
+                      {/* Trump */}
                       <View style={[styles.cell, styles.trumpCell]}>
                         <Text style={[styles.trumpSymbol, cellText, { color: trumpInfo.color }]}>
                           {trumpInfo.symbol}
@@ -195,14 +249,13 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                         </Text>
                       </View>
 
+                      {/* Round number */}
                       <View style={[styles.cell, styles.roundCell]}>
                         <Text style={[styles.roundNumber, cellText]}>{row.roundNumber}</Text>
                       </View>
 
-                      {/* Per-round scores are rendered flat here: no made-bid
-                          colouring and no winner tint. The crown and the total
-                          carry the result; highlighting every cell as well made
-                          the table hard to read. */}
+                      {/* Player scores - flat, no per-round highlighting. The
+                          crown and the total carry the result here. */}
                       {row.scores.map((score) => {
                         const hasScore = score.score !== null;
 
@@ -222,32 +275,29 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                   );
                 })}
 
-                {/* Total - an equal-height row after the rounds, below a divider */}
-                <View style={styles.totalRow}>
-                  <View style={[styles.cell, styles.totalLabelCell]}>
+                {/* Total - an equal-height row after the rounds, below a divider. */}
+                <View style={[styles.totalRow, rowSize]}>
+                  <View style={[styles.cell, styles.trumpCell]}>
                     <Text style={[styles.totalLabel, cellText]} numberOfLines={1}>Total</Text>
                   </View>
-                  {scoreboard.players.map((player) => {
-                    const winnerCol = isWinner(player.id);
-                    return (
-                      <View
-                        key={player.id}
-                        style={[styles.cell, styles.playerCell, winnerCol && styles.winnerColumn]}
+                  <View style={[styles.cell, styles.roundCell]} />
+                  {scoreboard.players.map((player) => (
+                    <View key={player.id} style={[styles.cell, styles.playerCell]}>
+                      <Text
+                        style={[
+                          styles.totalScoreText,
+                          cellText,
+                          isWinner(player.id) && styles.leadingScore,
+                        ]}
                       >
-                        <View style={styles.totalScoreWrap}>
-                          {winnerCol && <Text style={styles.crownIcon}>👑</Text>}
-                          <Text
-                            style={[styles.totalScoreText, cellText, winnerCol && styles.leadingScore]}
-                          >
-                            {player.totalScore}
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })}
+                        {player.totalScore}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               </View>
             </LinearGradient>
+          </View>
           </View>
 
         </Animated.View>
@@ -273,28 +323,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingTop: 10,
+    paddingHorizontal: 4,
+    paddingTop: 4,
     paddingBottom: 2,
   },
-  // Tall enough to hold the 52px circles; the table below flexes to whatever is
-  // left over.
-  titleContainer: {
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  // Exit sits hard against the right edge, sound immediately inboard of it.
-  // 52px circle plus a 12px gap, same spacing as everywhere else.
-  backButton: {
-    top: 2,
-    right: 0,
-  },
-  soundButton: {
-    top: 2,
-    right: 64,
-  },
+  // Mirror of the round scoreboard's left-hand pair: exit outermost, sound
+  // inboard of it, same 64px stride.
   // The chevron sits high and small in its em box next to the note glyph, so
   // nudge it onto the optical centre and size it up to match.
   backGlyph: {
@@ -302,30 +336,26 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     marginTop: -3,
   },
-  title: {
-    fontSize: 26,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(255, 165, 0, 0.5)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-    letterSpacing: 3,
+
+  tableArea: {
+    flex: 1,
+    justifyContent: "center",
   },
   tableContainer: {
-    flex: 1,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: "#5E3A9E",
   },
   tableGradient: {
-    flex: 1,
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingHorizontal: 5,
+    paddingTop: 4,
     paddingBottom: 2,
   },
+
+  // Shared cell + column widths (flex based so it fills the width)
   cell: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -340,16 +370,22 @@ const styles = StyleSheet.create({
   playerCell: {
     flex: 1.2,
   },
-  winnerColumn: {
-    backgroundColor: "rgba(255, 215, 0, 0.12)",
-    borderRadius: 6,
-  },
+
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderBottomWidth: 2,
     borderBottomColor: "#FFD700",
+  },
+  headerNameWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  crownHeader: {
+    fontSize: 12,
+    marginRight: 3,
   },
   headerText: {
     fontSize: 18,
@@ -370,26 +406,13 @@ const styles = StyleSheet.create({
   },
   winnerHeaderText: {
     color: "#FFD700",
-    textShadowColor: "rgba(255, 215, 0, 0.6)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
   },
-  headerNameWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  crownHeader: {
-    fontSize: 12,
-    marginRight: 3,
-  },
+
   rowsContainer: {
-    flex: 1,
-    paddingTop: 4,
+    paddingTop: 2,
     paddingBottom: 0,
   },
   dataRow: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -399,6 +422,7 @@ const styles = StyleSheet.create({
   alternateRow: {
     backgroundColor: "rgba(42, 22, 84, 0.4)",
   },
+
   trumpSymbol: {
     fontSize: 18,
     lineHeight: 22,
@@ -446,18 +470,14 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
     includeFontPadding: false,
   },
-  // Total - an equal-height row (like the data rows) after the rounds,
+
+  // Total row - an equal-height row (like the data rows) after the rounds,
   // separated by a gold divider line.
   totalRow: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     borderTopWidth: 1,
     borderTopColor: "#FFD700",
-  },
-  totalLabelCell: {
-    flex: 3.8,
-    alignItems: "flex-start",
   },
   totalLabel: {
     fontSize: 18,
@@ -468,16 +488,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     textAlignVertical: "center",
     includeFontPadding: false,
-  },
-  totalScoreWrap: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  crownIcon: {
-    position: "absolute",
-    left: -16,
-    top: 3,
-    fontSize: 12,
   },
   totalScoreText: {
     fontSize: 18,

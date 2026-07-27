@@ -15,6 +15,7 @@ import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/in
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 
 // Display trump by its English suit name rather than the local name.
@@ -34,6 +35,10 @@ export default function BiddingScreen({ navigation, route }) {
 
   const [gameState, setGameState] = useState(initialGameState);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Read-only scoreboard peek, opened from the header button.
+  const [peekOpen, setPeekOpen] = useState(false);
+  const [peekScoreboard, setPeekScoreboard] = useState(null);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -91,9 +96,16 @@ export default function BiddingScreen({ navigation, route }) {
       setIsSubmitting(false);
     });
 
+    // Only ever the reply to our own peek request here - this screen has no
+    // round-end navigation hanging off scoreboard:state.
+    const unsubscribeScoreboard = socketService.on("scoreboard:state", (data) => {
+      setPeekScoreboard(data.scoreboard);
+    });
+
     return () => {
       unsubscribeUpdate();
       unsubscribeError();
+      unsubscribeScoreboard();
     };
   }, [navigation, currentPlayerId, currentPlayerName]);
 
@@ -437,6 +449,26 @@ export default function BiddingScreen({ navigation, route }) {
         {/* Sound toggle - immediately right of the back button */}
         <SoundToggleButton style={styles.soundButton} />
 
+        {/* Scores - completes the row. Opens a read-only peek at the running
+            scoreboard without leaving the round. */}
+        <CircleIconButton
+          glyph="☰"
+          glyphStyle={styles.scoresGlyph}
+          style={styles.scoresButton}
+          accessibilityLabel="Show scores"
+          onPress={() => {
+            setPeekOpen(true);
+            socketService.getScoreboardState();
+          }}
+        />
+
+        <ScoreboardModal
+          visible={peekOpen}
+          scoreboard={peekScoreboard}
+          currentPlayerId={currentPlayerId}
+          onClose={() => setPeekOpen(false)}
+        />
+
         <StatusBar style="light" hidden />
       </ImageBackground>
     </View>
@@ -483,6 +515,15 @@ const styles = StyleSheet.create({
   soundButton: {
     bottom: 18,
     left: 82,
+  },
+  // Third in the row, same 64px stride as back -> sound.
+  scoresButton: {
+    bottom: 18,
+    left: 146,
+  },
+  scoresGlyph: {
+    fontSize: 22,
+    lineHeight: 26,
   },
   // The chevron sits high in its em box, so nudge it onto the optical centre
   // and size it up to balance the note glyph on the sound button.

@@ -21,6 +21,10 @@ export default function CircleIconButton({
   children,
   style,
   glyphStyle,
+  // Screens that place the button themselves get the default absolute wrapper;
+  // `inline` drops that so it can sit in a normal row, which is what ScreenHeader
+  // needs.
+  inline = false,
   accessibilityLabel,
   accessibilityRole = "button",
   accessibilityState,
@@ -37,7 +41,13 @@ export default function CircleIconButton({
   };
 
   return (
-    <Animated.View style={[styles.wrapper, style, { transform: [{ scale: pressScale }] }]}>
+    <Animated.View
+      style={[
+        inline ? styles.wrapperInline : styles.wrapper,
+        style,
+        { transform: [{ scale: pressScale }] },
+      ]}
+    >
       {/* Glow only in the active state, so dimmed reads as visibly quieter. */}
       {!dimmed && <View style={styles.glow} pointerEvents="none" />}
 
@@ -83,6 +93,11 @@ const styles = StyleSheet.create({
   // by the screen that owns them.
   wrapper: {
     position: "absolute",
+    zIndex: 600,
+    elevation: 12,
+  },
+  // Same button, laid out in normal flow instead of pinned to a corner.
+  wrapperInline: {
     zIndex: 600,
     elevation: 12,
   },

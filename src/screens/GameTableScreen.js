@@ -17,6 +17,7 @@ import socketService from "../services/socket";
 import HandWinnerOverlay from "../components/HandWinnerOverlay";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import PlayedCard from "../components/PlayedCard";
 
@@ -145,6 +146,13 @@ export default function GameTableScreen({ navigation, route }) {
   const playedCardIdsRef = useRef(
     (initialGameState?.roundState?.currentTrick?.cardsPlayed || []).map((c) => c.playerId)
   );
+
+  // Read-only scoreboard peek, opened from the header button.
+  const [peekOpen, setPeekOpen] = useState(false);
+  const [peekScoreboard, setPeekScoreboard] = useState(null);
+  // Set while a peek request is in flight so the shared scoreboard:state
+  // listener can tell our reply apart from the round-end broadcast.
+  const peekPendingRef = useRef(false);
 
   // Latest round number, kept in a ref because the socket listeners below are
   // registered once and would otherwise close over a stale gameState.
@@ -438,6 +446,15 @@ export default function GameTableScreen({ navigation, route }) {
     });
 
     const unsubscribeScoreboard = socketService.on("scoreboard:state", (data) => {
+      // A peek we asked for arrives on the same event as the round-end
+      // broadcast. Without this the score button would navigate the player out
+      // of the game. The flag is consumed here so only the reply to our own
+      // request is diverted; a genuine round-end still advances.
+      if (peekPendingRef.current) {
+        peekPendingRef.current = false;
+        setPeekScoreboard(data.scoreboard);
+        return;
+      }
       console.log("Scoreboard state received, navigating to ScoreBoard");
       // Wait a beat so the last card of the final trick is visible first.
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -787,6 +804,30 @@ export default function GameTableScreen({ navigation, route }) {
         {/* Sound toggle - immediately right of the back button */}
         <SoundToggleButton style={styles.soundButton} />
 
+        {/* Scores - completes the row. Opens a read-only peek at the running
+            scoreboard without leaving the game. */}
+        <CircleIconButton
+          glyph="☰"
+          glyphStyle={styles.scoresGlyph}
+          style={styles.scoresButton}
+          accessibilityLabel="Show scores"
+          onPress={() => {
+            peekPendingRef.current = true;
+            setPeekOpen(true);
+            socketService.getScoreboardState();
+          }}
+        />
+
+        <ScoreboardModal
+          visible={peekOpen}
+          scoreboard={peekScoreboard}
+          currentPlayerId={currentPlayerId}
+          onClose={() => {
+            peekPendingRef.current = false;
+            setPeekOpen(false);
+          }}
+        />
+
 
         {/* Player seats */}
         <View style={styles.tableArea}>
@@ -936,6 +977,15 @@ const styles = StyleSheet.create({
   soundButton: {
     top: 16,
     left: 82,
+  },
+  // Third in the row, same 66px stride as back -> sound.
+  scoresButton: {
+    top: 16,
+    left: 148,
+  },
+  scoresGlyph: {
+    fontSize: 22,
+    lineHeight: 26,
   },
   // The chevron sits high and small in its em box next to the note glyph, so
   // nudge it onto the optical centre and size it up to match.

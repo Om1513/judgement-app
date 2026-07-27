@@ -15,6 +15,9 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
+import CircleIconButton from "../components/CircleIconButton";
+import SoundToggleButton from "../components/SoundToggleButton";
+import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
 
 // Floating particle component
@@ -307,10 +310,22 @@ export default function JoinGameScreen({ navigation, route }) {
                 },
               ]}
             >
-              {/* Title */}
-              <View style={styles.topSection}>
-                <Text style={styles.title}>Join Lobby</Text>
-              </View>
+              {/* Shared top bar: controls and title on one line. */}
+              <ScreenHeader
+                title="Join Lobby"
+                left={
+                  <>
+                    <CircleIconButton
+                      inline
+                      glyph="‹"
+                      glyphStyle={styles.backGlyph}
+                      accessibilityLabel="Go back"
+                      onPress={handleGoBack}
+                    />
+                    <SoundToggleButton inline />
+                  </>
+                }
+              />
 
               {/* Center Section - Input */}
               <View style={styles.centerSection}>
@@ -416,21 +431,6 @@ export default function JoinGameScreen({ navigation, route }) {
             </Animated.View>
 
             {/* Back button */}
-            <Animated.View
-              style={[
-                styles.backButtonContainer,
-                { opacity: fadeAnim },
-              ]}
-            >
-              <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-                <LinearGradient
-                  colors={["#5E3A9E", "#3D2272"]}
-                  style={styles.backButtonGradient}
-                >
-                  <Text style={styles.backButtonText}>Back</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
           </>
         )}
 
@@ -444,6 +444,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
+  },
+  // The chevron sits high and small in its em box next to the note glyph, so
+  // nudge it onto the optical centre and size it up to match.
+  backGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
   },
   background: {
     flex: 1,
@@ -468,22 +475,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     paddingTop: 15,
     overflow: "visible",
-  },
-  topSection: {
-    alignItems: "center",
-    marginBottom: 5,
-    overflow: "visible",
-  },
-  title: {
-    fontSize: 52,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 6,
-    letterSpacing: 2,
-    textAlign: "center",
-    paddingHorizontal: 20,
   },
   centerSection: {
     flex: 1,
@@ -617,29 +608,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.6,
     shadowRadius: 15,
     zIndex: -1,
-  },
-  backButtonContainer: {
-    position: "absolute",
-    bottom: "5%",
-    left: "3%",
-  },
-  backButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  backButtonGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-  },
-  backButtonText: {
-    fontSize: 18,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
   },
 });

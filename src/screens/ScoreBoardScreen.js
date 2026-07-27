@@ -15,7 +15,42 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScreenHeader, { HEADER_HEIGHT, HEADER_MARGIN_BOTTOM } from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
+
+// The card always spans the screen. Adding players squeezes more columns into
+// that fixed width, so the table gets tighter rather than wider: rows shorten
+// and the text shrinks with them.
+const BASE_PLAYERS = 4;
+const BASE_ROW_HEIGHT = 34;
+const ROW_HEIGHT_PER_PLAYER = 2; // subtracted per player above BASE_PLAYERS
+const MIN_ROW_HEIGHT = 22;
+
+function maxRowHeightFor(playerCount) {
+  const shrunk = BASE_ROW_HEIGHT - Math.max(0, playerCount - BASE_PLAYERS) * ROW_HEIGHT_PER_PLAYER;
+  return Math.max(MIN_ROW_HEIGHT, shrunk);
+}
+
+// Column flex ratios, mirrored from the styles below. Used to work out how wide
+// a single player column ends up, so the text can be capped to fit it - with
+// eight columns on one screen the limit is horizontal, not vertical.
+const FLEX_TRUMP = 2.4;
+const FLEX_ROUND = 1.4;
+const FLEX_PLAYER = 1.2;
+
+// Card chrome either side of the columns: content padding 4x2, card border 2x2,
+// gradient padding 5x2.
+const TABLE_SIDE_CHROME = 22;
+
+// Everything above/around the score rows, totalled from the style values below.
+// The card sizes itself to its rows, so the space available for rows has to be
+// derived from the content area rather than measured off the card itself -
+// measuring the card would be circular once it stops filling the screen.
+const CONTENT_PADDING = 6; // content paddingTop 4 + paddingBottom 2
+const HEADER_BLOCK = HEADER_HEIGHT + HEADER_MARGIN_BOTTOM; // shared top bar
+const CARD_CHROME = 10; // border 2x2 + tableGradient paddingTop 4 + paddingBottom 2
+const TABLE_HEADER_ROW = 30; // paddingVertical 3x2 + border 2 + text at max size
+const ROWS_CHROME = CONTENT_PADDING + HEADER_BLOCK + CARD_CHROME + TABLE_HEADER_ROW;
 
 // Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
@@ -38,11 +73,11 @@ export default function ScoreBoardScreen({ navigation, route }) {
   const initialContinued = initialScoreboard?.players?.find(p => p.id === currentPlayerId)?.hasContinued || false;
   const [hasContinued, setHasContinued] = useState(initialContinued);
 
-  // Measured height of the score-rows area. Row text is scaled to whatever this
-  // works out to per row, so the table fits on one screen for any round count
-  // (4 up to ~17) instead of overflowing once the rows outgrow a fixed 22px
-  // line height.
-  const [rowsAreaHeight, setRowsAreaHeight] = useState(0);
+  // Measured height of the whole content area. Rows are sized from what is left
+  // of it after the header and card chrome, so the table fits on one screen for
+  // any round count (4 up to ~17) without the card having to fill the screen.
+  const [contentHeight, setContentHeight] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -195,11 +230,29 @@ export default function ScoreBoardScreen({ navigation, route }) {
   // Total row, which is the same height as a data row. Clamped so long games
   // stay legible and short ones don't blow the text up.
   const rowCount = scoreboard.rows.length + 1;
-  const rowHeight = rowsAreaHeight > 0 ? rowsAreaHeight / rowCount : 0;
-  const cellFontSize = rowHeight > 0
-    ? Math.max(9, Math.min(18, Math.floor(rowHeight * 0.5)))
-    : 14;
+  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - ROWS_CHROME) : 0;
+  // Capped, so a short game gets a compact table instead of rows stretched to
+  // fill the screen. Long games compress below the cap to stay on one screen.
+  const playerCount = scoreboard.players.length;
+  const rowHeight = availableForRows > 0
+    ? Math.min(maxRowHeightFor(playerCount), availableForRows / rowCount)
+    : 0;
+
+  // Two independent limits on the text, whichever is tighter wins. Height is the
+  // binding one in a long game; width is the binding one in an eight-player one,
+  // where the columns are narrow enough to clip names before the rows run out of
+  // room.
+  const columnUnits = FLEX_TRUMP + FLEX_ROUND + FLEX_PLAYER * playerCount;
+  const playerColumnWidth = contentWidth > 0
+    ? ((contentWidth - TABLE_SIDE_CHROME) * FLEX_PLAYER) / columnUnits
+    : 0;
+  const fontFromHeight = rowHeight > 0 ? Math.floor(rowHeight * 0.5) : 14;
+  const fontFromWidth = playerColumnWidth > 0 ? Math.floor(playerColumnWidth * 0.32) : 99;
+  const cellFontSize = Math.max(9, Math.min(18, fontFromHeight, fontFromWidth));
   const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
+  // Explicit height replaces flex:1 on the rows, which is what actually tightens
+  // the spacing between them.
+  const rowSize = rowHeight > 0 ? { height: rowHeight } : null;
 
   return (
     <View style={styles.container}>
@@ -215,6 +268,10 @@ export default function ScoreBoardScreen({ navigation, route }) {
         />
 
         <Animated.View
+          onLayout={(e) => {
+            setContentHeight(e.nativeEvent.layout.height);
+            setContentWidth(e.nativeEvent.layout.width);
+          }}
           style={[
             styles.content,
             {
@@ -224,37 +281,64 @@ export default function ScoreBoardScreen({ navigation, route }) {
           ]}
         >
 
-          <View style={styles.titleContainer}>
-            {/* Back then sound, same pair and order as the game screen. They
-                live inside the title row rather than floating over the table,
-                which is what keeps them off the Trump column. */}
-            <CircleIconButton
-              glyph="‹"
-              glyphStyle={styles.backGlyph}
-              style={styles.backButton}
-              accessibilityLabel="Leave game"
-              onPress={() => {
-                Alert.alert(
-                  "Leave Game",
-                  "Are you sure you want to leave the game?",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Leave",
-                      style: "destructive",
-                      onPress: () => {
-                        socketService.leaveLobby();
-                        navigation.navigate("Home");
-                      },
-                    },
-                  ]
-                );
-              }}
-            />
-            <SoundToggleButton style={styles.soundButton} />
-            <Text style={styles.title}>SCOREBOARD</Text>
-          </View>
+          <ScreenHeader
+            title="SCOREBOARD"
+            left={
+              <>
+                <CircleIconButton
+                  inline
+                  glyph="‹"
+                  glyphStyle={styles.backGlyph}
+                  accessibilityLabel="Leave game"
+                  onPress={() => {
+                    Alert.alert(
+                      "Leave Game",
+                      "Are you sure you want to leave the game?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Leave",
+                          style: "destructive",
+                          onPress: () => {
+                            socketService.leaveLobby();
+                            navigation.navigate("Home");
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                />
+                <SoundToggleButton inline />
+              </>
+            }
+            right={
+              !hasContinued ? (
+                <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+                  <TouchableOpacity
+                    onPress={handleContinue}
+                    activeOpacity={0.8}
+                    style={styles.continueButton}
+                  >
+                    <LinearGradient
+                      colors={["#FF8C00", "#FF6600", "#E65500"]}
+                      style={styles.continueButtonGradient}
+                    >
+                      <Text style={styles.continueButtonText}>CONTINUE</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              ) : (
+                <View style={styles.readyPill}>
+                  <Text style={styles.readyPillText}>READY ✓</Text>
+                </View>
+              )
+            }
+          />
 
+          {/* Fills the space left under the header and centres the card in it,
+              so a short table sits in the middle rather than hanging off the
+              header with all the gap below. */}
+          <View style={styles.tableArea}>
           {/* Scoreboard Table Card */}
           <View style={styles.tableContainer}>
             <LinearGradient
@@ -287,10 +371,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
               </View>
 
               {/* Score Rows */}
-              <View
-                style={styles.rowsContainer}
-                onLayout={(e) => setRowsAreaHeight(e.nativeEvent.layout.height)}
-              >
+              <View style={styles.rowsContainer}>
                 {scoreboard.rows.map((row, index) => {
                   const isCurrentRound = row.roundNumber === scoreboard.currentRound;
                   const trumpInfo = TRUMP_DISPLAY[row.trump.suit] || { symbol: "?", color: "#FFF8E7" };
@@ -300,6 +381,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
                       key={row.roundNumber}
                       style={[
                         styles.dataRow,
+                        rowSize,
                         index % 2 === 1 && styles.alternateRow,
                         isCurrentRound && styles.currentRoundRow,
                       ]}
@@ -348,7 +430,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
                 {/* Total - an equal-height row after the rounds, below a divider.
                     Uses the same trump + round cell structure as the data rows so
                     the player columns line up exactly with the scores above. */}
-                <View style={styles.totalRow}>
+                <View style={[styles.totalRow, rowSize]}>
                   <View style={[styles.cell, styles.trumpCell]}>
                     <Text style={[styles.totalLabel, cellText]} numberOfLines={1}>Total</Text>
                   </View>
@@ -374,33 +456,8 @@ export default function ScoreBoardScreen({ navigation, route }) {
               </View>
             </LinearGradient>
           </View>
-
-          {/* Continue Button */}
-          <View style={styles.buttonContainer}>
-            {!hasContinued ? (
-              <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
-                <TouchableOpacity
-                  onPress={handleContinue}
-                  activeOpacity={0.8}
-                  style={styles.continueButton}
-                >
-                  <LinearGradient
-                    colors={["#FF8C00", "#FF6600", "#E65500"]}
-                    style={styles.continueButtonGradient}
-                  >
-                    <Text style={styles.continueButtonText}>CONTINUE</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            ) : (
-              /* Same footprint as the button above, so committing to the round
-                 never resizes the table. The server tracks who is ready and
-                 advances everyone once the last player is in. */
-              <View style={styles.readyPill}>
-                <Text style={styles.readyPillText}>READY ✓</Text>
-              </View>
-            )}
           </View>
+
         </Animated.View>
 
         <StatusBar style="light" hidden />
@@ -424,29 +481,20 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingTop: 8,
+    paddingHorizontal: 4,
+    paddingTop: 4,
     paddingBottom: 2,
   },
   // Kept deliberately compact: the app is landscape-locked, so every pixel here
   // comes straight out of the table's height.
   // Tall enough to hold the 52px circles; the table below flexes to whatever is
   // left, so the extra height costs a little row size rather than overflowing.
-  titleContainer: {
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 2,
-  },
+  // Holds the whole header: back/sound on the left, title centred, Continue on
+  // the right. Tall enough for the 52px circles and the Continue pill.
+  // Right-anchored and vertically centred, mirroring the circles on the left.
   // Same 52px circle + 12px gap as the other screens, centred in the row.
-  backButton: {
-    top: 2,
-    left: 0,
-  },
-  soundButton: {
-    top: 2,
-    left: 64,
-  },
+  // Inset from the content edge so the row doesn't sit hard against the screen.
+  // The 64px stride between them is the 52px circle plus a 12px gap.
   // The chevron sits high and small in its em box next to the note glyph, so
   // nudge it onto the optical centre and size it up to match.
   backGlyph: {
@@ -454,34 +502,32 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     marginTop: -3,
   },
-  title: {
-    fontSize: 22,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(255, 165, 0, 0.5)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-    letterSpacing: 3,
-  },
 
-  // Table card
-  tableContainer: {
+  // Table card. marginTop drops it clear of the header row rather than sitting
+  // tight under it.
+  // Takes the leftover height under the header and centres the card vertically
+  // in it. Horizontally the card stretches to fill the screen.
+  tableArea: {
     flex: 1,
+    justifyContent: "center",
+  },
+  // Deliberately not flex:1 - the card hugs its rows so a short game doesn't
+  // leave a tall empty panel below the Total row.
+  tableContainer: {
     borderRadius: 16,
     borderWidth: 2,
     borderColor: "#5E3A9E",
   },
   tableGradient: {
-    flex: 1,
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingHorizontal: 5,
+    paddingTop: 4,
     paddingBottom: 2,
   },
 
   // Shared cell + column widths (flex based so it fills the width)
   cell: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -500,7 +546,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderBottomWidth: 2,
     borderBottomColor: "#FFD700",
   },
@@ -523,12 +569,10 @@ const styles = StyleSheet.create({
   },
 
   rowsContainer: {
-    flex: 1,
-    paddingTop: 4,
+    paddingTop: 2,
     paddingBottom: 0,
   },
   dataRow: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -595,7 +639,6 @@ const styles = StyleSheet.create({
   // Total row - an equal-height row (like the data rows) after the rounds,
   // separated by a gold divider line.
   totalRow: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     borderTopWidth: 1,
@@ -633,12 +676,6 @@ const styles = StyleSheet.create({
   // Continue button. Fixed height on purpose: the table above is flex:1, so any
   // change in this row's height would resize the table. Pinning it keeps the
   // board identical before and after the player commits to the round.
-  buttonContainer: {
-    height: 52,
-    marginTop: 4,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   continueButton: {
     borderRadius: 14,
     overflow: "hidden",
@@ -650,7 +687,7 @@ const styles = StyleSheet.create({
   },
   continueButtonGradient: {
     paddingVertical: 9,
-    paddingHorizontal: 50,
+    paddingHorizontal: 26,
     borderRadius: 12,
   },
   continueButtonText: {
@@ -665,7 +702,7 @@ const styles = StyleSheet.create({
   // Mirrors continueButtonGradient's padding so the swap is pixel-neutral.
   readyPill: {
     paddingVertical: 9,
-    paddingHorizontal: 50,
+    paddingHorizontal: 26,
     borderRadius: 12,
     backgroundColor: "rgba(42, 22, 84, 0.8)",
     borderWidth: 1,

@@ -19,6 +19,7 @@ import GameButton from "../components/GameButton";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
 
 export default function CreateGameScreen({ navigation, route }) {
@@ -208,10 +209,22 @@ export default function CreateGameScreen({ navigation, route }) {
                 },
               ]}
             >
-              {/* Title Section */}
-              <View style={styles.topSection}>
-                <Text style={styles.title}>Game Settings</Text>
-              </View>
+              {/* Shared top bar: controls and title on one line. */}
+              <ScreenHeader
+                title="Game Settings"
+                left={
+                  <>
+                    <CircleIconButton
+                      inline
+                      glyph="‹"
+                      glyphStyle={styles.backGlyph}
+                      accessibilityLabel="Go back"
+                      onPress={handleGoBack}
+                    />
+                    <SoundToggleButton inline />
+                  </>
+                }
+              />
 
               {/* Settings Section - 2x2 Grid */}
               <View style={styles.settingsSection}>
@@ -269,18 +282,6 @@ export default function CreateGameScreen({ navigation, route }) {
               </View>
             </Animated.View>
 
-            {/* Back then sound, paired in the top-left as on the game screens.
-                Back keeps the existing behaviour: disconnect, then go back. */}
-            <CircleIconButton
-              glyph="‹"
-              glyphStyle={styles.backGlyph}
-              style={styles.backButton}
-              accessibilityLabel="Go back"
-              onPress={handleGoBack}
-            />
-
-            {/* Sound toggle - immediately right of the back button */}
-            <SoundToggleButton style={styles.soundButton} />
           </>
         )}
 
@@ -313,19 +314,6 @@ const styles = StyleSheet.create({
     paddingTop: 15,
     overflow: "visible",
   },
-  topSection: {
-    alignItems: "center",
-    marginBottom: 5,
-  },
-  title: {
-    fontSize: 42,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 6,
-    letterSpacing: 2,
-  },
   settingsSection: {
     flex: 1,
     justifyContent: "flex-start",
@@ -344,16 +332,6 @@ const styles = StyleSheet.create({
   bottomSection: {
     alignItems: "center",
     paddingBottom: 15,
-  },
-  // Back and sound as a pair in the top-left, back on the outside. The offsets
-  // are the 52px circle plus a 12px gap, matching the game screens.
-  backButton: {
-    top: 16,
-    left: 16,
-  },
-  soundButton: {
-    top: 16,
-    left: 82,
   },
   // The chevron sits high and small in its em box next to the note glyph, so
   // nudge it onto the optical centre and size it up to match.

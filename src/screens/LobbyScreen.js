@@ -21,6 +21,7 @@ import RemovePlayerModal from "../components/RemovePlayerModal";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
+import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
 
 export default function LobbyScreen({ navigation, route }) {
@@ -396,9 +397,36 @@ export default function LobbyScreen({ navigation, route }) {
               ]}
             >
               {/* Top Section - Title and Code */}
+              {/* Shared top bar: controls and title on one line. */}
+              <ScreenHeader
+                title={`${displayHostName}'s Lobby`}
+                left={
+                  <>
+                    <CircleIconButton
+                      inline
+                      glyph="‹"
+                      glyphStyle={styles.backGlyph}
+                      accessibilityLabel="Leave lobby"
+                      onPress={handleLeaveLobby}
+                    />
+                    <SoundToggleButton inline />
+                  </>
+                }
+                right={
+                  isCurrentUserHost &&
+                  players.length < (gameSettings.maxPlayers || 8) ? (
+                    <CircleIconButton
+                      inline
+                      glyph="🤖"
+                      glyphStyle={styles.addBotGlyph}
+                      accessibilityLabel="Add bot player"
+                      onPress={handleAddBot}
+                    />
+                  ) : null
+                }
+              />
+
               <View style={styles.topSection}>
-                {/* Lobby Title */}
-                <Text style={styles.title}>{displayHostName}'s Lobby</Text>
 
                 {/* Lobby Code */}
                 <View style={styles.codeContainer}>
@@ -482,33 +510,6 @@ export default function LobbyScreen({ navigation, route }) {
               </View>
             </Animated.View>
 
-            {/* Back then sound, paired in the top-left as on the other
-                screens. Back keeps the existing behaviour: leave the lobby,
-                then go back. */}
-            <CircleIconButton
-              glyph="‹"
-              glyphStyle={styles.backGlyph}
-              style={styles.backButton}
-              accessibilityLabel="Leave lobby"
-              onPress={handleLeaveLobby}
-            />
-
-            {/* Sound toggle - immediately right of the back button */}
-            <SoundToggleButton style={styles.soundButton} />
-
-            {/* Add Bot sits opposite the back/sound pair, same circle so the
-                corners match. Host only, and only while there is room for
-                another player. */}
-            {isCurrentUserHost &&
-              players.length < (gameSettings.maxPlayers || 8) && (
-                <CircleIconButton
-                  glyph="🤖"
-                  glyphStyle={styles.addBotGlyph}
-                  style={styles.addBotButton}
-                  accessibilityLabel="Add bot player"
-                  onPress={handleAddBot}
-                />
-              )}
 
             {/* Remove Player confirmation - an in-screen overlay (no native
                 Modal), so it stays in landscape with no orientation flicker. */}
@@ -543,21 +544,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 22,
   },
+  // Negative top margin pulls the code box and player count up into part of the
+  // header bar's 12pt bottom margin, tightening them to the title without
+  // moving the title itself. 6pt of clearance is left.
   topSection: {
     alignItems: "center",
+    marginTop: -6,
     marginBottom: 10,
-  },
-  title: {
-    fontSize: 36,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFD700",
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 6,
-    letterSpacing: 2,
-    marginBottom: 8,
   },
   codeContainer: {
     flexDirection: "row",
@@ -643,9 +638,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexWrap: "wrap",
   },
+  // paddingTop pushes Start Game down away from the player list; paddingBottom
+  // stays small so it doesn't run off the bottom of a landscape screen.
   bottomSection: {
     alignItems: "center",
-    paddingBottom: 15,
+    paddingTop: 14,
+    paddingBottom: 8,
   },
   startButtonContainer: {
     alignItems: "center",
@@ -677,21 +675,6 @@ const styles = StyleSheet.create({
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     letterSpacing: 0.5,
-  },
-  // Back and sound as a pair in the top-left, back on the outside. The offsets
-  // are the 52px circle plus a 12px gap, matching the other screens.
-  backButton: {
-    top: 16,
-    left: 16,
-  },
-  soundButton: {
-    top: 16,
-    left: 82,
-  },
-  // Opposite corner from the back/sound pair.
-  addBotButton: {
-    top: 16,
-    right: 16,
   },
   // Emoji render larger than text glyphs at the same point size and carry their
   // own colour, so this is sized down and the gold glow dropped.

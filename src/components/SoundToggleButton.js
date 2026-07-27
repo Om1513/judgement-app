@@ -13,7 +13,7 @@ import audioManager from "../services/audioManager";
 import useSoundEnabled from "../hooks/useSoundEnabled";
 import CircleIconButton, { CIRCLE_BUTTON_SIZE } from "./CircleIconButton";
 
-export default function SoundToggleButton({ style }) {
+export default function SoundToggleButton({ style, inline = false }) {
   const soundEnabled = useSoundEnabled();
 
   return (
@@ -22,6 +22,7 @@ export default function SoundToggleButton({ style }) {
       dimmed={!soundEnabled}
       onPress={() => audioManager.setSoundEnabled(!soundEnabled)}
       style={style}
+      inline={inline}
       accessibilityRole="switch"
       accessibilityState={{ checked: soundEnabled }}
       accessibilityLabel={soundEnabled ? "Mute sound" : "Unmute sound"}
