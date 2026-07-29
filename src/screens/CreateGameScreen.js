@@ -20,7 +20,87 @@ import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
+import InfoHint from "../components/InfoHint";
+import { TrumpOrder } from "../components/SuitLegend";
 import audioManager from "../services/audioManager";
+
+/**
+ * What the two order modes actually do. Lives behind the ⓘ on the Order card
+ * rather than under it: the fixed Kachuful rotation needs the four suits spelled
+ * out, which is more than a settings card should carry inline.
+ *
+ * The active mode is marked so the panel answers "what will my game do?", not
+ * just "what are the options?".
+ */
+function OrderInfo({ orderMode }) {
+  const isRandom = orderMode === "Random";
+
+  return (
+    <View>
+      <View style={styles.infoMode}>
+        <Text style={[styles.infoModeName, !isRandom && styles.infoModeActive]}>
+          Kachuful{!isRandom ? "  ·  selected" : ""}
+        </Text>
+        <Text style={styles.infoText}>
+          Trump follows a fixed cycle and repeats every four rounds.
+        </Text>
+        <TrumpOrder />
+      </View>
+
+      <View style={styles.infoDivider} />
+
+      <View>
+        <Text style={[styles.infoModeName, isRandom && styles.infoModeActive]}>
+          Random{isRandom ? "  ·  selected" : ""}
+        </Text>
+        <Text style={styles.infoText}>
+          A trump is drawn for every round when the game starts. Suits can
+          repeat, and the whole sequence is fixed once dealt - reconnecting never
+          re-rolls it.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * What the two scoring modes pay out. Both only ever pay for an exact
+ * judgement - that is the part players get wrong, so it is stated first and the
+ * worked examples come from the same rule the server scores with
+ * (calculateScore in server/src/utils/cardUtils.ts).
+ */
+function ScoringInfo({ scoringMode }) {
+  const isPlusOne = scoringMode === "+1";
+
+  return (
+    <View>
+      <Text style={styles.infoText}>
+        You only score by making your bid exactly. Missing it either way scores
+        nothing, however close.
+      </Text>
+
+      <View style={styles.infoDivider} />
+
+      <View style={styles.infoMode}>
+        <Text style={[styles.infoModeName, !isPlusOne && styles.infoModeActive]}>
+          +10{!isPlusOne ? "  ·  selected" : ""}
+        </Text>
+        <Text style={styles.infoText}>
+          10 × your bid. Bid 0 → 10, bid 2 → 20, bid 4 → 40.
+        </Text>
+      </View>
+
+      <View>
+        <Text style={[styles.infoModeName, isPlusOne && styles.infoModeActive]}>
+          +1{isPlusOne ? "  ·  selected" : ""}
+        </Text>
+        <Text style={styles.infoText}>
+          10 + your bid. Bid 0 → 10, bid 2 → 12, bid 4 → 14.
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function CreateGameScreen({ navigation, route }) {
   const playerName = route.params?.playerName || "Player";
@@ -254,11 +334,9 @@ export default function CreateGameScreen({ navigation, route }) {
                       value={orderMode}
                       onChange={setOrderMode}
                     />
-                    <Text style={styles.settingHint}>
-                      {orderMode === "Random"
-                        ? "Trump drawn fresh each round"
-                        : "Kari → Chukat → Falli → Lal"}
-                    </Text>
+                    <InfoHint title="TRUMP ORDER" label="How trump order works">
+                      <OrderInfo orderMode={orderMode} />
+                    </InfoHint>
                   </SettingCard>
 
                   <SettingCard label="Scoring" compact>
@@ -266,11 +344,9 @@ export default function CreateGameScreen({ navigation, route }) {
                       value={scoringMode}
                       onChange={setScoringMode}
                     />
-                    <Text style={styles.settingHint}>
-                      {scoringMode === "+1"
-                        ? "Exact bid → 10 + Bid"
-                        : "Exact bid → 10 × Bid"}
-                    </Text>
+                    <InfoHint title="SCORING" label="How scoring works">
+                      <ScoringInfo scoringMode={scoringMode} />
+                    </InfoHint>
                   </SettingCard>
                 </View>
               </View>
@@ -302,14 +378,29 @@ export default function CreateGameScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  // Spells out what the selected mode actually does, so the difference between
-  // the two scoring modes isn't guesswork.
-  settingHint: {
-    marginTop: 6,
-    fontSize: 11,
+  infoMode: {
+    marginBottom: 10,
+  },
+  infoModeName: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    color: "#C9BEDC",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  infoModeActive: {
+    color: "#FFD700",
+  },
+  infoText: {
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
     color: "#C9BEDC",
-    textAlign: "center",
+    lineHeight: 17,
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 215, 0, 0.25)",
+    marginVertical: 12,
   },
   container: {
     flex: 1,
