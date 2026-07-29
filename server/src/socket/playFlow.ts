@@ -4,7 +4,7 @@
 // card-play scheduler (bot.service) so the hand-winner popup / inter-hand pause
 // behaves identically regardless of who played the final card of a trick.
 
-import { Server, Socket } from 'socket.io';
+import { Server } from 'socket.io';
 import {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -17,13 +17,22 @@ import { perfEnabled, perfLog, payloadSize } from '../utils/perf';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
+// Presentation pauses between tricks. These are deliberate UI beats, not
+// mechanics, so they are overridable by env var: integration tests turn them
+// down to a few milliseconds instead of waiting ~3s per trick. Unset (i.e.
+// every real deployment) keeps the product-tuned defaults.
+function pauseMs(envVar: string, fallback: number): number {
+  const raw = Number(process.env[envVar]);
+  return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+}
+
 // How long the last played card is left on the table before the hand-winner
 // popup is announced (ms), so players can see the final play of the trick.
-export const LAST_CARD_VIEW_DELAY = 1000;
+export const LAST_CARD_VIEW_DELAY = pauseMs('LAST_CARD_VIEW_DELAY_MS', 1000);
 
 // How long the hand-winner popup is held before the next hand starts (ms).
 // Kept within the 1.5-2s window requested by product.
-export const HAND_WINNER_DURATION = 1800;
+export const HAND_WINNER_DURATION = pauseMs('HAND_WINNER_DURATION_MS', 1800);
 
 /**
  * Sends a personalized game state update to every player in the game's lobby.

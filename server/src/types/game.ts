@@ -2,7 +2,6 @@
 
 import { Card, GamePlayer } from './player';
 import { LobbySettings } from './lobby';
-import { TrumpSuit } from '../utils/trump';
 
 // Trump info for the round
 export interface TrumpInfo {

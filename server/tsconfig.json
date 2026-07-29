@@ -10,6 +10,13 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    // Pin type resolution to this package. By default TypeScript walks up into
+    // the repo root's node_modules/@types, which pulls the Expo app's type
+    // packages into the server compile - so the server would build locally
+    // (where both packages are installed) and fail in CI (where a job installs
+    // only the server). Keeping the server's types self-contained means a green
+    // local build actually means something.
+    "typeRoots": ["./node_modules/@types"],
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true

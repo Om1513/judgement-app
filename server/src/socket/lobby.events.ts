@@ -8,8 +8,6 @@ import {
   SocketData,
   SocketErrorCodes,
 } from '../types/socket';
-import { LobbySettings } from '../types/lobby';
-import { playerService } from '../services/player.service';
 import { lobbyService } from '../services/lobby.service';
 import { gameService } from '../services/game.service';
 import { botService } from '../services/bot.service';
@@ -58,7 +56,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       socket.data.lobbyId = lobby.id;
 
       // Join the Socket.IO room
-      socket.join(`lobby:${lobby.code}`);
+      void socket.join(`lobby:${lobby.code}`);
 
       console.log(`Player ${socket.data.playerName} created lobby ${lobby.code}`);
 
@@ -119,7 +117,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       socket.data.lobbyId = lobby.id;
 
       // Join the Socket.IO room
-      socket.join(`lobby:${lobby.code}`);
+      void socket.join(`lobby:${lobby.code}`);
 
       console.log(`Player ${socket.data.playerName} joined lobby ${lobby.code}`);
 
@@ -171,7 +169,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       );
 
       // Leave the Socket.IO room
-      socket.leave(`lobby:${lobbyCode}`);
+      void socket.leave(`lobby:${lobbyCode}`);
 
       console.log(`Player ${socket.data.playerName} left lobby ${lobbyCode}`);
 
@@ -225,7 +223,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       for (const s of sockets) {
         if (s.data.playerId === targetPlayerId) {
           s.emit('lobby:kicked', { message: 'You have been removed from the lobby by the host.' });
-          await s.leave(`lobby:${lobby.code}`);
+          s.leave(`lobby:${lobby.code}`);
           s.data.lobbyId = null;
           s.data.gameId = null;
           break;
@@ -341,7 +339,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       );
 
       // Initialize game state
-      const gameState = await gameService.initializeGame(gameId, lobby.id);
+      await gameService.initializeGame(gameId, lobby.id);
 
       console.log(`Game started in lobby ${lobby.code}`);
 

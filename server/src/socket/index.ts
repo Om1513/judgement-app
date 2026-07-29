@@ -163,7 +163,7 @@ async function restoreSession(socket: TypedSocket): Promise<boolean> {
 
     // Re-join the room so future broadcasts reach this socket again.
     socket.data.lobbyId = lobby.id;
-    socket.join(`lobby:${lobby.code}`);
+    void socket.join(`lobby:${lobby.code}`);
 
     let clientState = null;
     if (lobby.status === 'IN_GAME') {

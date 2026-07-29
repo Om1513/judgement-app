@@ -2,18 +2,15 @@
 
 import { getDB } from '../db/connection';
 import {
-  Lobby,
   LobbyState,
   LobbySettings,
   CreateLobbyInput,
   JoinLobbyInput,
   UpdateLobbySettingsInput,
-  DEFAULT_LOBBY_SETTINGS,
 } from '../types/lobby';
 import { LobbyPlayer } from '../types/player';
 import { generateLobbyCode, isValidLobbyCode } from '../utils/generateLobbyCode';
-import { validateLobbySettings, canStartGame, LOBBY_CONSTRAINTS } from '../utils/validateLobby';
-import { playerService } from './player.service';
+import { validateLobbySettings, canStartGame } from '../utils/validateLobby';
 
 export class LobbyService {
   /**

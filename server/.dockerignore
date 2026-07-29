@@ -1,7 +1,28 @@
+# Keep the build context (and therefore the image) to just what the server needs
+# to compile and run. Anything listed here is never sent to the Docker daemon.
+
+# Dependencies and build output - both are recreated inside the image.
 node_modules
 dist
+
+# Secrets. These must never reach an image layer.
 .env
 .env.*
+
+# Version control and editor noise.
+.git
+.gitignore
+*.md
+
+# Tests, test tooling and their output. The production compile
+# (tsconfig.build.json) excludes src/tests too, so nothing test-related is
+# built into the image.
+src/tests
+scripts
+coverage
+docker-compose.test.yml
+
+# Logs and OS junk.
 npm-debug.log
 *.log
 .DS_Store

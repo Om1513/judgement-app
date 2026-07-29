@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Animated,
   TouchableOpacity,
-  ScrollView,
   Alert,
   Share,
 } from "react-native";
@@ -28,10 +27,8 @@ export default function LobbyScreen({ navigation, route }) {
   // Get params from navigation
   const {
     lobbyCode = "ABC123",
-    lobbyId = "",
     hostName = "Player",
     hostId = "host-1",
-    isHost = true,
     gameSettings = {},
     currentPlayerId = "host-1",
     currentPlayerName = "Player",

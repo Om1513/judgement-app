@@ -139,7 +139,7 @@ export default function HowToPlayScreen({ navigation }) {
     // 5 - Playing a hand
     <RuleSection key="playing" icon="▶️" title="Playing a Hand">
       <RuleBullet>The starting player plays any card.</RuleBullet>
-      <RuleBullet>That card's suit becomes the lead suit.</RuleBullet>
+      <RuleBullet>That card&apos;s suit becomes the lead suit.</RuleBullet>
       <RuleBullet>Everyone else must follow the lead suit if they hold it.</RuleBullet>
       <RuleBullet>
         Without the lead suit, play a trump to try to win - or discard any other
@@ -196,7 +196,7 @@ export default function HowToPlayScreen({ navigation }) {
     // 9 - Scoreboard
     <RuleSection key="scoreboard" icon="📋" title="Scoreboard">
       <RuleText>After each round the scoreboard appears.</RuleText>
-      <RuleBullet>Each player's score for the round</RuleBullet>
+      <RuleBullet>Each player&apos;s score for the round</RuleBullet>
       <RuleBullet>The trump that was in play</RuleBullet>
       <RuleBullet>Running totals for everyone</RuleBullet>
       <RuleText style={styles.note}>
@@ -208,7 +208,7 @@ export default function HowToPlayScreen({ navigation }) {
     // 10 - Winning the game
     <RuleSection key="winning" icon="🏆" title="Winning the Game">
       <RuleText>
-        After the final round every round's score is added up. The highest total
+        After the final round every round&apos;s score is added up. The highest total
         wins, with confetti and a final scoreboard.
       </RuleText>
       <RuleExample label="Ties" tone="good">

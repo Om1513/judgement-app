@@ -83,4 +83,6 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Fire-and-forget bootstrap: main() installs its own error handling and exits
+// the process on failure, so there is nothing further to await here.
+void main();

@@ -1,0 +1,10 @@
+{
+  // Production compile. Identical to tsconfig.json except that the test suites
+  // are left out, so the deployed image carries no test code (and no need for
+  // the dev-only packages the tests import).
+  //
+  // `npm run build` still compiles everything, because the test runner executes
+  // the compiled output in dist/tests.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/tests"]
+}
