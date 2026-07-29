@@ -32,18 +32,27 @@ after(async () => {
   await closeDatabase();
 });
 
-async function get(path: string) {
+/**
+ * Every endpoint here answers with a JSON object, so the body is typed as one
+ * rather than left as the `unknown` that `Response.json()` returns. Annotating
+ * it keeps the assertions readable, and keeps this file compiling on its own:
+ * what `json()` infers to depends on which @types packages happen to be
+ * resolvable, which is not something a test should quietly rely on.
+ */
+type JsonResponse = { status: number; body: Record<string, any> };
+
+async function get(path: string): Promise<JsonResponse> {
   const response = await fetch(`${base}${path}`);
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: (await response.json()) as Record<string, any> };
 }
 
-async function post(path: string, payload: unknown) {
+async function post(path: string, payload: unknown): Promise<JsonResponse> {
   const response = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: (await response.json()) as Record<string, any> };
 }
 
 describe('GET /health', () => {

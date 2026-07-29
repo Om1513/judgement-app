@@ -59,6 +59,7 @@ npm run build       # both
 | `npm test` | `test:unit` then `test:integration` |
 | `npm run test:coverage` | Coverage for both packages, with thresholds |
 | `npm run build` | Compile the server, then bundle the app for web |
+| | (`build:web` passes `--clear`: a release bundle should be built from a cold Metro cache, and without it a second consecutive export fails on a stale file map) |
 | `npm run validate` / `npm run ci` | The whole pipeline, in CI order |
 
 ### App only
@@ -322,6 +323,15 @@ Design notes:
 - **Real production builds**, not just tests: `tsc` for the server, and a full
   Metro/NativeWind web bundle for the app. A broken import or a missing asset
   fails the PR.
+- **The server compile is self-contained.** `server/tsconfig.json` pins
+  `typeRoots` to the server's own `node_modules/@types`. Without it, TypeScript
+  walks up into the repo root and pulls the Expo app's type packages into the
+  server compile — which meant the server built on a laptop (both packages
+  installed) and failed in CI (`integration-tests` installs only the server).
+  `Response.json()` was the specific casualty: `any` with the app's types
+  present, `unknown` without. The `integration-tests` job installing *only*
+  `server/` is what keeps this honest going forward — it is the one job that
+  would catch such a divergence reappearing.
 
 ### Security posture
 
