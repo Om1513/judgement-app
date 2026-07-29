@@ -1,7 +1,7 @@
 // Socket.IO event types for Kachuful game
 
-import { LobbyState, LobbySettings, CreateLobbyInput, JoinLobbyInput } from './lobby';
-import { ClientGameState, SubmitBidInput, PlayCardInput, ScoreboardState, GameWinner } from './game';
+import { LobbyState, LobbySettings } from './lobby';
+import { ClientGameState, ScoreboardState, GameWinner } from './game';
 import { Card } from './player';
 
 // Client to Server events

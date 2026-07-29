@@ -1,0 +1,284 @@
+name: CI
+
+# Every pull request, and every push to main, has to get through this before it
+# can be merged or picked up for deploy.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only by default. Nothing in CI writes to the repository, and a pull
+# request from a fork must never be handed more than this.
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch/PR - a new push cancels the previous, still-running one.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The test runner uses Node's built-in test runner with coverage thresholds and
+  # glob support, which needs Node >= 22. Production runs on the node:20-slim
+  # base in server/Dockerfile; the docker job below builds and boots that
+  # separately, so the runtime is still validated on its own version.
+  NODE_VERSION: "24"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint + typecheck. Fast and database-free, so obvious breakage fails first.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          # Two packages, two lockfiles: the Expo app at the root, and the server.
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm run bootstrap
+
+      - name: Generate Prisma client
+        # Typechecking the server needs the generated client's types.
+        run: npm --prefix server run db:generate
+
+      - name: Lint
+        # Never --fix in CI. Developers run `npm run lint:fix` locally.
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  # ---------------------------------------------------------------------------
+  # Everything that needs no database: the app's component/logic tests and the
+  # server's game-rule tests.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm run bootstrap
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: App tests (with coverage)
+        run: npm run test:app:coverage
+
+      - name: Server unit tests
+        run: npm --prefix server run test:unit
+
+      - name: Upload app coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-coverage
+          path: coverage/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # The real thing: a fresh Postgres, the schema applied from empty, then the
+  # service and Socket.IO suites against it.
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration & socket tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # The name must contain "test" - the runner refuses anything else.
+          POSTGRES_DB: kachuful_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Disposable, per-run, and local to the job. No production credentials are
+      # available to this job at all.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kachuful_test?schema=public
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix server ci
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      # The runner applies prisma/schema.prisma to the empty service database
+      # with `db push --force-reset` before the suites start - the same command
+      # the production container runs on boot. A green run here is the proof that
+      # a brand-new database can be provisioned and played on.
+      - name: Integration + socket tests with coverage
+        run: npm --prefix server run test:coverage
+
+  # ---------------------------------------------------------------------------
+  # Production builds. A pull request must not be mergeable if either half of
+  # the product cannot be built for release.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm run bootstrap
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: Compile the server
+        run: npm run build:server
+
+      - name: Bundle the app for web
+        # Exercises Metro, NativeWind and the whole React Native bundle. A
+        # broken import or a missing asset fails here.
+        env:
+          EXPO_PUBLIC_SERVER_URL: https://ci.example.invalid
+        run: npm run build:web
+
+      - name: Check the bundle was actually produced
+        run: |
+          test -f dist/index.html
+          test -d dist/_expo/static/js/web
+          echo "web bundle:"
+          du -sh dist
+
+      - name: Upload the web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: dist/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # The deployable artifact. Railway builds server/Dockerfile on push to main,
+  # so building it here is what stops a broken image reaching production.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the server image
+        # Same context and Dockerfile Railway uses. No registry push, no
+        # credentials - this only proves the image builds.
+        run: docker build --tag kachuful-server:ci ./server
+
+      - name: Check the compiled entry point is in the image
+        run: |
+          docker run --rm --entrypoint node kachuful-server:ci \
+            -e "require('fs').accessSync('/app/dist/server.js'); console.log('dist/server.js present')"
+
+  # ---------------------------------------------------------------------------
+  # Dependency advisories. Reported for everything, enforced where a fix exists
+  # and the code actually runs in production - see CI-CD.md for the reasoning.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm run bootstrap
+
+      - name: Server runtime dependencies (must be clean at high/critical)
+        # The server is the internet-facing process. Its production dependency
+        # tree is small and currently advisory-free, so this is enforced.
+        run: npm --prefix server audit --omit=dev --audit-level=high
+
+      - name: Full advisory report (informational)
+        # The app's tree carries known advisories inside Expo/React Native/Jest
+        # build tooling that have no fix short of an SDK upgrade. None of it
+        # executes in the shipped bundle or on the server, so it is reported
+        # rather than used to block unrelated work.
+        if: always()
+        run: |
+          echo "::group::app (all dependencies)"
+          npm audit || true
+          echo "::endgroup::"
+          echo "::group::server (all dependencies)"
+          npm --prefix server audit || true
+          echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
+  # Single required check for branch protection: green only if every job above
+  # succeeded. Add this one to the protected-branch rules rather than listing
+  # each job, so adding a job later does not need the settings changed.
+  # ---------------------------------------------------------------------------
+  ci-success:
+    name: CI success
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [quality, unit-tests, integration-tests, build, docker, audit]
+    steps:
+      - name: Fail if anything upstream did not succeed
+        run: |
+          echo "quality:            ${{ needs.quality.result }}"
+          echo "unit-tests:         ${{ needs.unit-tests.result }}"
+          echo "integration-tests:  ${{ needs.integration-tests.result }}"
+          echo "build:              ${{ needs.build.result }}"
+          echo "docker:             ${{ needs.docker.result }}"
+          echo "audit:              ${{ needs.audit.result }}"
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
+          echo "All CI jobs passed."

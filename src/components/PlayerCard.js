@@ -10,7 +10,7 @@ import audioManager from "../services/audioManager";
 
 export default function PlayerCard({
   player,
-  isHost,
+  isHost: _isHost,
   canRemove,
   onRemove,
   size = "normal",

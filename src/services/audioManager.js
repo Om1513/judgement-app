@@ -253,7 +253,7 @@ class AudioManager {
       const next = from + (target - from) * (step / steps);
       try {
         player.volume = Math.max(0, Math.min(1, next));
-      } catch (error) {
+      } catch {
         // Player torn down mid-fade; stop rather than spam.
       }
       if (step >= steps) {

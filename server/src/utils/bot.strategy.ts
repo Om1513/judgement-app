@@ -2,7 +2,6 @@
 // Only uses publicly available information (no cheating)
 
 import { Card } from '../types/player';
-import { RANK_VALUES } from './cardUtils';
 
 /**
  * Determines which cards are legal to play based on follow-suit rules.
@@ -73,7 +72,7 @@ export function chooseBotBid(
   const strongCount = countStrongCards(hand, trumpSuit);
 
   // Base bid is floored strong count with some randomness
-  let baseBid = Math.floor(strongCount);
+  const baseBid = Math.floor(strongCount);
 
   // Add some randomness (-1 to +1)
   const randomAdjust = Math.floor(Math.random() * 3) - 1;
@@ -107,13 +106,6 @@ export function chooseBotBid(
  */
 function botNeedsWin(bid: number, tricksMade: number): boolean {
   return tricksMade < bid;
-}
-
-/**
- * Determines if the bot has already met their bid and should avoid winning.
- */
-function botShouldAvoidWin(bid: number, tricksMade: number): boolean {
-  return tricksMade >= bid;
 }
 
 /**
@@ -220,8 +212,9 @@ export function chooseBotCard(
   const sortedDesc = [...legalCards].sort((a, b) => b.value - a.value);
 
   const currentWinner = findCurrentWinner(cardsPlayed, leadSuit!, trumpSuit);
+  // Anything that is not "still short of the bid" means the bot is at or over
+  // its bid and should now duck tricks.
   const needsWin = botNeedsWin(bid, tricksMade);
-  const shouldAvoid = botShouldAvoidWin(bid, tricksMade);
 
   // Leading the trick (no cards played yet)
   if (cardsPlayed.length === 0) {

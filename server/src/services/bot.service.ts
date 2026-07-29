@@ -27,6 +27,15 @@ const BOT_NAMES = [
   'Queen',
 ];
 
+// "Thinking time" before a bot acts. Purely cosmetic - it exists so bots don't
+// snap their turn instantly - so it is scaled by BOT_SPEED_FACTOR, which
+// integration tests set to 0 to make bot turns immediate and deterministic.
+// Unset (every real deployment) leaves the human-feeling defaults intact.
+const BOT_SPEED_FACTOR = (() => {
+  const raw = Number(process.env.BOT_SPEED_FACTOR);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 1;
+})();
+
 const BOT_TIMING = {
   BID_MIN: 700,
   BID_MAX: 1800,
@@ -130,7 +139,8 @@ export class BotService {
    * Gets a random delay for bot actions.
    */
   private getRandomDelay(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.round(delay * BOT_SPEED_FACTOR);
   }
 
   /**

@@ -42,7 +42,7 @@ class SocketService {
         await AsyncStorage.setItem(CLIENT_ID_KEY, id);
       }
       this.clientId = id;
-    } catch (error) {
+    } catch {
       // If storage fails, fall back to an in-memory id for this run.
       this.clientId = this.clientId || generateClientId();
     }

@@ -5,13 +5,20 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "test": "tsc && node --test dist/tests/*.test.js"
+    "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "db:test:down": "docker compose -f docker-compose.test.yml down -v",
+    "test": "npm run build && node scripts/test.mjs --all",
+    "test:unit": "npm run build && node scripts/test.mjs --unit",
+    "test:integration": "npm run build && node scripts/test.mjs --integration",
+    "test:coverage": "npm run build && node scripts/test.mjs --all --coverage",
+    "build:prod": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -25,6 +32,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.9.0",
     "prisma": "^5.22.0",
+    "socket.io-client": "^4.8.3",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.3"
   }

@@ -1,0 +1,33 @@
+# Throwaway Postgres for local integration tests.
+#
+# Nothing here is shared with development or production: it listens on 55432
+# (not 5432) so it cannot collide with a local dev Postgres, the credentials are
+# fixed test values, and the volume is tmpfs so the data dies with the
+# container.
+#
+# Started automatically by `npm run test:integration`. To manage it by hand:
+#
+#   npm run db:test:up
+#   npm run db:test:down
+#
+# CI does not use this file - GitHub Actions provides its own Postgres service
+# container and sets TEST_DATABASE_URL, which the test runner prefers.
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: kachuful-postgres-test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kachuful_test
+    ports:
+      - "55432:5432"
+    # In-memory storage: fast, and guarantees every run starts from nothing.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kachuful_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

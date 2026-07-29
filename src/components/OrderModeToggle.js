@@ -1,7 +1,6 @@
 import React, { useRef } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   Animated,

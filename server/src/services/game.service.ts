@@ -9,13 +9,11 @@ import {
   SubmitBidInput,
   PlayCardInput,
   RoundState,
-  Trick,
-  TrumpInfo,
+
   ClientPlayer,
   ClientRoundState,
 } from '../types/game';
 import { Card, GamePlayer } from '../types/player';
-import { LobbySettings } from '../types/lobby';
 import { lobbyService } from './lobby.service';
 import {
   dealCards,
@@ -24,11 +22,11 @@ import {
   canPlayCard,
   calculateScore,
 } from '../utils/cardUtils';
-import { validateBid } from '../utils/validateLobby';
 import {
   generateTrumpOrder,
   canBidValue,
 } from '../utils/trump';
+import { getRoundRotation } from '../utils/rotation';
 
 export class GameService {
   // A game's lobby id and code never change, so we cache them per game to avoid
@@ -105,16 +103,8 @@ export class GameService {
     const cardsForRound = getCardsForRound(1, settings.rounds);
     const hands = dealCards(playerCount, cardsForRound);
 
-    // Dealer is first player, bidding starts with next player
-    const dealerIndex = 0;
-    const firstBidderIndex = (dealerIndex + 1) % playerCount;
-
-    // Create bid order (clockwise from dealer)
-    const bidOrder: string[] = [];
-    for (let i = 0; i < playerCount; i++) {
-      const idx = (firstBidderIndex + i) % playerCount;
-      bidOrder.push(turnOrder[idx]);
-    }
+    // Round 1: seat 0 deals, the player to their left opens the bidding.
+    const { dealerId, firstBidderIndex, bidOrder } = getRoundRotation(1, turnOrder);
 
     const gamePlayers: GamePlayer[] = lobby.players
       .sort((a, b) => a.seatPosition - b.seatPosition)
@@ -135,7 +125,7 @@ export class GameService {
       cardsPerPlayer: cardsForRound,
       trumpSuit: round1Trump.suit as Card['suit'],
       trump: round1Trump,
-      dealerId: turnOrder[dealerIndex],
+      dealerId,
       bids: {},
       tricksWon: {},
       currentTrick: null,
@@ -677,16 +667,12 @@ export class GameService {
       p.tricksWon = 0;
     });
 
-    // Rotate dealer (each round dealer moves clockwise)
-    const dealerIndex = (state.currentRound - 1) % state.players.length;
-    const firstBidderIndex = (dealerIndex + 1) % state.players.length;
-
-    // Create bid order (clockwise from dealer, dealer bids last)
-    const bidOrder: string[] = [];
-    for (let i = 0; i < state.players.length; i++) {
-      const idx = (firstBidderIndex + i) % state.players.length;
-      bidOrder.push(state.turnOrder[idx]);
-    }
+    // Dealer moves one seat clockwise each round; their left-hand neighbour
+    // opens the bidding and leads the first trick.
+    const { dealerId, firstBidderIndex, bidOrder } = getRoundRotation(
+      state.currentRound,
+      state.turnOrder
+    );
 
     // Get trump from pre-generated order (0-indexed)
     const roundTrump = state.trumpOrder[state.currentRound - 1];
@@ -697,7 +683,7 @@ export class GameService {
       cardsPerPlayer: cardsForRound,
       trumpSuit: roundTrump.suit as Card['suit'],
       trump: roundTrump,
-      dealerId: state.turnOrder[dealerIndex],
+      dealerId,
       bids: {},
       tricksWon: {},
       currentTrick: null,
@@ -728,7 +714,7 @@ export class GameService {
     });
 
     // Log round start
-    await this.logAction(gameId, state.turnOrder[dealerIndex], 'ROUND_START', {
+    await this.logAction(gameId, dealerId, 'ROUND_START', {
       round: state.currentRound,
       trump: roundTrump,
     });

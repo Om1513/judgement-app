@@ -20,6 +20,8 @@ import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import PlayedCard from "../components/PlayedCard";
+import { arrangeSeats } from "../utils/seating";
+import { getPlayableCardIndexes } from "../utils/cardRules";
 
 // Suit symbols
 const SUIT_SYMBOLS = {
@@ -188,8 +190,6 @@ export default function GameTableScreen({ navigation, route }) {
   const totalRounds = gameState?.totalRounds || 4;
   const trump = roundState?.trump;
   const currentTrick = roundState?.currentTrick;
-  const trickNumber = roundState?.trickNumber || 1;
-  const handSize = roundState?.cardsPerPlayer || 1;
   const isMyTurn = gameState?.isMyTurn;
   const leadSuit = currentTrick?.leadSuit;
 
@@ -205,126 +205,23 @@ export default function GameTableScreen({ navigation, route }) {
       ? heldTricks[player.id]
       : player.tricksWon;
 
-  // Arrange players in seat positions (4 player layout)
-  // Current player is always at bottom (position 2)
-  const arrangedPlayers = useMemo(() => {
-    if (!players.length) return [];
+  // Seat everyone around the table with the local player at the bottom.
+  // The rotation itself lives in ../utils/seating so it can be unit tested.
+  const arrangedPlayers = useMemo(
+    () => arrangeSeats(players, currentPlayerId),
+    [players, currentPlayerId]
+  );
 
-    const myIndex = players.findIndex(p => p.id === currentPlayerId);
-    if (myIndex === -1) return players;
-
-    // Rotate array so current player is at index 2 (bottom)
-    const arranged = [];
-    for (let i = 0; i < players.length; i++) {
-      const actualIndex = (myIndex + i - 2 + players.length) % players.length;
-      arranged.push({
-        ...players[actualIndex],
-        seatIndex: i, // 0=top, 1=right, 2=bottom, 3=left
-      });
-    }
-
-    // For 2 players, put opponent at top
-    if (players.length === 2) {
-      return [
-        { ...players[(myIndex + 1) % 2], seatIndex: 0 }, // Opponent at top
-        null, // Right empty
-        { ...players[myIndex], seatIndex: 2 }, // Me at bottom
-        null, // Left empty
-      ];
-    }
-
-    // For 3 players: one on the left, one on the right, me centered at bottom.
-    if (players.length === 3) {
-      return [
-        null, // Top empty
-        { ...players[(myIndex + 2) % 3], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me at bottom (centered)
-        { ...players[(myIndex + 1) % 3], seatIndex: 3 }, // Left
-      ];
-    }
-
-    // For 5 players: seat everyone in turn order around the table, going
-    // clockwise from me (bottom-left): left -> top -> right -> bottom-right.
-    if (players.length === 5) {
-      return [
-        { ...players[(myIndex + 2) % 5], seatIndex: 0 }, // Top
-        { ...players[(myIndex + 3) % 5], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
-        { ...players[(myIndex + 1) % 5], seatIndex: 3 }, // Left
-        { ...players[(myIndex + 4) % 5], seatIndex: 4 }, // Bottom-right
-      ];
-    }
-
-    // For 6 players: two players share the top row (clustered toward the
-    // center so the top-left leave button and top-right round/trump indicator
-    // stay clear). Going clockwise from me (bottom-left): left -> top-left ->
-    // top-right -> right -> bottom-right.
-    if (players.length === 6) {
-      return [
-        { ...players[(myIndex + 2) % 6], seatIndex: 0 }, // Top-left
-        { ...players[(myIndex + 4) % 6], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
-        { ...players[(myIndex + 1) % 6], seatIndex: 3 }, // Left
-        { ...players[(myIndex + 5) % 6], seatIndex: 4 }, // Bottom-right
-        { ...players[(myIndex + 3) % 6], seatIndex: 5 }, // Top-right
-      ];
-    }
-
-    // For 7 players: three players share the top row (top-left, top-center,
-    // top-right). Going clockwise from me (bottom-left): left -> top-left ->
-    // top-center -> top-right -> right -> bottom-right.
-    if (players.length === 7) {
-      return [
-        { ...players[(myIndex + 2) % 7], seatIndex: 0 }, // Top-left
-        { ...players[(myIndex + 5) % 7], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
-        { ...players[(myIndex + 1) % 7], seatIndex: 3 }, // Left
-        { ...players[(myIndex + 6) % 7], seatIndex: 4 }, // Bottom-right
-        { ...players[(myIndex + 4) % 7], seatIndex: 5 }, // Top-right
-        { ...players[(myIndex + 3) % 7], seatIndex: 6 }, // Top-center
-      ];
-    }
-
-    // For 8 players: four players share the top row (far-left, center-left,
-    // center-right, far-right). Going clockwise from me (bottom-left): left ->
-    // top far-left -> top center-left -> top center-right -> top far-right ->
-    // right -> bottom-right.
-    if (players.length === 8) {
-      return [
-        { ...players[(myIndex + 2) % 8], seatIndex: 0 }, // Top far-left
-        { ...players[(myIndex + 6) % 8], seatIndex: 1 }, // Right
-        { ...players[myIndex], seatIndex: 2 }, // Me (bottom-left)
-        { ...players[(myIndex + 1) % 8], seatIndex: 3 }, // Left
-        { ...players[(myIndex + 7) % 8], seatIndex: 4 }, // Bottom-right
-        { ...players[(myIndex + 5) % 8], seatIndex: 5 }, // Top far-right
-        { ...players[(myIndex + 3) % 8], seatIndex: 6 }, // Top center-left
-        { ...players[(myIndex + 4) % 8], seatIndex: 7 }, // Top center-right
-      ];
-    }
-
-    return arranged;
-  }, [players, currentPlayerId]);
-
-  // Calculate playable cards
-  const playableCards = useMemo(() => {
-    if (!isMyTurn || gameState?.status !== "PLAYING") return [];
-
-    // If no lead suit, all cards are playable
-    if (!leadSuit) {
-      return myHand.map((_, i) => i);
-    }
-
-    // Check if we have the lead suit
-    const hasLeadSuit = myHand.some(c => c.suit === leadSuit);
-
-    if (hasLeadSuit) {
-      // Must follow suit
-      return myHand.map((c, i) => (c.suit === leadSuit ? i : -1)).filter(i => i !== -1);
-    }
-
-    // Don't have lead suit - can play anything
-    return myHand.map((_, i) => i);
-  }, [myHand, leadSuit, isMyTurn, gameState?.status]);
+  // Which cards the player may tap. Mirrors the server follow-suit rule;
+  // see ../utils/cardRules.
+  const playableCards = useMemo(
+    () =>
+      getPlayableCardIndexes(myHand, leadSuit, {
+        isMyTurn,
+        status: gameState?.status,
+      }),
+    [myHand, leadSuit, isMyTurn, gameState?.status]
+  );
 
   // Turn glow animation
   useEffect(() => {
