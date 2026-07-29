@@ -59,7 +59,6 @@ npm run build       # both
 | `npm test` | `test:unit` then `test:integration` |
 | `npm run test:coverage` | Coverage for both packages, with thresholds |
 | `npm run build` | Compile the server, then bundle the app for web |
-| | (`build:web` passes `--clear`: a release bundle should be built from a cold Metro cache, and without it a second consecutive export fails on a stale file map) |
 | `npm run validate` / `npm run ci` | The whole pipeline, in CI order |
 
 ### App only
@@ -82,6 +81,7 @@ src/                                    # the app
   utils/__tests__/seating.test.js       # table seat rotation
   components/__tests__/GameButton.test.js
   components/__tests__/GameSettings.test.js     # rounds / trump order / scoring controls
+  components/__tests__/InfoHint.test.js         # the grey (i) explainer modal
   components/__tests__/PlayerCard.test.js       # lobby row, host-only remove
   components/__tests__/PlayerNameInput.test.js
 
@@ -224,8 +224,8 @@ not aspirations, so a real regression trips them and normal work does not.
 
 ```
 src/utils/         | 100% across statements, branches, functions and lines
-src/components/    | 29%  (5 of 23 components have tests)
-all collected      | 37.46% statements
+src/components/    | 31%  (6 of 24 components have tests)
+all collected      | 39.15% statements
 ```
 
 The threshold is scoped to `src/utils/` at 90% on all four counters
@@ -235,7 +235,7 @@ report as an honest signal rather than tuned upward: most of the untested 71% is
 presentational (`Sparkles`, `ConfettiCelebration`, `SuitLegend`, `RuleSection`,
 the How-to-Play blocks), where a test would assert that a gradient renders and
 nothing more. The components that carry behaviour — buttons, the name field, the
-settings controls, the lobby row — are covered at 69–100%.
+settings controls, the lobby row, the info modal — are covered at 69–100%.
 
 **What is deliberately not covered**
 
@@ -450,6 +450,29 @@ Ordered by how much they would actually buy:
 9. **Coverage reporting service.** Coverage is printed and the app's HTML report
    uploaded as an artifact; wiring it to Codecov (or similar) would give
    per-PR deltas.
+
+### If bundling suddenly cannot resolve `expo`
+
+```
+Unable to resolve "expo" from "index.js"
+```
+
+Metro uses **watchman** as its file crawler when it is installed. If anything
+moves `node_modules` out from under a live watch (a rename, a `git clean`, an
+interrupted install), watchman's state for the root goes stale: a full crawl
+still sees the tree, but incremental queries under-report, so Metro persists a
+file map with no `node_modules` in it and then trusts it. The tell is that
+`--clear` fixes one run and the next one breaks again.
+
+Clear watchman's state for the root, not just Metro's cache:
+
+```bash
+watchman watch-del "$PWD"
+rm -rf /tmp/metro-cache /tmp/metro-file-map-*
+```
+
+`--clear` on every build only masks this, and costs a full re-crawl each time —
+so `build:web` does not use it.
 
 ---
 

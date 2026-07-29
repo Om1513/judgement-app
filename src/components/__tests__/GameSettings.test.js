@@ -3,11 +3,26 @@
 // changes the rules of the game.
 
 import React from "react";
+import { View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { render, screen, fireEvent } from "@testing-library/react-native";
 
 import RoundSelector from "../RoundSelector";
 import OrderModeToggle from "../OrderModeToggle";
 import ScoringModeToggle from "../ScoringModeToggle";
+
+/** Collapses a possibly-nested RN style prop into one object. */
+const flatten = (style) =>
+  Object.assign({}, ...[style].flat(3).filter((s) => s && typeof s === "object"));
+
+// Query by component type and style, not by counting `.parent` hops: the
+// gradient alone sits behind four wrapper nodes, so depth-based traversal is
+// only ever accidentally right.
+const styleOf = (node) => flatten(node.props.style);
+const gradients = (r) => r.UNSAFE_queryAllByType(LinearGradient).map(styleOf);
+const gradientColours = (r) => r.UNSAFE_queryAllByType(LinearGradient).map((n) => n.props.colors);
+const viewsWhere = (r, predicate) =>
+  r.UNSAFE_queryAllByType(View).map(styleOf).filter(predicate);
 
 describe("RoundSelector", () => {
   it("shows the current round count", () => {
@@ -97,5 +112,85 @@ describe("ScoringModeToggle", () => {
     fireEvent.press(screen.getByText("+10"));
 
     expect(onChange).toHaveBeenCalledWith("+10");
+  });
+
+  // Regression guards. The glow used to be a solid gold box bleeding 5px on all
+  // four sides, which made "+1" light up the whole side (it bled under the
+  // translucent neighbour) and left "+10"'s right edge dim (the neighbour
+  // painted over the bleed).
+  it("gives the digits room to overshoot, so they are not cropped", () => {
+    render(<ScoringModeToggle value="+10" onChange={() => {}} />);
+
+    for (const label of ["+10", "+1"]) {
+      const style = flatten(screen.getByText(label).props.style);
+
+      expect(style.fontFamily).toBe("Bangers_400Regular");
+      // Padding on the Text's own box, not a pinned lineHeight: Bangers reports
+      // metrics that clip its digits at this size, and a fixed line box only
+      // moves the crop.
+      expect(style.lineHeight).toBeUndefined();
+      expect(style.paddingTop).toBeGreaterThan(0);
+      expect(style.paddingHorizontal).toBeGreaterThan(0);
+    }
+  });
+
+  it("cannot be compressed by the row it sits in", () => {
+    const r = render(<ScoringModeToggle value="+10" onChange={() => {}} />);
+
+    // The card lays the toggle out beside the ⓘ; shrinking crops "+10".
+    const [row] = viewsWhere(r, (s) => s.flexDirection === "row");
+    expect(row.flexShrink).toBe(0);
+  });
+
+  it("sizes both halves identically, with room to spare for the wider label", () => {
+    const boxes = gradients(render(<ScoringModeToggle value="+10" onChange={() => {}} />));
+
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0].minWidth).toBe(boxes[1].minWidth);
+    // Room left for the glyphs after the horizontal padding. "+10" at 20px
+    // Bangers runs to roughly 34px, so this must stay comfortably above it.
+    const room = boxes[0].minWidth - 2 * boxes[0].paddingHorizontal;
+    expect(room).toBeGreaterThanOrEqual(44);
+  });
+
+  it("haloes the selected half on all four sides, seam included", () => {
+    const r = render(<ScoringModeToggle value="+1" onChange={() => {}} />);
+
+    // The glow layers are the only views painted solid gold.
+    const glows = viewsWhere(r, (s) => s.backgroundColor === "#FFD700");
+    expect(glows).toHaveLength(2);
+
+    for (const glow of glows) {
+      for (const side of ["top", "right", "bottom", "left"]) {
+        expect(glow[side]).toBeLessThan(0);
+      }
+    }
+  });
+
+  it("raises the selected half so its halo is not painted over at the seam", () => {
+    // "+10" is the first child, so without this its right-hand halo would be
+    // covered by "+1" - the "right side stays dim" bug.
+    const first = render(<ScoringModeToggle value="+10" onChange={() => {}} />);
+    const halves = viewsWhere(first, (s) => s.position === "relative");
+
+    expect(halves).toHaveLength(2);
+    expect(halves[0].zIndex ?? 0).toBeGreaterThan(halves[1].zIndex ?? 0);
+
+    // And the other way round when "+1" is selected.
+    const second = render(<ScoringModeToggle value="+1" onChange={() => {}} />);
+    const flipped = viewsWhere(second, (s) => s.position === "relative");
+    expect(flipped[1].zIndex ?? 0).toBeGreaterThan(flipped[0].zIndex ?? 0);
+  });
+
+  it("draws the unselected half opaque, so no glow can shine through it", () => {
+    const r = render(<ScoringModeToggle value="+1" onChange={() => {}} />);
+
+    // "+10" is unselected here, and it is the first gradient. Any alpha in its
+    // colours lets the neighbouring halo bleed through - the original "+1 lights
+    // up the whole side" bug.
+    const [unselected] = gradientColours(r);
+    for (const colour of unselected) {
+      expect(colour).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
   });
 });
