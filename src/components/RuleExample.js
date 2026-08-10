@@ -2,13 +2,15 @@
 // rather than paragraphs.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 /**
  * An inset strip for a worked example. `tone` tints the left edge and label:
  * "good" for a successful judgement, "bad" for a missed one, "neutral" otherwise.
  */
 export default function RuleExample({ label, children, tone = "neutral" }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={[styles.example, TONE_EDGE[tone]]}>
       {label ? <Text style={[styles.label, TONE_TEXT[tone]]}>{label}</Text> : null}
@@ -19,6 +21,7 @@ export default function RuleExample({ label, children, tone = "neutral" }) {
 
 /** One "Bid 2 → win exactly 2" style line. */
 export function ExampleLine({ left, right, tone = "neutral" }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.line}>
       <Text style={styles.lineLeft}>{left}</Text>
@@ -30,6 +33,7 @@ export function ExampleLine({ left, right, tone = "neutral" }) {
 
 /** Pill used for bid options, round numbers, card ranks. */
 export function Chip({ children, highlighted = false }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={[styles.chip, highlighted && styles.chipHighlighted]}>
       <Text style={[styles.chipText, highlighted && styles.chipTextHighlighted]}>
@@ -41,6 +45,7 @@ export function Chip({ children, highlighted = false }) {
 
 /** The "1 / 2  Won / Bid" counter shown under each player in game. */
 export function CounterExample({ won, bid }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.counter}>
       <Text style={styles.counterValue}>
@@ -63,7 +68,7 @@ const TONE_TEXT = {
   neutral: { color: "#FFD700" },
 };
 
-const styles = StyleSheet.create({
+const rawStyles = {
   example: {
     marginTop: 8,
     paddingVertical: 7,
@@ -156,4 +161,4 @@ const styles = StyleSheet.create({
     color: "#C9BEDC",
     letterSpacing: 0.5,
   },
-});
+};

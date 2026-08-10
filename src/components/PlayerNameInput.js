@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState } from "react";
 import {
   TextInput,
-  StyleSheet,
   Animated,
   Keyboard,
 } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function PlayerNameInput({
   value,
@@ -12,6 +12,7 @@ export default function PlayerNameInput({
   onSubmit,
   placeholder = "Enter Your Name"
 }) {
+  const styles = useScaledStyles(rawStyles);
   const [isFocused, setIsFocused] = useState(false);
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const inputRef = useRef(null);
@@ -81,7 +82,7 @@ export default function PlayerNameInput({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     alignItems: "center",
     marginBottom: 12,
@@ -103,4 +104,4 @@ const styles = StyleSheet.create({
   inputFocused: {
     borderBottomColor: "#FFD700",
   },
-});
+};

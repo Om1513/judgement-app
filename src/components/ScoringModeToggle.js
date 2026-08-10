@@ -3,15 +3,16 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 const OPTIONS = ["+10", "+1"];
 
 export default function ScoringModeToggle({ value, onChange }) {
+  const styles = useScaledStyles(rawStyles);
   const glowAnims = useRef(OPTIONS.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function ScoringModeToggle({ value, onChange }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flexDirection: "row",
     alignItems: "center",
@@ -164,4 +165,4 @@ const styles = StyleSheet.create({
     color: "#3D2272",
     textShadowColor: "rgba(255, 255, 255, 0.3)",
   },
-});
+};

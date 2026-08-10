@@ -1,7 +1,9 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function SettingCard({ label, children, compact = false }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={[styles.container, compact && styles.containerCompact]}>
       <Text style={[styles.label, compact && styles.labelCompact]}>{label}</Text>
@@ -11,7 +13,7 @@ export default function SettingCard({ label, children, compact = false }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     marginVertical: 8,
     marginHorizontal: 20,
@@ -51,4 +53,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 215, 0, 0.8)",
     borderRadius: 2,
   },
-});
+};

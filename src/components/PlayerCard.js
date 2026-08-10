@@ -3,10 +3,10 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
-} from "react-native";
+  } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
 
 export default function PlayerCard({
   player,
@@ -15,6 +15,8 @@ export default function PlayerCard({
   onRemove,
   size = "normal",
 }) {
+  const styles = useScaledStyles(rawStyles);
+  const { s: scale } = useResponsive();
   const isCompact = size === "compact";
   const isBot = player.isBot || false;
 
@@ -78,6 +80,9 @@ export default function PlayerCard({
         {canRemove && !player.isHost && (
           <TouchableOpacity
             style={styles.removeButton}
+            // The X is deliberately small next to the avatar; the tap area is
+            // widened instead of the glyph.
+            hitSlop={touchSlop(scale(28))}
             onPress={() => {
               audioManager.playSound("buttonPop");
               onRemove(player);
@@ -100,7 +105,7 @@ export default function PlayerCard({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     margin: 8,
     position: "relative",
@@ -241,4 +246,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     zIndex: -1,
   },
-});
+};

@@ -22,8 +22,18 @@ import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 export default function LobbyScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset, widened where a display cutout would
+  // otherwise sit under it. A no-op on a device with no cutout.
+  const contentInsets = {
+    paddingLeft: r.safeLeft(20),
+    paddingRight: r.safeRight(20),
+    paddingTop: r.safeTop(22),
+  };
   // Get params from navigation
   const {
     lobbyCode = "ABC123",
@@ -387,6 +397,7 @@ export default function LobbyScreen({ navigation, route }) {
             <Animated.View
               style={[
                 styles.content,
+                contentInsets,
                 {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }],
@@ -525,7 +536,7 @@ export default function LobbyScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -540,8 +551,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 22,
   },
   // Negative top margin pulls the code box and player count up into part of the
   // header bar's 12pt bottom margin, tightening them to the title without
@@ -687,4 +696,4 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     marginTop: -3,
   },
-});
+};

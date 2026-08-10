@@ -3,14 +3,15 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
   Animated,
   Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function LobbyCode({ code, onCopy }) {
+  const styles = useScaledStyles(rawStyles);
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function LobbyCode({ code, onCopy }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     alignItems: "center",
     marginBottom: 10,
@@ -109,4 +110,4 @@ const styles = StyleSheet.create({
   copyIcon: {
     fontSize: 16,
   },
-});
+};

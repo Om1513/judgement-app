@@ -19,9 +19,11 @@ import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // Floating particle component
 const FloatingParticle = ({ delay, startX, startY, size }) => {
+  const styles = useScaledStyles(rawStyles);
   const floatAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -83,6 +85,15 @@ const FloatingParticle = ({ delay, startX, startY, size }) => {
 };
 
 export default function JoinGameScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset, widened where a display cutout would
+  // otherwise sit under it. A no-op on a device with no cutout.
+  const contentInsets = {
+    paddingLeft: r.safeLeft(30),
+    paddingRight: r.safeRight(30),
+    paddingTop: r.safeTop(15),
+  };
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
   const [lobbyCode, setLobbyCode] = useState("");
@@ -304,6 +315,7 @@ export default function JoinGameScreen({ navigation, route }) {
             <Animated.View
               style={[
                 styles.content,
+                contentInsets,
                 {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }],
@@ -440,7 +452,7 @@ export default function JoinGameScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -472,8 +484,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 30,
-    paddingTop: 15,
     overflow: "visible",
   },
   centerSection: {
@@ -609,4 +619,4 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
     zIndex: -1,
   },
-});
+};

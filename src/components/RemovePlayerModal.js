@@ -7,6 +7,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 /**
  * In-screen confirmation overlay for removing a player from the lobby.
@@ -23,6 +24,7 @@ export default function RemovePlayerModal({
   onConfirm,
   onCancel,
 }) {
+  const styles = useScaledStyles(rawStyles);
   if (!visible) return null;
 
   return (
@@ -89,7 +91,7 @@ export default function RemovePlayerModal({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
@@ -167,4 +169,4 @@ const styles = StyleSheet.create({
     color: "#FFF",
     letterSpacing: 0.5,
   },
-});
+};

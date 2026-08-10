@@ -2,13 +2,15 @@
 // so the difference between +10 and +1 is obvious at a glance.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 /**
  * One scoring outcome. `made` null means the judgement was missed, which always
  * scores zero in both modes.
  */
 export function ScoreRow({ bid, made, points }) {
+  const styles = useScaledStyles(rawStyles);
   const missed = points === 0;
   return (
     <View style={styles.row}>
@@ -28,6 +30,7 @@ export function ScoreRow({ bid, made, points }) {
  * explains it.
  */
 export default function ScoringExample({ mode, score }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.block}>
       <Text style={styles.mode}>{mode}</Text>
@@ -46,7 +49,7 @@ export default function ScoringExample({ mode, score }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   block: {
     marginTop: 8,
     paddingHorizontal: 10,
@@ -111,4 +114,4 @@ const styles = StyleSheet.create({
   pointsMissed: {
     color: "#FF8A94",
   },
-});
+};

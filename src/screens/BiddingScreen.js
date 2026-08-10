@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ImageBackground,
-  StyleSheet,
   Animated,
   TouchableOpacity,
   Alert,
@@ -13,10 +12,11 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
-import CircleIconButton from "../components/CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // Display trump by its English suit name rather than the local name.
 const TRUMP_SUIT_NAMES = {
@@ -48,6 +48,16 @@ export default function BiddingScreen({ navigation, route }) {
     Inter_400Regular,
     Inter_700Bold,
   });
+
+  const r = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+  const circle = useCircleButtonMetrics();
+
+  // Back / sound / scores, bottom-left. Spacing comes from the circle's real
+  // diameter rather than the old fixed 18 / 82 / 146.
+  const controlsBottom = r.safeBottom(18);
+  const controlsLeft = r.safeLeft(18);
+  const buttonStride = circle.stride(12);
 
   // Get current round state
   const roundState = gameState?.roundState;
@@ -293,7 +303,7 @@ export default function BiddingScreen({ navigation, route }) {
 
   const renderMyCards = () => {
     return (
-      <View style={styles.myCardsContainer}>
+      <View style={[styles.myCardsContainer, { bottom: r.safeBottom(10) }]}>
         <Text style={styles.myCardsLabel}>Your Cards</Text>
         <ScrollView
           horizontal
@@ -348,7 +358,12 @@ export default function BiddingScreen({ navigation, route }) {
         resizeMode="cover"
       >
         {/* Round indicator - bottom right corner */}
-        <View style={styles.roundIndicator}>
+        <View
+          style={[
+            styles.roundIndicator,
+            { bottom: r.safeBottom(20), right: r.safeRight(20) },
+          ]}
+        >
           <Text style={styles.roundIndicatorText}>
             Round {currentRound}/{totalRounds}
           </Text>
@@ -359,6 +374,10 @@ export default function BiddingScreen({ navigation, route }) {
           style={[
             styles.modalOverlay,
             {
+              top: r.safeTop(12),
+              left: r.safeLeft(10),
+              right: r.safeRight(10),
+              bottom: r.safeBottom(80),
               opacity: fadeAnim,
               transform: [{ scale: modalScale }],
             },
@@ -425,7 +444,7 @@ export default function BiddingScreen({ navigation, route }) {
         <CircleIconButton
           glyph="‹"
           glyphStyle={styles.backGlyph}
-          style={styles.backButton}
+          style={{ bottom: controlsBottom, left: controlsLeft }}
           accessibilityLabel="Leave game"
           onPress={() => {
             Alert.alert(
@@ -447,14 +466,16 @@ export default function BiddingScreen({ navigation, route }) {
         />
 
         {/* Sound toggle - immediately right of the back button */}
-        <SoundToggleButton style={styles.soundButton} />
+        <SoundToggleButton
+          style={{ bottom: controlsBottom, left: controlsLeft + buttonStride }}
+        />
 
         {/* Scores - completes the row. Opens a read-only peek at the running
             scoreboard without leaving the round. */}
         <CircleIconButton
           glyph="☰"
           glyphStyle={styles.scoresGlyph}
-          style={styles.scoresButton}
+          style={{ bottom: controlsBottom, left: controlsLeft + buttonStride * 2 }}
           accessibilityLabel="Show scores"
           onPress={() => {
             setPeekOpen(true);
@@ -475,7 +496,10 @@ export default function BiddingScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro, 874 x 402) values; useScaledStyles maps them onto
+// the current viewport. Edge offsets are applied at render time so they can
+// clear a device cutout.
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -489,8 +513,6 @@ const styles = StyleSheet.create({
   // Round Indicator
   roundIndicator: {
     position: "absolute",
-    bottom: 20,
-    right: 20,
     backgroundColor: "rgba(42, 22, 84, 0.9)",
     paddingVertical: 10,
     paddingHorizontal: 18,
@@ -505,22 +527,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Back and sound sit as a pair in the bottom-left, back on the outside.
-  // The offsets are the 52px circle plus a 12px gap, so they stay evenly
-  // spaced if either is repositioned.
-  backButton: {
-    bottom: 18,
-    left: 18,
-  },
-  soundButton: {
-    bottom: 18,
-    left: 82,
-  },
-  // Third in the row, same 64px stride as back -> sound.
-  scoresButton: {
-    bottom: 18,
-    left: 146,
-  },
   scoresGlyph: {
     fontSize: 22,
     lineHeight: 26,
@@ -533,13 +539,9 @@ const styles = StyleSheet.create({
     marginTop: -3,
   },
 
-  // Modal
+  // Modal. Its inset edges are supplied at render time from the safe area.
   modalOverlay: {
     position: "absolute",
-    top: 12,
-    left: 10,
-    right: 10,
-    bottom: 80,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -806,7 +808,6 @@ const styles = StyleSheet.create({
   // My Cards
   myCardsContainer: {
     position: "absolute",
-    bottom: 10,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -848,4 +849,4 @@ const styles = StyleSheet.create({
   cardMiniRed: {
     color: "#e53935",
   },
-});
+};

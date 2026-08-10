@@ -2,13 +2,14 @@ import React, { useRef } from "react";
 import {
   View,
   TouchableOpacity,
-  StyleSheet,
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function OrderModeToggle({ value, onChange }) {
+  const styles = useScaledStyles(rawStyles);
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const textOpacity = useRef(new Animated.Value(1)).current;
 
@@ -70,7 +71,7 @@ export default function OrderModeToggle({ value, onChange }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flexDirection: "row",
     alignItems: "center",
@@ -107,4 +108,4 @@ const styles = StyleSheet.create({
   refreshIcon: {
     fontSize: 22,
   },
-});
+};

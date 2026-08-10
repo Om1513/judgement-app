@@ -11,10 +11,15 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import audioManager from "../services/audioManager";
 import useSoundEnabled from "../hooks/useSoundEnabled";
-import CircleIconButton, { CIRCLE_BUTTON_SIZE } from "./CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "./CircleIconButton";
+import { useResponsive } from "../utils/responsive";
 
 export default function SoundToggleButton({ style, inline = false }) {
   const soundEnabled = useSoundEnabled();
+  // The slash has to match whatever diameter the circle settled on, which on a
+  // small phone is the minimum tap target rather than the scaled size.
+  const { size } = useCircleButtonMetrics();
+  const { s } = useResponsive();
 
   return (
     <CircleIconButton
@@ -28,7 +33,12 @@ export default function SoundToggleButton({ style, inline = false }) {
       accessibilityLabel={soundEnabled ? "Mute sound" : "Unmute sound"}
     >
       {/* Struck through when muted - the "slash" half of the state. */}
-      {!soundEnabled && <View style={styles.slash} pointerEvents="none" />}
+      {!soundEnabled && (
+        <View
+          style={[styles.slash, { width: size * 0.62, height: Math.max(s(2.5), 1.5) }]}
+          pointerEvents="none"
+        />
+      )}
     </CircleIconButton>
   );
 }
@@ -40,8 +50,6 @@ const styles = StyleSheet.create({
   // instead of staying a circle. Every screen supplies its own position.
   slash: {
     position: "absolute",
-    width: CIRCLE_BUTTON_SIZE * 0.62,
-    height: 2.5,
     borderRadius: 2,
     backgroundColor: "#FF5D6C",
     transform: [{ rotate: "-45deg" }],

@@ -4,7 +4,8 @@
 // map what the table says ("Falli") onto the card they are holding.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 // Local name -> suit. Order here is the display order of the legend.
 export const SUITS = [
@@ -26,6 +27,7 @@ export const KACHUFUL_ORDER = [
 
 /** One suit tile: symbol above the local name above the English name. */
 export function SuitTile({ symbol, local, english, red, round }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.tile}>
       {round ? <Text style={styles.round}>R{round}</Text> : null}
@@ -38,6 +40,7 @@ export function SuitTile({ symbol, local, english, red, round }) {
 
 /** The four suits with their Kachuful names. */
 export default function SuitLegend() {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.row}>
       {SUITS.map((s) => (
@@ -49,6 +52,7 @@ export default function SuitLegend() {
 
 /** The same suits, labelled with the round they are trump in Kachuful order. */
 export function TrumpOrder() {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.row}>
       {KACHUFUL_ORDER.map((s) => (
@@ -58,7 +62,7 @@ export function TrumpOrder() {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -100,4 +104,4 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: "#C9BEDC",
   },
-});
+};

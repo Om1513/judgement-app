@@ -3,11 +3,11 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function RoundSelector({
   value,
@@ -15,6 +15,7 @@ export default function RoundSelector({
   min = 4,
   max = 8,
 }) {
+  const styles = useScaledStyles(rawStyles);
   const numberAnim = useRef(new Animated.Value(1)).current;
 
   const animateNumber = () => {
@@ -100,7 +101,7 @@ export default function RoundSelector({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flexDirection: "row",
     alignItems: "center",
@@ -149,4 +150,4 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
     paddingRight: 4,
   },
-});
+};

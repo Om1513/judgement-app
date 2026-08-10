@@ -13,7 +13,8 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
-import ScreenHeader, { HEADER_HEIGHT, HEADER_MARGIN_BOTTOM } from "../components/ScreenHeader";
+import ScreenHeader, { useHeaderMetrics } from "../components/ScreenHeader";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // Layout is a mirror of ScoreBoardScreen - same constants, same sizing rules,
 // same styles. The only intended differences are the title, the controls being
@@ -38,12 +39,12 @@ const FLEX_PLAYER = 1.2;
 // gradient padding 5x2.
 const TABLE_SIDE_CHROME = 22;
 
-// Everything above/around the score rows, totalled from the style values below.
+// Everything above/around the score rows, in BASELINE points. The measured
+// content box is in real pixels, so these are put through the scale before
+// being subtracted from it.
 const CONTENT_PADDING = 6; // content paddingTop 4 + paddingBottom 2
-const HEADER_BLOCK = HEADER_HEIGHT + HEADER_MARGIN_BOTTOM; // shared top bar
 const CARD_CHROME = 10; // border 2x2 + tableGradient paddingTop 4 + paddingBottom 2
 const TABLE_HEADER_ROW = 30; // paddingVertical 3x2 + border 2 + text at max size
-const ROWS_CHROME = CONTENT_PADDING + HEADER_BLOCK + CARD_CHROME + TABLE_HEADER_ROW;
 
 // Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
@@ -59,6 +60,16 @@ const TRUMP_DISPLAY = {
  * Winner(s) come from the backend (authoritative) - never recomputed here.
  */
 export default function FinalScoreboardScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset, widened where a display cutout would
+  // otherwise sit under it. A no-op on a device with no cutout.
+  const contentInsets = {
+    paddingLeft: r.safeLeft(4),
+    paddingRight: r.safeRight(4),
+    paddingTop: r.safeTop(4),
+  };
+  const header = useHeaderMetrics();
   const {
     currentPlayerId = "",
     winnerIds: initialWinnerIds = [],
@@ -127,21 +138,28 @@ export default function FinalScoreboardScreen({ navigation, route }) {
   // Identical sizing to ScoreBoardScreen. The +1 accounts for the Total row,
   // which is the same height as a data row.
   const rowCount = scoreboard.rows.length + 1;
-  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - ROWS_CHROME) : 0;
+  const rowsChrome =
+    r.s(CONTENT_PADDING + CARD_CHROME + TABLE_HEADER_ROW) + header.block;
+  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - rowsChrome) : 0;
   const playerCount = scoreboard.players.length;
   const rowHeight = availableForRows > 0
-    ? Math.min(maxRowHeightFor(playerCount), availableForRows / rowCount)
+    ? Math.min(r.s(maxRowHeightFor(playerCount)), availableForRows / rowCount)
     : 0;
 
   // Whichever limit is tighter wins: height in a long game, column width in an
   // eight-player one.
   const columnUnits = FLEX_TRUMP + FLEX_ROUND + FLEX_PLAYER * playerCount;
   const playerColumnWidth = contentWidth > 0
-    ? ((contentWidth - TABLE_SIDE_CHROME) * FLEX_PLAYER) / columnUnits
+    ? ((contentWidth - r.s(TABLE_SIDE_CHROME)) * FLEX_PLAYER) / columnUnits
     : 0;
   const fontFromHeight = rowHeight > 0 ? Math.floor(rowHeight * 0.5) : 14;
   const fontFromWidth = playerColumnWidth > 0 ? Math.floor(playerColumnWidth * 0.32) : 99;
-  const cellFontSize = Math.max(9, Math.min(18, fontFromHeight, fontFromWidth));
+  // The floor and ceiling follow the font curve, so the table stays readable
+  // on a small phone without ballooning on a tablet.
+  const cellFontSize = Math.max(
+    r.f(9),
+    Math.min(r.f(18), fontFromHeight, fontFromWidth)
+  );
   const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
   const rowSize = rowHeight > 0 ? { height: rowHeight } : null;
 
@@ -165,6 +183,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
           }}
           style={[
             styles.content,
+            contentInsets,
             {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }],
@@ -308,7 +327,7 @@ export default function FinalScoreboardScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -323,8 +342,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 4,
-    paddingTop: 4,
     paddingBottom: 2,
   },
   // Mirror of the round scoreboard's left-hand pair: exit outermost, sound
@@ -505,4 +522,4 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
-});
+};

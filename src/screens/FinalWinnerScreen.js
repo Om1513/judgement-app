@@ -7,18 +7,21 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
-  Dimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import ConfettiCelebration from "../components/ConfettiCelebration";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
-const { height: SCREEN_H } = Dimensions.get("window");
-// The painted gold ring fills most of the screen height; size the winner
-// circle to sit just inside it.
-const CIRCLE = Math.min(SCREEN_H * 0.62, 360);
+// The painted gold ring fills most of the screen height, so the winner circle
+// is sized from the live viewport height rather than a module-scope
+// Dimensions.get() - that value is captured once at import and would be wrong
+// on every screen the app was not launched on.
+function circleSize(screenHeight) {
+  return Math.min(screenHeight * 0.62, 360);
+}
 
 // How long the celebration plays before auto-advancing to the scoreboard.
 const AUTO_ADVANCE_MS = 7000;
@@ -34,6 +37,7 @@ function formatNames(names) {
 }
 
 export default function FinalWinnerScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
   const {
     winners = [],
     winningScore = 0,
@@ -47,6 +51,19 @@ export default function FinalWinnerScreen({ navigation, route }) {
   const glow = useRef(new Animated.Value(0.45)).current;
 
   const [fontsLoaded] = useFonts({ Bangers_400Regular });
+  const r = useResponsive();
+  const circle = circleSize(r.height);
+  const circleSizing = {
+    width: circle,
+    height: circle,
+    borderRadius: circle / 2,
+    paddingHorizontal: circle * 0.12,
+  };
+  const glowSizing = {
+    width: circle * 0.92,
+    height: circle * 0.92,
+    borderRadius: (circle * 0.92) / 2,
+  };
 
   const names = formatNames(winners.map((w) => w.name));
 
@@ -135,10 +152,11 @@ export default function FinalWinnerScreen({ navigation, route }) {
           <Animated.View
             style={[
               styles.circle,
+              circleSizing,
               { opacity: fade, transform: [{ scale }] },
             ]}
           >
-            <Animated.View style={[styles.circleGlow, { opacity: glow }]} />
+            <Animated.View style={[styles.circleGlow, glowSizing, { opacity: glow }]} />
 
             <Text style={styles.crown}>👑</Text>
             <Text style={styles.heading}>{isTie ? "Winners!" : "Winner!"}</Text>
@@ -152,7 +170,7 @@ export default function FinalWinnerScreen({ navigation, route }) {
 
         {/* Optional manual transition */}
         <TouchableOpacity
-          style={styles.viewButton}
+          style={[styles.viewButton, { bottom: r.safeBottom(24) }]}
           activeOpacity={0.85}
           onPress={() => {
             audioManager.playSound("buttonPop");
@@ -173,7 +191,7 @@ export default function FinalWinnerScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -188,19 +206,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Sizing is applied at render time from the live viewport; only the look
+  // lives here.
   circle: {
-    width: CIRCLE,
-    height: CIRCLE,
-    borderRadius: CIRCLE / 2,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: CIRCLE * 0.12,
   },
   circleGlow: {
     position: "absolute",
-    width: CIRCLE * 0.92,
-    height: CIRCLE * 0.92,
-    borderRadius: (CIRCLE * 0.92) / 2,
     backgroundColor: "rgba(255, 215, 0, 0.10)",
     shadowColor: "#FFD700",
     shadowOffset: { width: 0, height: 0 },
@@ -247,7 +260,6 @@ const styles = StyleSheet.create({
   },
   viewButton: {
     position: "absolute",
-    bottom: 24,
     alignSelf: "center",
     borderRadius: 14,
     overflow: "hidden",
@@ -271,4 +283,4 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
   },
-});
+};

@@ -19,7 +19,8 @@ import GameButton from "../components/GameButton";
 import Sparkles from "../components/Sparkles";
 import PlayerNameInput from "../components/PlayerNameInput";
 import SoundToggleButton from "../components/SoundToggleButton";
-import CircleIconButton from "../components/CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
@@ -28,6 +29,16 @@ export default function HomeScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const overlayOpacity = useState(new Animated.Value(0))[0];
+
+  const r = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+  const circle = useCircleButtonMetrics();
+
+  // Bottom-left pair, laid out from the real circle diameter so the gap between
+  // them survives a small phone floor-ing the button at the minimum tap target.
+  const controlsBottom = r.safeBottom(18);
+  const controlsLeft = r.safeLeft(18);
+  const buttonStride = circle.stride(12);
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -165,7 +176,15 @@ export default function HomeScreen({ navigation }) {
 
           {/* Buttons - fixed at bottom, hidden when keyboard is open */}
           {!isKeyboardVisible && (
-            <View style={styles.buttonContainer}>
+            <View
+              style={[
+                styles.buttonContainer,
+                // 2% of the screen, or the home-indicator strip, whichever is
+                // further in. Already a fraction of the real viewport, so it is
+                // deliberately not put through the design scale as well.
+                { bottom: Math.max(r.height * 0.02, r.insets.bottom) },
+              ]}
+            >
               <View style={styles.buttonRow}>
                 <GameButton
                   title="Create Game"
@@ -189,6 +208,10 @@ export default function HomeScreen({ navigation }) {
           >
             <View style={[
               styles.inputContainer,
+              // Capped so the field does not stretch into a letterbox on a
+              // tablet; on a phone the cap is wider than the screen and does
+              // nothing.
+              { maxWidth: r.maxContentWidth, alignSelf: "center", width: "100%" },
               isKeyboardVisible && styles.inputContainerFocused,
             ]}>
               <PlayerNameInput
@@ -204,11 +227,13 @@ export default function HomeScreen({ navigation }) {
               keyboard is up, since they would sit behind it anyway. */}
           {!isKeyboardVisible && (
             <>
-              <SoundToggleButton style={styles.soundButton} />
+              <SoundToggleButton
+                style={{ bottom: controlsBottom, left: controlsLeft }}
+              />
               <CircleIconButton
                 glyph="?"
                 glyphStyle={styles.helpGlyph}
-                style={styles.helpButton}
+                style={{ bottom: controlsBottom, left: controlsLeft + buttonStride }}
                 accessibilityLabel="How to play"
                 onPress={() => navigation.navigate("HowToPlay")}
               />
@@ -222,7 +247,10 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro, 874 x 402) values; useScaledStyles maps them onto
+// the current viewport. The percentage-based vertical rhythm is deliberately
+// left as percentages - it should follow the screen, not the design scale.
+const rawStyles = {
   container: {
     flex: 1,
   },
@@ -262,7 +290,6 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     position: "absolute",
-    bottom: "2%",
     left: 0,
     right: 0,
     alignItems: "center",
@@ -272,18 +299,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  soundButton: {
-    bottom: 18,
-    left: 18,
-  },
-  // Beside the sound toggle, same 64px stride as the paired controls elsewhere.
-  helpButton: {
-    bottom: 18,
-    left: 82,
-  },
   // A question mark sits smaller than the note glyph at the same point size.
   helpGlyph: {
     fontSize: 28,
     lineHeight: 32,
   },
-});
+};

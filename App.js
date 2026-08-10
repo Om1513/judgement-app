@@ -2,10 +2,12 @@ import "./global.css";
 import { useEffect, useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { Asset } from "expo-asset";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import AppNavigator from "./src/navigation/AppNavigator";
+import LandscapeGate from "./src/components/LandscapeGate";
 import audioManager from "./src/services/audioManager";
 
 // Matches the splash background in app.json, so the handoff from the native
@@ -74,14 +76,22 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      theme={DarkTheme}
-      onReady={syncMusicToRoute}
-      onStateChange={syncMusicToRoute}
-    >
-      <AppNavigator />
-    </NavigationContainer>
+    // Every screen pins controls to the screen edges, so the whole app needs the
+    // cutout metrics. `initialWindowMetrics` supplies them synchronously on the
+    // first frame - without it the first paint uses zero insets and the corner
+    // buttons visibly jump once the real values arrive.
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <LandscapeGate>
+        <NavigationContainer
+          ref={navigationRef}
+          theme={DarkTheme}
+          onReady={syncMusicToRoute}
+          onStateChange={syncMusicToRoute}
+        >
+          <AppNavigator />
+        </NavigationContainer>
+      </LandscapeGate>
+    </SafeAreaProvider>
   );
 }
 

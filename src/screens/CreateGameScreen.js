@@ -23,6 +23,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import InfoHint from "../components/InfoHint";
 import { TrumpOrder } from "../components/SuitLegend";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 /**
  * What the two order modes actually do. Lives behind the ⓘ on the Order card
@@ -33,6 +34,7 @@ import audioManager from "../services/audioManager";
  * just "what are the options?".
  */
 function OrderInfo({ orderMode }) {
+  const styles = useScaledStyles(rawStyles);
   const isRandom = orderMode === "Random";
 
   return (
@@ -70,6 +72,7 @@ function OrderInfo({ orderMode }) {
  * (calculateScore in server/src/utils/cardUtils.ts).
  */
 function ScoringInfo({ scoringMode }) {
+  const styles = useScaledStyles(rawStyles);
   const isPlusOne = scoringMode === "+1";
 
   return (
@@ -103,6 +106,15 @@ function ScoringInfo({ scoringMode }) {
 }
 
 export default function CreateGameScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset, widened where a display cutout would
+  // otherwise sit under it. A no-op on a device with no cutout.
+  const contentInsets = {
+    paddingLeft: r.safeLeft(10),
+    paddingRight: r.safeRight(10),
+    paddingTop: r.safeTop(15),
+  };
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -283,6 +295,7 @@ export default function CreateGameScreen({ navigation, route }) {
             <Animated.View
               style={[
                 styles.content,
+                contentInsets,
                 {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }],
@@ -377,7 +390,7 @@ export default function CreateGameScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   infoMode: {
     marginBottom: 10,
   },
@@ -420,8 +433,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingTop: 15,
     overflow: "visible",
   },
   settingsSection: {
@@ -461,4 +472,4 @@ const styles = StyleSheet.create({
     color: "#FFD700",
     marginTop: 10,
   },
-});
+};

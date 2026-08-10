@@ -7,12 +7,39 @@
 // `dimmed` renders the inactive treatment (no glow, muted border and glyph);
 // `children` is for anything drawn over the glyph, such as the mute slash.
 
-import React, { useRef } from "react";
-import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
+import React, { useMemo, useRef } from "react";
+import { View, Text, Pressable, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import {
+  MIN_TOUCH_TARGET,
+  touchSlop,
+  useResponsive,
+  useScaledStyles,
+} from "../utils/responsive";
 
 export const CIRCLE_BUTTON_SIZE = 52;
+// A circle may look smaller on a small phone, but it must never be harder to
+// hit: below the minimum tap target the visual size stops shrinking.
+const MAX_CIRCLE_SIZE = 72;
+
+/**
+ * The circle's rendered diameter for a given scale, and the gap-based stride a
+ * screen should use when it puts two or three of them in a row. Screens ask for
+ * this rather than hard-coding `left: 82`, which only worked at one size.
+ */
+export function getCircleButtonSize(scale) {
+  return Math.min(Math.max(CIRCLE_BUTTON_SIZE * scale, MIN_TOUCH_TARGET), MAX_CIRCLE_SIZE);
+}
+
+/** Hook form: `{ size, stride(gap) }` for laying out a row of circle buttons. */
+export function useCircleButtonMetrics() {
+  const { scale, s } = useResponsive();
+  return useMemo(() => {
+    const size = getCircleButtonSize(scale);
+    return { size, stride: (gap = 12) => size + s(gap) };
+  }, [scale, s]);
+}
 
 export default function CircleIconButton({
   glyph,
@@ -30,6 +57,20 @@ export default function CircleIconButton({
   accessibilityState,
 }) {
   const pressScale = useRef(new Animated.Value(1)).current;
+  const { scale } = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+
+  // The circle itself is floored at the minimum tap target rather than scaled
+  // freely, so it cannot follow the rest of the design down on a small phone.
+  const size = getCircleButtonSize(scale);
+  const sizing = useMemo(
+    () => ({
+      circle: { width: size, height: size, borderRadius: size / 2 },
+      pressable: { borderRadius: size / 2 },
+      glow: { borderRadius: (size + 8) / 2 },
+    }),
+    [size]
+  );
 
   const animateTo = (value) => {
     Animated.spring(pressScale, {
@@ -49,7 +90,7 @@ export default function CircleIconButton({
       ]}
     >
       {/* Glow only in the active state, so dimmed reads as visibly quieter. */}
-      {!dimmed && <View style={styles.glow} pointerEvents="none" />}
+      {!dimmed && <View style={[styles.glow, sizing.glow]} pointerEvents="none" />}
 
       <Pressable
         // Press sound lives here so back / sound / add-bot all get it once.
@@ -62,11 +103,11 @@ export default function CircleIconButton({
         }}
         onPressIn={() => animateTo(0.92)}
         onPressOut={() => animateTo(1)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        hitSlop={touchSlop(size)}
         accessibilityRole={accessibilityRole}
         accessibilityState={accessibilityState}
         accessibilityLabel={accessibilityLabel}
-        style={styles.pressable}
+        style={[styles.pressable, sizing.pressable]}
       >
         <LinearGradient
           colors={
@@ -74,7 +115,7 @@ export default function CircleIconButton({
               ? ["rgba(38, 24, 66, 0.9)", "rgba(26, 16, 48, 0.95)"]
               : ["rgba(61, 34, 114, 0.95)", "rgba(42, 22, 84, 0.97)"]
           }
-          style={[styles.circle, dimmed && styles.circleDimmed]}
+          style={[styles.circle, sizing.circle, dimmed && styles.circleDimmed]}
         >
           <Text style={[styles.glyph, dimmed && styles.glyphDimmed, glyphStyle]}>
             {glyph}
@@ -86,9 +127,7 @@ export default function CircleIconButton({
   );
 }
 
-const SIZE = CIRCLE_BUTTON_SIZE;
-
-const styles = StyleSheet.create({
+const rawStyles = {
   // Positioning is the caller's job; these buttons are always placed absolutely
   // by the screen that owns them.
   wrapper: {
@@ -107,7 +146,6 @@ const styles = StyleSheet.create({
     left: -4,
     right: -4,
     bottom: -4,
-    borderRadius: (SIZE + 8) / 2,
     backgroundColor: "rgba(255, 215, 0, 0.15)",
     shadowColor: "#FFD700",
     shadowOffset: { width: 0, height: 0 },
@@ -116,13 +154,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   pressable: {
-    borderRadius: SIZE / 2,
     overflow: "hidden",
   },
   circle: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -143,4 +177,4 @@ const styles = StyleSheet.create({
     color: "#8B7BA8",
     textShadowColor: "transparent",
   },
-});
+};
