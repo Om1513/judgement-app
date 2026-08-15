@@ -191,7 +191,7 @@ export default function HowToPlayScreen({ navigation }) {
         nothing, however close it was.
       </RuleText>
       <ScoringExample mode="+10 mode  ·  10 x Bid" score={(bid) => (bid === 0 ? 10 : bid * 10)} />
-      <ScoringExample mode="+1 mode  ·  10 + Bid" score={(bid) => 10 + bid} />
+      <ScoringExample mode="+1 mode  ·  10 + Bid" score={(bid) => 10 + Math.max(bid, 1)} />
     </RuleSection>,
 
     // 9 - Scoreboard

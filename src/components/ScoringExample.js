@@ -39,7 +39,8 @@ export default function ScoringExample({ mode, score }) {
         <Text style={styles.headerCell}>Made</Text>
         <Text style={styles.headerPoints}>Score</Text>
       </View>
-      {/* A correct zero bid still scores in both modes. */}
+      {/* A correct zero bid scores in both modes - and scores the same as a
+          correct bid of one, which is why this row and the next match. */}
       <ScoreRow bid={0} made={0} points={score(0)} />
       <ScoreRow bid={1} made={1} points={score(1)} />
       <ScoreRow bid={2} made={2} points={score(2)} />

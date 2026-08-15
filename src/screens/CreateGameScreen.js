@@ -98,7 +98,7 @@ function ScoringInfo({ scoringMode }) {
           +1{isPlusOne ? "  ·  selected" : ""}
         </Text>
         <Text style={styles.infoText}>
-          10 + your bid. Bid 0 → 10, bid 2 → 12, bid 4 → 14.
+          10 + your bid. Bid 0 → 11, bid 2 → 12, bid 4 → 14.
         </Text>
       </View>
     </View>

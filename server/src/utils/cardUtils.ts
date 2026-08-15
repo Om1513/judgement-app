@@ -180,7 +180,12 @@ export function canPlayCard(
  * either direction scores nothing, however close.
  *
  *   '+10'  multiplies the bid:  bid x 10, with a correct zero bid worth 10.
- *   '+1'   adds to a flat base: 10 + bid, so a correct zero bid is also 10.
+ *   '+1'   adds to a flat base: 10 + bid, with a correct zero bid worth 11.
+ *
+ * In both modes a correct zero bid pays exactly what a correct bid of one pays -
+ * 10 under '+10', 11 under '+1'. Taking no hands on purpose is as hard as taking
+ * one, so it is not scored as if nothing had been bid at all. '+10' has always
+ * worked this way (bid 0 and bid 1 both pay 10); '+1' now matches it.
  *
  * So the modes differ in how much a big bid is worth, not in whether a zero bid
  * pays: bidding 3 and making it is 30 under '+10' but 13 under '+1'.
@@ -199,7 +204,9 @@ export function calculateScore(
   }
 
   if (scoringMode === '+1') {
-    return 10 + bid;
+    // max(bid, 1) is what makes a correct zero bid pay the same as a correct
+    // bid of one, mirroring the `bid === 0 ? 10` case above.
+    return 10 + Math.max(bid, 1);
   }
 
   throw new Error(`Unknown scoring mode: ${scoringMode}`);
