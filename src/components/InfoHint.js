@@ -12,9 +12,10 @@
 //   </InfoHint>
 
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Modal, Pressable } from "react-native";
+import { View, Text, Modal, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function InfoHint({
   title,
@@ -22,6 +23,7 @@ export default function InfoHint({
   label = "More information",
   style,
 }) {
+  const styles = useScaledStyles(rawStyles);
   const [open, setOpen] = useState(false);
 
   const show = () => {
@@ -89,7 +91,7 @@ export default function InfoHint({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   trigger: {
     marginLeft: 8,
     // No padding/background: the hit area comes from hitSlop, so the glyph does
@@ -158,4 +160,4 @@ const styles = StyleSheet.create({
   body: {
     alignItems: "flex-start",
   },
-});
+};

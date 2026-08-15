@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useScaledStyles } from "../utils/responsive";
 
 /**
  * Centered "X wins the hand!" announcement shown over the game table after a
@@ -9,6 +10,7 @@ import { LinearGradient } from "expo-linear-gradient";
  * stay in sync. Pops in, then fades out when `visible` becomes false.
  */
 export default function HandWinnerOverlay({ visible, winnerName, onShown }) {
+  const styles = useScaledStyles(rawStyles);
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.6)).current;
   const glow = useRef(new Animated.Value(0.4)).current;
@@ -112,7 +114,7 @@ export default function HandWinnerOverlay({ visible, winnerName, onShown }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -174,4 +176,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginTop: 2,
   },
-});
+};

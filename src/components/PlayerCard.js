@@ -3,10 +3,10 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
-} from "react-native";
+  } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
 
 export default function PlayerCard({
   player,
@@ -15,6 +15,8 @@ export default function PlayerCard({
   onRemove,
   size = "normal",
 }) {
+  const styles = useScaledStyles(rawStyles);
+  const { s: scale } = useResponsive();
   const isCompact = size === "compact";
   const isBot = player.isBot || false;
 
@@ -45,7 +47,13 @@ export default function PlayerCard({
 
         {/* Player info */}
         <View style={styles.info}>
-          <Text style={[styles.name, isCompact && styles.nameCompact]}>
+          {/* Clipped rather than allowed to grow: the lobby lays cards out four
+              to a row, and a long name used to widen its card enough to push
+              the fourth onto the next line. */}
+          <Text
+            style={[styles.name, isCompact && styles.nameCompact]}
+            numberOfLines={1}
+          >
             {player.name}
           </Text>
 
@@ -78,6 +86,9 @@ export default function PlayerCard({
         {canRemove && !player.isHost && (
           <TouchableOpacity
             style={styles.removeButton}
+            // The X is deliberately small next to the avatar; the tap area is
+            // widened instead of the glyph.
+            hitSlop={touchSlop(scale(28))}
             onPress={() => {
               audioManager.playSound("buttonPop");
               onRemove(player);
@@ -100,7 +111,7 @@ export default function PlayerCard({
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     margin: 8,
     position: "relative",
@@ -117,6 +128,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#5E3A9E",
     minWidth: 180,
+    // Four of these plus their margins have to fit one row of the lobby, which
+    // at the baseline width leaves ~208pt each. The name ellipsises inside
+    // whatever is left rather than the card growing past this.
+    maxWidth: 188,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -241,4 +256,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     zIndex: -1,
   },
-});
+};

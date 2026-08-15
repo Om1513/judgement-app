@@ -5,7 +5,6 @@ import {
   ImageBackground,
   StyleSheet,
   ScrollView,
-  useWindowDimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,6 +16,7 @@ import RuleSection, { RuleText, RuleBullet } from "../components/RuleSection";
 import RuleExample, { ExampleLine, Chip, CounterExample } from "../components/RuleExample";
 import SuitLegend, { TrumpOrder } from "../components/SuitLegend";
 import ScoringExample from "../components/ScoringExample";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // Below this width a single column reads better; above it the cards split into
 // two so a landscape phone isn't one narrow ribbon of text down the middle.
@@ -34,8 +34,9 @@ const LEFT_COLUMN = [0, 2, 4, 6, 8];
 const RIGHT_COLUMN = [1, 3, 5, 7, 9, 10];
 
 export default function HowToPlayScreen({ navigation }) {
-  const { width } = useWindowDimensions();
-  const twoColumn = width >= TWO_COLUMN_MIN_WIDTH;
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  const twoColumn = r.width >= TWO_COLUMN_MIN_WIDTH;
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -190,7 +191,7 @@ export default function HowToPlayScreen({ navigation }) {
         nothing, however close it was.
       </RuleText>
       <ScoringExample mode="+10 mode  ·  10 x Bid" score={(bid) => (bid === 0 ? 10 : bid * 10)} />
-      <ScoringExample mode="+1 mode  ·  10 + Bid" score={(bid) => 10 + bid} />
+      <ScoringExample mode="+1 mode  ·  10 + Bid" score={(bid) => 10 + Math.max(bid, 1)} />
     </RuleSection>,
 
     // 9 - Scoreboard
@@ -230,7 +231,21 @@ export default function HowToPlayScreen({ navigation }) {
           style={styles.overlayGradient}
         />
 
-        <View style={styles.content}>
+        <View
+          style={[
+            styles.content,
+            {
+              paddingLeft: r.safeLeft(12),
+              paddingRight: r.safeRight(12),
+              paddingTop: r.safeTop(8),
+              // Prose is capped at a readable measure and centred; a tablet
+              // should not smear a paragraph across 1300pt of glass.
+              maxWidth: r.maxContentWidth,
+              alignSelf: "center",
+              width: "100%",
+            },
+          ]}
+        >
           {/* Header stays put; only the rules scroll under it. */}
           <ScreenHeader
             title="How to Play"
@@ -267,7 +282,7 @@ export default function HowToPlayScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -282,8 +297,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingTop: 8,
   },
   // The chevron sits high and small in its em box, so nudge it onto the optical
   // centre and size it up to match the other screens' back buttons.
@@ -334,4 +347,4 @@ const styles = StyleSheet.create({
     color: "#FFF8E7",
     letterSpacing: 0.5,
   },
-});
+};

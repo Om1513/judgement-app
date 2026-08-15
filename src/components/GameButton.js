@@ -4,12 +4,13 @@ import {
   Text,
   View,
   Animated,
-  StyleSheet,
-} from "react-native";
+  } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function GameButton({ title, onPress, delay = 0, style, disabled = false }) {
+  const styles = useScaledStyles(rawStyles);
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function GameButton({ title, onPress, delay = 0, style, disabled 
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   buttonWrapper: {
     alignItems: "center",
     marginHorizontal: 12,
@@ -169,4 +170,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.3)",
     borderRadius: 2,
   },
-});
+};

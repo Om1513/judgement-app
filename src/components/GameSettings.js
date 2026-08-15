@@ -8,7 +8,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   Modal,
   Pressable,
@@ -18,10 +17,16 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
 import useSoundEnabled from "../hooks/useSoundEnabled";
+import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
 
 const SOUND_OPTIONS = ["ON", "OFF"];
 
 export default function GameSettings({ style }) {
+  const styles = useScaledStyles(rawStyles);
+  const { touch } = useResponsive();
+  // Floored at the platform minimum: the gear may look smaller on a small
+  // phone, but it must not get harder to hit.
+  const gearSize = touch(44);
   const [open, setOpen] = useState(false);
   const soundEnabled = useSoundEnabled();
 
@@ -72,9 +77,9 @@ export default function GameSettings({ style }) {
       <TouchableOpacity
         onPress={() => setOpen(true)}
         activeOpacity={0.8}
-        style={[styles.gearButton, style]}
+        style={[styles.gearButton, { width: gearSize, height: gearSize }, style]}
         // Widens the tap area without growing the visual button.
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        hitSlop={touchSlop(gearSize)}
         accessibilityRole="button"
         accessibilityLabel="Settings"
       >
@@ -160,15 +165,13 @@ export default function GameSettings({ style }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   // Default placement; screens override via the `style` prop. zIndex keeps it
   // over avatars, cards and animations.
   gearButton: {
     position: "absolute",
     top: 16,
     left: 16,
-    width: 44,
-    height: 44,
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
@@ -316,4 +319,4 @@ const styles = StyleSheet.create({
     color: "#FFF8E7",
     letterSpacing: 2,
   },
-});
+};

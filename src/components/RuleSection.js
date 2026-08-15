@@ -5,10 +5,12 @@
 // screen can lay cards out in one or two columns depending on width.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useScaledStyles } from "../utils/responsive";
 
 export default function RuleSection({ icon, title, children, style }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={[styles.wrapper, style]}>
       <LinearGradient
@@ -30,11 +32,13 @@ export default function RuleSection({ icon, title, children, style }) {
 
 /** Plain explanatory line inside a card. Kept short by design. */
 export function RuleText({ children, style }) {
+  const styles = useScaledStyles(rawStyles);
   return <Text style={[styles.text, style]}>{children}</Text>;
 }
 
 /** Bulleted point, for lists of conditions. */
 export function RuleBullet({ children }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.bulletRow}>
       <Text style={styles.bulletDot}>•</Text>
@@ -43,7 +47,7 @@ export function RuleBullet({ children }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   wrapper: {
     marginBottom: 12,
   },
@@ -107,4 +111,4 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: "#EDE6FA",
   },
-});
+};

@@ -29,7 +29,7 @@ describe('+10 scoring', () => {
 
 describe('+1 scoring', () => {
   test('pays a flat 10 plus the bid on an exact judgement', () => {
-    assert.equal(calculateScore(0, 0, '+1'), 10, 'a correct zero bid still scores 10');
+    assert.equal(calculateScore(0, 0, '+1'), 11, 'a correct zero bid pays as much as a correct one');
     assert.equal(calculateScore(1, 1, '+1'), 11);
     assert.equal(calculateScore(2, 2, '+1'), 12);
     assert.equal(calculateScore(3, 3, '+1'), 13);
@@ -43,11 +43,24 @@ describe('+1 scoring', () => {
     assert.equal(calculateScore(3, 2, '+1'), 0);
     assert.equal(calculateScore(0, 2, '+1'), 0);
   });
+
+  test('values a correct zero bid exactly as a correct bid of one, in both modes', () => {
+    // Taking no hands on purpose is as hard as taking one, so it is not scored
+    // as if nothing had been bid. This is the invariant that ties the two modes
+    // together; '+10' always held it and '+1' used to pay 10 here instead of 11.
+    for (const mode of ['+10', '+1'] as const) {
+      assert.equal(calculateScore(0, 0, mode), calculateScore(1, 1, mode), mode);
+    }
+  });
 });
 
 describe('the two modes side by side', () => {
-  test('agree on zero bids and diverge as the bid grows', () => {
-    assert.equal(calculateScore(0, 0, '+10'), calculateScore(0, 0, '+1'));
+  test('treat a zero bid the same way and diverge as the bid grows', () => {
+    // Not "agree on zero bids" - they no longer pay the same for one. What they
+    // share is the RULE: a correct zero bid is worth a correct bid of one, which
+    // is 10 under '+10' and 11 under '+1'.
+    assert.equal(calculateScore(0, 0, '+10'), 10);
+    assert.equal(calculateScore(0, 0, '+1'), 11);
     assert.equal(calculateScore(1, 1, '+10'), 10);
     assert.equal(calculateScore(1, 1, '+1'), 11);
     // A big bid is worth far more under +10; that is the whole point of the mode.

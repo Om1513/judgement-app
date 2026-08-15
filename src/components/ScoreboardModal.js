@@ -11,13 +11,13 @@ import React from "react";
 import {
   View,
   Text,
-  StyleSheet,
   Modal,
   Pressable,
   ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import audioManager from "../services/audioManager";
+import { useScaledStyles } from "../utils/responsive";
 
 const TRUMP_DISPLAY = {
   spades: { symbol: "♠", color: "#FFF8E7" },
@@ -27,6 +27,7 @@ const TRUMP_DISPLAY = {
 };
 
 export default function ScoreboardModal({ visible, onClose, scoreboard, currentPlayerId = "" }) {
+  const styles = useScaledStyles(rawStyles);
   const players = scoreboard?.players || [];
   const rows = scoreboard?.rows || [];
 
@@ -145,7 +146,7 @@ export default function ScoreboardModal({ visible, onClose, scoreboard, currentP
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(10, 6, 18, 0.8)",
@@ -311,4 +312,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     includeFontPadding: false,
   },
-});
+};

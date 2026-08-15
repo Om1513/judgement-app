@@ -15,8 +15,9 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
-import ScreenHeader, { HEADER_HEIGHT, HEADER_MARGIN_BOTTOM } from "../components/ScreenHeader";
+import ScreenHeader, { useHeaderMetrics } from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // The card always spans the screen. Adding players squeezes more columns into
 // that fixed width, so the table gets tighter rather than wider: rows shorten
@@ -42,15 +43,12 @@ const FLEX_PLAYER = 1.2;
 // gradient padding 5x2.
 const TABLE_SIDE_CHROME = 22;
 
-// Everything above/around the score rows, totalled from the style values below.
-// The card sizes itself to its rows, so the space available for rows has to be
-// derived from the content area rather than measured off the card itself -
-// measuring the card would be circular once it stops filling the screen.
+// Everything above/around the score rows, in BASELINE points. The measured
+// content box is in real pixels, so these are put through the scale before
+// being subtracted from it.
 const CONTENT_PADDING = 6; // content paddingTop 4 + paddingBottom 2
-const HEADER_BLOCK = HEADER_HEIGHT + HEADER_MARGIN_BOTTOM; // shared top bar
 const CARD_CHROME = 10; // border 2x2 + tableGradient paddingTop 4 + paddingBottom 2
 const TABLE_HEADER_ROW = 30; // paddingVertical 3x2 + border 2 + text at max size
-const ROWS_CHROME = CONTENT_PADDING + HEADER_BLOCK + CARD_CHROME + TABLE_HEADER_ROW;
 
 // Trump suit symbols and colors (tuned for the dark card background)
 const TRUMP_DISPLAY = {
@@ -61,6 +59,19 @@ const TRUMP_DISPLAY = {
 };
 
 export default function ScoreBoardScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset. Plainly scaled: in landscape the display
+  // cutout's inset lands on a side and runs to ~59pt, and since the header bar
+  // lives inside this box that pulled the corner control cluster right off its
+  // corner. Which side it lands on flips with the rotation, so it was not even
+  // consistent between the two ways of holding the phone.
+  const contentInsets = {
+    paddingLeft: r.s(4),
+    paddingRight: r.s(4),
+    paddingTop: r.s(4),
+  };
+  const header = useHeaderMetrics();
   const {
     scoreboard: initialScoreboard,
     currentPlayerId = "",
@@ -230,12 +241,14 @@ export default function ScoreBoardScreen({ navigation, route }) {
   // Total row, which is the same height as a data row. Clamped so long games
   // stay legible and short ones don't blow the text up.
   const rowCount = scoreboard.rows.length + 1;
-  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - ROWS_CHROME) : 0;
+  const rowsChrome =
+    r.s(CONTENT_PADDING + CARD_CHROME + TABLE_HEADER_ROW) + header.block;
+  const availableForRows = contentHeight > 0 ? Math.max(0, contentHeight - rowsChrome) : 0;
   // Capped, so a short game gets a compact table instead of rows stretched to
   // fill the screen. Long games compress below the cap to stay on one screen.
   const playerCount = scoreboard.players.length;
   const rowHeight = availableForRows > 0
-    ? Math.min(maxRowHeightFor(playerCount), availableForRows / rowCount)
+    ? Math.min(r.s(maxRowHeightFor(playerCount)), availableForRows / rowCount)
     : 0;
 
   // Two independent limits on the text, whichever is tighter wins. Height is the
@@ -244,11 +257,16 @@ export default function ScoreBoardScreen({ navigation, route }) {
   // room.
   const columnUnits = FLEX_TRUMP + FLEX_ROUND + FLEX_PLAYER * playerCount;
   const playerColumnWidth = contentWidth > 0
-    ? ((contentWidth - TABLE_SIDE_CHROME) * FLEX_PLAYER) / columnUnits
+    ? ((contentWidth - r.s(TABLE_SIDE_CHROME)) * FLEX_PLAYER) / columnUnits
     : 0;
   const fontFromHeight = rowHeight > 0 ? Math.floor(rowHeight * 0.5) : 14;
   const fontFromWidth = playerColumnWidth > 0 ? Math.floor(playerColumnWidth * 0.32) : 99;
-  const cellFontSize = Math.max(9, Math.min(18, fontFromHeight, fontFromWidth));
+  // The floor and ceiling follow the font curve, so the table stays readable
+  // on a small phone without ballooning on a tablet.
+  const cellFontSize = Math.max(
+    r.f(9),
+    Math.min(r.f(18), fontFromHeight, fontFromWidth)
+  );
   const cellText = { fontSize: cellFontSize, lineHeight: Math.round(cellFontSize * 1.15) };
   // Explicit height replaces flex:1 on the rows, which is what actually tightens
   // the spacing between them.
@@ -274,6 +292,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
           }}
           style={[
             styles.content,
+            contentInsets,
             {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }],
@@ -466,7 +485,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -481,8 +500,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 4,
-    paddingTop: 4,
     paddingBottom: 2,
   },
   // Kept deliberately compact: the app is landscape-locked, so every pixel here
@@ -715,4 +732,4 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     textAlign: "center",
   },
-});
+};

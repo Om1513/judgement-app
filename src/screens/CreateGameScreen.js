@@ -23,6 +23,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import InfoHint from "../components/InfoHint";
 import { TrumpOrder } from "../components/SuitLegend";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 /**
  * What the two order modes actually do. Lives behind the ⓘ on the Order card
@@ -33,6 +34,7 @@ import audioManager from "../services/audioManager";
  * just "what are the options?".
  */
 function OrderInfo({ orderMode }) {
+  const styles = useScaledStyles(rawStyles);
   const isRandom = orderMode === "Random";
 
   return (
@@ -70,6 +72,7 @@ function OrderInfo({ orderMode }) {
  * (calculateScore in server/src/utils/cardUtils.ts).
  */
 function ScoringInfo({ scoringMode }) {
+  const styles = useScaledStyles(rawStyles);
   const isPlusOne = scoringMode === "+1";
 
   return (
@@ -95,7 +98,7 @@ function ScoringInfo({ scoringMode }) {
           +1{isPlusOne ? "  ·  selected" : ""}
         </Text>
         <Text style={styles.infoText}>
-          10 + your bid. Bid 0 → 10, bid 2 → 12, bid 4 → 14.
+          10 + your bid. Bid 0 → 11, bid 2 → 12, bid 4 → 14.
         </Text>
       </View>
     </View>
@@ -103,6 +106,17 @@ function ScoringInfo({ scoringMode }) {
 }
 
 export default function CreateGameScreen({ navigation, route }) {
+  const styles = useScaledStyles(rawStyles);
+  const r = useResponsive();
+  // The content box's own inset. Plainly scaled: adding the landscape cutout
+  // inset here pushed the whole page - the header cluster included - inboard by
+  // ~59pt on top of the header's own offset, which is what moved the back and
+  // sound buttons away from the top-left corner.
+  const contentInsets = {
+    paddingLeft: r.s(10),
+    paddingRight: r.s(10),
+    paddingTop: r.s(15),
+  };
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -283,6 +297,7 @@ export default function CreateGameScreen({ navigation, route }) {
             <Animated.View
               style={[
                 styles.content,
+                contentInsets,
                 {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }],
@@ -377,7 +392,7 @@ export default function CreateGameScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   infoMode: {
     marginBottom: 10,
   },
@@ -420,8 +435,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingTop: 15,
     overflow: "visible",
   },
   settingsSection: {
@@ -461,4 +474,4 @@ const styles = StyleSheet.create({
     color: "#FFD700",
     marginTop: 10,
   },
-});
+};

@@ -19,7 +19,8 @@ import GameButton from "../components/GameButton";
 import Sparkles from "../components/Sparkles";
 import PlayerNameInput from "../components/PlayerNameInput";
 import SoundToggleButton from "../components/SoundToggleButton";
-import CircleIconButton from "../components/CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
@@ -28,6 +29,22 @@ export default function HomeScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const overlayOpacity = useState(new Animated.Value(0))[0];
+
+  const r = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+  const circle = useCircleButtonMetrics();
+
+  // Bottom-left pair, laid out from the real circle diameter so the gap between
+  // them survives a small phone floor-ing the button at the minimum tap target.
+  //
+  // Deliberately the plain scaled offset rather than a safe-area one. In
+  // landscape the cutout inset lands on a side (~59pt), which shoved this pair
+  // most of an inch inboard and stopped it reading as a bottom-left cluster at
+  // all. Home has no content in that corner to protect, and the buttons are
+  // round with their own margin, so the corner radius is not a real collision.
+  const controlsBottom = r.s(18);
+  const controlsLeft = r.s(18);
+  const buttonStride = circle.stride(12);
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -189,6 +206,10 @@ export default function HomeScreen({ navigation }) {
           >
             <View style={[
               styles.inputContainer,
+              // Capped so the field does not stretch into a letterbox on a
+              // tablet; on a phone the cap is wider than the screen and does
+              // nothing.
+              { maxWidth: r.maxContentWidth, alignSelf: "center", width: "100%" },
               isKeyboardVisible && styles.inputContainerFocused,
             ]}>
               <PlayerNameInput
@@ -204,11 +225,13 @@ export default function HomeScreen({ navigation }) {
               keyboard is up, since they would sit behind it anyway. */}
           {!isKeyboardVisible && (
             <>
-              <SoundToggleButton style={styles.soundButton} />
+              <SoundToggleButton
+                style={{ bottom: controlsBottom, left: controlsLeft }}
+              />
               <CircleIconButton
                 glyph="?"
                 glyphStyle={styles.helpGlyph}
-                style={styles.helpButton}
+                style={{ bottom: controlsBottom, left: controlsLeft + buttonStride }}
                 accessibilityLabel="How to play"
                 onPress={() => navigation.navigate("HowToPlay")}
               />
@@ -222,7 +245,10 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro, 874 x 402) values; useScaledStyles maps them onto
+// the current viewport. The percentage-based vertical rhythm is deliberately
+// left as percentages - it should follow the screen, not the design scale.
+const rawStyles = {
   container: {
     flex: 1,
   },
@@ -260,6 +286,9 @@ const styles = StyleSheet.create({
   inputContainerFocused: {
     marginBottom: 10,
   },
+  // Sits low on purpose, under the name field. A percentage rather than a
+  // scaled offset so it follows the screen's height, and NOT raised by the
+  // home-indicator inset - doing that lifted the row visibly off the bottom.
   buttonContainer: {
     position: "absolute",
     bottom: "2%",
@@ -272,18 +301,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  soundButton: {
-    bottom: 18,
-    left: 18,
-  },
-  // Beside the sound toggle, same 64px stride as the paired controls elsewhere.
-  helpButton: {
-    bottom: 18,
-    left: 82,
-  },
   // A question mark sits smaller than the note glyph at the same point size.
   helpGlyph: {
     fontSize: 28,
     lineHeight: 32,
   },
-});
+};

@@ -1,7 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Animated, StyleSheet, Dimensions, Easing } from "react-native";
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+import { View, Animated, StyleSheet, Easing, useWindowDimensions } from "react-native";
 
 // Kachuful theme confetti colors: gold, orange, purple, white.
 const COLORS = ["#FFD700", "#FF8C00", "#7E3FF2", "#FFFFFF", "#FF9D2E", "#5E3A9E"];
@@ -13,10 +11,10 @@ function rand(seed) {
   return x - Math.floor(x);
 }
 
-function ConfettiPiece({ index, loop }) {
+function ConfettiPiece({ index, loop, screenWidth, screenHeight }) {
   const fall = useRef(new Animated.Value(0)).current;
 
-  const startX = rand(index + 1) * SCREEN_W;
+  const startX = rand(index + 1) * screenWidth;
   const drift = (rand(index + 2) - 0.5) * 120;
   const size = 7 + Math.floor(rand(index + 3) * 8);
   const color = COLORS[index % COLORS.length];
@@ -42,7 +40,7 @@ function ConfettiPiece({ index, loop }) {
 
   const translateY = fall.interpolate({
     inputRange: [0, 1],
-    outputRange: [-40, SCREEN_H + 40],
+    outputRange: [-40, screenHeight + 40],
   });
   const translateX = fall.interpolate({
     inputRange: [0, 1],
@@ -80,11 +78,21 @@ function ConfettiPiece({ index, loop }) {
  * No native dependency required. Defaults to ~50 pieces.
  */
 export default function ConfettiCelebration({ count = 50, loop = true }) {
+  // Read live rather than at module scope: a one-off Dimensions.get() is
+  // captured on import, so confetti sized on the launch orientation would fall
+  // down the wrong width for the rest of the session.
+  const { width, height } = useWindowDimensions();
   const pieces = Array.from({ length: count }, (_, i) => i);
   return (
     <View style={styles.container} pointerEvents="none">
       {pieces.map((i) => (
-        <ConfettiPiece key={i} index={i} loop={loop} />
+        <ConfettiPiece
+          key={i}
+          index={i}
+          loop={loop}
+          screenWidth={width}
+          screenHeight={height}
+        />
       ))}
     </View>
   );

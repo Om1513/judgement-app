@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, memo } from "react";
-import { Animated, StyleSheet, Easing, Text } from "react-native";
+import { Animated, Easing, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useScaledStyles } from "../utils/responsive";
 
 const SUIT_SYMBOLS = {
   spades: "♠",
@@ -17,15 +18,17 @@ const SUIT_SYMBOLS = {
  * - When `resolving` flips true (the trick has a winner) it slides toward the
  *   winner's seat (via `resolveDelta`) and fades out before unmounting.
  *
- * Positioning is supplied by `zone`:
- *   style    - absolute anchor (top/left/right/bottom) within the table area
- *   baseX/Y  - static offset used to center the card on its anchor (px)
- *   enterFrom- direction the card slides in from (px), toward its player
+ * Positioning is supplied by `zone`, already resolved against the measured
+ * table rect by utils/tableLayout:
+ *   left/top      - absolute pixel position within the table area
+ *   width/height  - the card's scaled size
+ *   enterFrom     - direction the card slides in from (px), toward its player
  */
 function PlayedCard({ card, zone, resolving, resolveDelta }) {
   const enter = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
   const resolve = useRef(new Animated.Value(0)).current; // 0 -> 1 collect-to-winner
   const glow = useRef(new Animated.Value(0)).current;
+  const styles = useScaledStyles(rawStyles);
 
   const isRed = card.suit === "hearts" || card.suit === "diamonds";
 
@@ -64,16 +67,16 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
     }
   }, [resolving]);
 
-  const { baseX = 0, baseY = 0, enterFrom = { x: 0, y: 0 } } = zone;
+  const { enterFrom = { x: 0, y: 0 } } = zone;
   const dx = resolveDelta?.x || 0;
   const dy = resolveDelta?.y || 0;
 
   const translateX = Animated.add(
-    enter.interpolate({ inputRange: [0, 1], outputRange: [baseX + enterFrom.x, baseX] }),
+    enter.interpolate({ inputRange: [0, 1], outputRange: [enterFrom.x, 0] }),
     resolve.interpolate({ inputRange: [0, 1], outputRange: [0, dx] })
   );
   const translateY = Animated.add(
-    enter.interpolate({ inputRange: [0, 1], outputRange: [baseY + enterFrom.y, baseY] }),
+    enter.interpolate({ inputRange: [0, 1], outputRange: [enterFrom.y, 0] }),
     resolve.interpolate({ inputRange: [0, 1], outputRange: [0, dy] })
   );
   const scale = enter.interpolate({ inputRange: [0, 1], outputRange: [1.12, 1] });
@@ -84,8 +87,14 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
       pointerEvents="none"
       style={[
         styles.card,
-        zone.style,
-        { opacity, transform: [{ translateX }, { translateY }, { scale }] },
+        {
+          left: zone.left,
+          top: zone.top,
+          width: zone.width,
+          height: zone.height,
+          opacity,
+          transform: [{ translateX }, { translateY }, { scale }],
+        },
       ]}
     >
       <Animated.View style={[styles.glowBorder, { opacity: glow }]} />
@@ -113,13 +122,22 @@ function areEqual(prev, next) {
     prev.card?.rank === next.card?.rank &&
     prev.resolving === next.resolving &&
     (prev.resolveDelta?.x ?? null) === (next.resolveDelta?.x ?? null) &&
-    (prev.resolveDelta?.y ?? null) === (next.resolveDelta?.y ?? null)
+    (prev.resolveDelta?.y ?? null) === (next.resolveDelta?.y ?? null) &&
+    // A resize moves every card, so the zone has to be part of the comparison -
+    // otherwise the table would keep the old positions until something else
+    // forced a re-render.
+    prev.zone?.left === next.zone?.left &&
+    prev.zone?.top === next.zone?.top &&
+    prev.zone?.width === next.zone?.width
   );
 }
 
 export default memo(PlayedCard, areEqual);
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro) numbers; useScaledStyles maps them onto the current
+// viewport. Width/height are overridden per card from the resolved zone so the
+// card and its slot can never disagree.
+const rawStyles = {
   card: {
     position: "absolute",
     width: 54,
@@ -169,4 +187,4 @@ const styles = StyleSheet.create({
   red: {
     color: "#e53935",
   },
-});
+};

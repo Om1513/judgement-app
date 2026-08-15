@@ -2,13 +2,15 @@
 // so the difference between +10 and +1 is obvious at a glance.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 /**
  * One scoring outcome. `made` null means the judgement was missed, which always
  * scores zero in both modes.
  */
 export function ScoreRow({ bid, made, points }) {
+  const styles = useScaledStyles(rawStyles);
   const missed = points === 0;
   return (
     <View style={styles.row}>
@@ -28,6 +30,7 @@ export function ScoreRow({ bid, made, points }) {
  * explains it.
  */
 export default function ScoringExample({ mode, score }) {
+  const styles = useScaledStyles(rawStyles);
   return (
     <View style={styles.block}>
       <Text style={styles.mode}>{mode}</Text>
@@ -36,7 +39,8 @@ export default function ScoringExample({ mode, score }) {
         <Text style={styles.headerCell}>Made</Text>
         <Text style={styles.headerPoints}>Score</Text>
       </View>
-      {/* A correct zero bid still scores in both modes. */}
+      {/* A correct zero bid scores in both modes - and scores the same as a
+          correct bid of one, which is why this row and the next match. */}
       <ScoreRow bid={0} made={0} points={score(0)} />
       <ScoreRow bid={1} made={1} points={score(1)} />
       <ScoreRow bid={2} made={2} points={score(2)} />
@@ -46,7 +50,7 @@ export default function ScoringExample({ mode, score }) {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   block: {
     marginTop: 8,
     paddingHorizontal: 10,
@@ -111,4 +115,4 @@ const styles = StyleSheet.create({
   pointsMissed: {
     color: "#FF8A94",
   },
-});
+};

@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ImageBackground,
-  StyleSheet,
   TouchableOpacity,
   Animated,
   Alert,
@@ -15,13 +14,26 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 import HandWinnerOverlay from "../components/HandWinnerOverlay";
-import CircleIconButton from "../components/CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import PlayedCard from "../components/PlayedCard";
 import { arrangeSeats } from "../utils/seating";
 import { getPlayableCardIndexes } from "../utils/cardRules";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  SEAT_HEIGHT,
+  SEAT_WIDTH,
+  TABLE_MARGIN_BOTTOM,
+  TABLE_MARGIN_SIDE,
+  TABLE_MARGIN_TOP,
+  getCardZone,
+  getHandCardLayout,
+  getSeatPosition,
+} from "../utils/tableLayout";
 
 // Suit symbols
 const SUIT_SYMBOLS = {
@@ -31,92 +43,10 @@ const SUIT_SYMBOLS = {
   clubs: "♣",
 };
 
-const CARD_W = 54;
-const CARD_H = 76;
-
-// Horizontal center offset (px from the table midline) for a top-row seat's
-// played card, lined up under that seat's avatar for 6-8 players.
-function topCardCenterX(seatIndex, count) {
-  if (count <= 5) return 0; // single, centered top seat
-  if (count === 6 || count === 7) {
-    if (seatIndex === 0) return -150;
-    if (seatIndex === 5) return 150;
-    return 0; // seat 6 (top-center, 7 players)
-  }
-  // count === 8: all four top cards sit under their avatars (far-left,
-  // center-left, center-right, far-right).
-  if (seatIndex === 0) return -190;
-  if (seatIndex === 6) return -65;
-  if (seatIndex === 7) return 65;
-  if (seatIndex === 5) return 190;
-  return 0;
-}
-
-// Where a given seat's played card sits, anchored inside the table area and
-// pulled toward the center so it never covers the avatar or score badge.
-//   style     - absolute anchor within the table area
-//   baseX/Y   - static px offset to center the card on its anchor
-//   enterFrom - direction the card animates in from (toward its player)
-//   point     - approximate center (px from table midline) used to compute the
-//               slide direction when cards collect to the trick winner
-function getCardZone(seatIndex, count) {
-  switch (seatIndex) {
-    case 0: // top (single or far-left)
-    case 5: // top far-right
-    case 6: // top-center / center-left
-    case 7: { // top center-right
-      // Top avatars sit just above the table; the card hangs directly below.
-      const cx = topCardCenterX(seatIndex, count);
-      return {
-        style: { top: 16, left: "50%" },
-        baseX: cx - CARD_W / 2,
-        baseY: 0,
-        enterFrom: { x: 0, y: -26 },
-        point: { x: cx, y: -120 },
-      };
-    }
-    case 1: // right - card sits just inboard of the right avatar (~8px gap),
-            // vertically centered in line with that avatar
-      return {
-        style: { top: "50%", right: 90 },
-        baseX: 0,
-        baseY: -CARD_H / 2 - 3,
-        enterFrom: { x: 30, y: 0 },
-        point: { x: 130, y: 0 },
-      };
-    case 3: // left - card sits just inboard of the left avatar (~8px gap),
-            // vertically centered in line with that avatar
-      return {
-        style: { top: "50%", left: 90 },
-        baseX: 0,
-        baseY: -CARD_H / 2 - 3,
-        enterFrom: { x: -30, y: 0 },
-        point: { x: -130, y: 0 },
-      };
-    case 4: // bottom-right avatar (mirror of "You", e.g. Maya). Card sits in
-            // the right column (same line as the right player's card) but down
-            // near the bottom, just in front of Maya's bottom-right avatar.
-      return {
-        style: { bottom: -110, right: 90 },
-        baseX: 0,
-        baseY: 0,
-        enterFrom: { x: 22, y: 24 },
-        point: { x: 130, y: 120 },
-      };
-    case 2: // bottom (me)
-    default:
-      // The "You" avatar stays in the bottom-left corner, but our played card
-      // sits center-bottom - just above our hand and directly below the top
-      // player's card - to complete the diamond.
-      return {
-        style: { bottom: -42, left: "50%" },
-        baseX: -CARD_W / 2,
-        baseY: 0,
-        enterFrom: { x: 0, y: 26 },
-        point: { x: 0, y: 130 },
-      };
-  }
-}
+// Baseline card in the player's own hand. Slightly larger than a played card,
+// as in the original design.
+const HAND_CARD_WIDTH = 55;
+const HAND_CARD_HEIGHT = 80;
 
 export default function GameTableScreen({ navigation, route }) {
   const {
@@ -182,6 +112,62 @@ export default function GameTableScreen({ navigation, route }) {
     Bangers_400Regular,
   });
 
+  // ---------------------------------------------------------------------
+  // Layout
+  // ---------------------------------------------------------------------
+  const r = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+  const circle = useCircleButtonMetrics();
+
+  // The three top-left circles are laid out from the real button diameter plus
+  // a gap, rather than the old fixed 16 / 82 / 148, which only lined up while
+  // the circle happened to be 52pt across.
+  const buttonStride = circle.stride(14);
+
+  // Plainly scaled, not safe-area offsets. In landscape the display cutout's
+  // inset lands on a side and runs to ~59pt; applied here it walked the ‹ ♪ ☰
+  // cluster and the round/trump pill inboard until neither read as a corner
+  // control any more. The table is artwork behind them, so there is nothing
+  // underneath for the cutout to obscure.
+  const controlsTop = r.s(16);
+  const controlsLeft = r.s(16);
+  const roundPillOffsets = { top: r.s(16), right: r.s(16) };
+
+  // The table's margins: enough room above for the header row and the
+  // round/trump indicator, and below for the player's hand.
+  const tableMargins = useMemo(
+    () => ({
+      // These set the table rect that every seat and played card is positioned
+      // inside, so an inset applied here does not just add padding - it moves
+      // the whole arrangement off the artwork it is meant to sit on.
+      top: r.s(TABLE_MARGIN_TOP),
+      bottom: r.s(TABLE_MARGIN_BOTTOM),
+      left: r.s(TABLE_MARGIN_SIDE),
+      right: r.s(TABLE_MARGIN_SIDE),
+    }),
+    [r]
+  );
+
+  // The table rect every seat and card is positioned inside. Derived from the
+  // margins (which is exact - the table is a flexed box filling what is left of
+  // the screen) and then corrected by the real measurement, so the first frame
+  // is already right instead of collapsing everything onto 0,0.
+  const [measuredTable, setMeasuredTable] = useState(null);
+  const tableRect = useMemo(() => {
+    if (measuredTable && measuredTable.width > 0) return measuredTable;
+    return {
+      width: Math.max(0, r.width - tableMargins.left - tableMargins.right),
+      height: Math.max(0, r.height - tableMargins.top - tableMargins.bottom),
+    };
+  }, [measuredTable, r.width, r.height, tableMargins]);
+
+  const onTableLayout = useCallback((event) => {
+    const { width, height } = event.nativeEvent.layout;
+    setMeasuredTable((prev) =>
+      prev && prev.width === width && prev.height === height ? prev : { width, height }
+    );
+  }, []);
+
   // Extract state values
   const roundState = gameState?.roundState;
   const players = gameState?.players || [];
@@ -192,6 +178,18 @@ export default function GameTableScreen({ navigation, route }) {
   const currentTrick = roundState?.currentTrick;
   const isMyTurn = gameState?.isMyTurn;
   const leadSuit = currentTrick?.leadSuit;
+
+  // How the hand fans out. Cards tighten their overlap rather than shrinking
+  // when the screen is narrow, so a rank is always readable and always tappable.
+  const handLayout = useMemo(
+    () =>
+      getHandCardLayout({
+        availableWidth: Math.max(0, r.width - r.s(40)),
+        cardCount: myHand.length,
+        cardWidth: r.s(HAND_CARD_WIDTH),
+      }),
+    [r, myHand.length]
+  );
 
   // Fired by the winner popup once its entrance animation settles. That is the
   // beat the new count belongs on: the player sees "X wins the hand!" and their
@@ -425,37 +423,38 @@ export default function GameTableScreen({ navigation, route }) {
     }
   };
 
+  // Where a seat sits. Table seats are placed from normalized coordinates
+  // inside the measured table rect (see utils/tableLayout); the two bottom
+  // corner seats hang off the screen corners instead, clear of any cutout.
+  const seatPlacement = useCallback(
+    (seatIndex) => {
+      if (seatIndex === 4) {
+        return {
+          position: "absolute",
+          width: r.s(SEAT_WIDTH),
+          right: r.s(TABLE_MARGIN_SIDE),
+          bottom: r.s(24),
+        };
+      }
+      const { left, top, width } = getSeatPosition(
+        seatIndex,
+        players.length,
+        tableRect,
+        r.scale
+      );
+      return { position: "absolute", left, top, width };
+    },
+    [players.length, tableRect, r]
+  );
+
   const renderPlayerSeat = (player, position) => {
     if (!player) return <View key={position} style={styles.emptySeat} />;
 
     const isCurrentTurn = player.id === gameState?.currentTurnPlayerId;
     const isMe = player.id === currentPlayerId;
 
-    // For 3 players, nudge the left/right seats a bit higher.
-    const isThreePlayers = players.length === 3;
-    const sideUp = isThreePlayers && (position === 1 || position === 3);
-
-    // For 6/7/8 players, the top seat (0) shares the top row with the other
-    // top seats, so it sits left of center instead of spanning the full width.
-    const isTopRowSplit = players.length >= 6 && players.length <= 8;
-
-    // For 8 players the top-center seat (6) shifts left to make room for the
-    // fourth top seat (7); for 7 players it stays centered.
-    const isEightPlayers = players.length === 8;
-
     return (
-      <View
-        key={player.id}
-        style={[
-          styles.playerSeat,
-          styles[`seat${position}`],
-          isTopRowSplit && position === 0 && styles.seat0Six,
-          isEightPlayers && position === 0 && styles.seat0Eight,
-          isEightPlayers && position === 5 && styles.seat5Eight,
-          isEightPlayers && position === 6 && styles.seat6Eight,
-          sideUp && styles.seatSideUp,
-        ]}
-      >
+      <View key={player.id} style={[styles.playerSeat, seatPlacement(position)]}>
         <View style={[styles.seatBox, isCurrentTurn && styles.seatBoxActive]}>
           {isCurrentTurn && (
             <Animated.View
@@ -517,11 +516,11 @@ export default function GameTableScreen({ navigation, route }) {
       ? arrangedPlayers.find((p) => p && p.id === handWinner.playerId)
       : null;
     const winnerPoint = winnerSeat
-      ? getCardZone(winnerSeat.seatIndex, count).point
+      ? getCardZone(winnerSeat.seatIndex, count, tableRect, r.scale).point
       : null;
 
     return seated.map((player) => {
-      const zone = getCardZone(player.seatIndex, count);
+      const zone = getCardZone(player.seatIndex, count, tableRect, r.scale);
       const play = cardsPlayed.find((c) => c.playerId === player.id);
       const isTurn = player.id === gameState?.currentTurnPlayerId;
 
@@ -532,8 +531,12 @@ export default function GameTableScreen({ navigation, route }) {
             pointerEvents="none"
             style={[
               styles.cardSlot,
-              zone.style,
-              { transform: [{ translateX: zone.baseX }, { translateY: zone.baseY }] },
+              {
+                left: zone.left,
+                top: zone.top,
+                width: zone.width,
+                height: zone.height,
+              },
               isTurn && styles.cardSlotActive,
             ]}
           />
@@ -558,7 +561,7 @@ export default function GameTableScreen({ navigation, route }) {
 
   const renderMyHand = () => {
     return (
-      <View style={styles.myHandContainer}>
+      <View style={[styles.myHandContainer, { bottom: r.s(10) }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -577,6 +580,11 @@ export default function GameTableScreen({ navigation, route }) {
                 activeOpacity={0.8}
                 style={[
                   styles.handCard,
+                  {
+                    width: handLayout.cardWidth,
+                    height: r.s(HAND_CARD_HEIGHT),
+                    marginHorizontal: handLayout.margin,
+                  },
                   isSelected && styles.handCardSelected,
                   !isPlayable && isMyTurn && styles.handCardDisabled,
                 ]}
@@ -654,7 +662,12 @@ export default function GameTableScreen({ navigation, route }) {
         {/* Tapping any empty area deselects the currently selected card. */}
         <Pressable style={styles.touchableArea} onPress={() => setSelectedCard(null)}>
         {/* Round + Trump indicator - top right */}
-        <View style={styles.roundIndicator}>
+        <View
+          style={[
+            styles.roundIndicator,
+            roundPillOffsets,
+          ]}
+        >
           <Text style={styles.roundIndicatorText}>
             Round {currentRound}/{totalRounds}
           </Text>
@@ -677,7 +690,7 @@ export default function GameTableScreen({ navigation, route }) {
         <CircleIconButton
           glyph="‹"
           glyphStyle={styles.backGlyph}
-          style={styles.backButton}
+          style={{ top: controlsTop, left: controlsLeft }}
           accessibilityLabel="Leave game"
           onPress={() => {
             Alert.alert(
@@ -699,14 +712,16 @@ export default function GameTableScreen({ navigation, route }) {
         />
 
         {/* Sound toggle - immediately right of the back button */}
-        <SoundToggleButton style={styles.soundButton} />
+        <SoundToggleButton
+          style={{ top: controlsTop, left: controlsLeft + buttonStride }}
+        />
 
         {/* Scores - completes the row. Opens a read-only peek at the running
             scoreboard without leaving the game. */}
         <CircleIconButton
           glyph="☰"
           glyphStyle={styles.scoresGlyph}
-          style={styles.scoresButton}
+          style={{ top: controlsTop, left: controlsLeft + buttonStride * 2 }}
           accessibilityLabel="Show scores"
           onPress={() => {
             peekPendingRef.current = true;
@@ -726,8 +741,20 @@ export default function GameTableScreen({ navigation, route }) {
         />
 
 
-        {/* Player seats */}
-        <View style={styles.tableArea}>
+        {/* Player seats. Everything inside here is positioned from the table
+            rect, so the whole arrangement follows the table's real size. */}
+        <View
+          onLayout={onTableLayout}
+          style={[
+            styles.tableArea,
+            {
+              marginTop: tableMargins.top,
+              marginBottom: tableMargins.bottom,
+              marginLeft: tableMargins.left,
+              marginRight: tableMargins.right,
+            },
+          ]}
+        >
           {/* Top player (seat 0) */}
           {renderPlayerSeat(arrangedPlayers[0], 0)}
 
@@ -757,7 +784,13 @@ export default function GameTableScreen({ navigation, route }) {
         <View
           style={[
             styles.myInfoContainer,
+            { bottom: r.s(100) },
             players.length >= 3 && styles.myInfoLeft,
+            players.length >= 3 && {
+              left: r.s(TABLE_MARGIN_SIDE),
+              bottom: r.s(24),
+              width: r.s(SEAT_WIDTH),
+            },
           ]}
         >
           {arrangedPlayers[2] && (
@@ -808,7 +841,10 @@ export default function GameTableScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro, 874 x 402) values. useScaledStyles maps the whole
+// sheet onto the current viewport; anything genuinely position-dependent is
+// computed above from the measured table rect instead of living here.
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -825,8 +861,6 @@ const styles = StyleSheet.create({
   // Round & Trump Indicators
   roundIndicator: {
     position: "absolute",
-    top: 16,
-    right: 16,
     backgroundColor: "rgba(42, 22, 84, 0.9)",
     paddingVertical: 9,
     paddingHorizontal: 14,
@@ -865,21 +899,6 @@ const styles = StyleSheet.create({
     textShadowColor: "#FF5D6C",
   },
 
-  // Back and sound sit as a pair in the top-left, back on the outside. The
-  // offsets are the 52px circle plus a 12px gap, matching the bidding screen.
-  backButton: {
-    top: 16,
-    left: 16,
-  },
-  soundButton: {
-    top: 16,
-    left: 82,
-  },
-  // Third in the row, same 66px stride as back -> sound.
-  scoresButton: {
-    top: 16,
-    left: 148,
-  },
   scoresGlyph: {
     fontSize: 22,
     lineHeight: 26,
@@ -892,39 +911,15 @@ const styles = StyleSheet.create({
     marginTop: -3,
   },
 
-  // Turn banner
-  turnBanner: {
-    position: "absolute",
-    top: 60,
-    left: "50%",
-    transform: [{ translateX: -60 }],
-    zIndex: 100,
-  },
-  turnBannerGradient: {
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  turnBannerText: {
-    fontSize: 14,
-    fontFamily: "Bangers_400Regular",
-    color: "#2A1654",
-    letterSpacing: 2,
-  },
-
-  // Table area
+  // Table area. The margins are supplied at render time so they can take the
+  // device's cutout into account.
   tableArea: {
     flex: 1,
-    marginTop: 90,
-    marginBottom: 140,
-    marginHorizontal: 20,
     position: "relative",
   },
 
-  // Player seats
+  // Player seats. Position comes from utils/tableLayout; only the look is here.
   playerSeat: {
-    position: "absolute",
-    width: 90,
     alignItems: "center",
   },
   seatBox: {
@@ -936,88 +931,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "rgba(255, 215, 0, 0.5)",
   },
-  seat0: { // Top - span the full table width and center the seat box
-    top: -85,
-    left: 0,
-    right: 0,
-    width: "100%",
-    alignItems: "center",
-  },
-  seat1: { // Right
-    right: 0,
-    top: "50%",
-    transform: [{ translateY: -50 }],
-  },
-  seat2: { // Bottom (me) - handled separately
-    bottom: 0,
-    left: "50%",
-    transform: [{ translateX: -45 }],
-  },
-  seat3: { // Left
-    left: 0,
-    top: "50%",
-    transform: [{ translateY: -50 }],
-  },
-  seat4: { // Bottom-right (5th player) - mirrors "You" at bottom-left
-    bottom: 24,
-    right: 20,
-  },
-  seat0Six: { // Top-left of the two top seats (6-player layout)
-    top: -85,
-    left: "50%",
-    right: undefined,
-    width: 90,
-    transform: [{ translateX: -195 }], // left of center, with a gap from seat 5
-  },
-  seat5: { // Top-right of the top seats (6/7-player layout)
-    top: -85,
-    left: "50%",
-    width: 90,
-    transform: [{ translateX: 105 }], // right of center, with a gap from seat 0
-  },
-  seat6: { // Top-center of the three top seats (7-player layout)
-    top: -85,
-    left: "50%",
-    right: undefined,
-    width: 90,
-    transform: [{ translateX: -45 }], // centered on the table midline
-  },
-  seat0Eight: { // Top far-left (8-player layout) - wider than 6/7 layout
-    transform: [{ translateX: -235 }],
-  },
-  seat5Eight: { // Top far-right (8-player layout) - wider than 6/7 layout
-    transform: [{ translateX: 145 }],
-  },
-  seat6Eight: { // Top center-left (8-player layout) - left of midline
-    transform: [{ translateX: -110 }],
-  },
-  seat7: { // Top center-right of the four top seats (8-player layout)
-    top: -85,
-    left: "50%",
-    right: undefined,
-    width: 90,
-    transform: [{ translateX: 20 }], // right of the midline
-  },
-  // For 3 players: raise the left/right seats above the table center.
-  seatSideUp: {
-    top: "40%",
-  },
   emptySeat: {
-    width: 90,
-    height: 100,
-  },
-  playerSeatInner: {
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 215, 0, 0.3)",
-    minWidth: 80,
-  },
-  currentTurnSeat: {
-    borderColor: "#FFD700",
-    borderWidth: 2,
+    width: SEAT_WIDTH,
+    height: SEAT_HEIGHT,
   },
   avatar: {
     width: 36,
@@ -1073,6 +989,8 @@ const styles = StyleSheet.create({
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     textAlign: "center",
+    // Capped so a long name cannot widen the seat box and shove the seat next
+    // to it out of position; numberOfLines={1} clips it with an ellipsis.
     maxWidth: 80,
     paddingHorizontal: 5,
   },
@@ -1093,44 +1011,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 5,
   },
-  hostBadge: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-    backgroundColor: "#F5A623",
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  hostBadgeText: {
-    fontSize: 7,
-    fontFamily: "Bangers_400Regular",
-    color: "#2A1654",
-  },
-  cardCountBadge: {
-    position: "absolute",
-    bottom: -4,
-    right: -4,
-    backgroundColor: "#5E3A9E",
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#FFD700",
-  },
-  cardCountText: {
-    fontSize: 10,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF",
-  },
 
   // Played-card placeholder slot (shown until a player plays this trick)
   cardSlot: {
     position: "absolute",
-    width: CARD_W,
-    height: CARD_H,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
     borderRadius: 7,
     borderWidth: 1.5,
     borderStyle: "dashed",
@@ -1149,48 +1035,10 @@ const styles = StyleSheet.create({
   redCard: {
     color: "#e53935",
   },
-  // Lead suit banner (top center)
-  leadBannerContainer: {
-    position: "absolute",
-    top: 16,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 90,
-  },
-  leadBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(42, 22, 84, 0.92)",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#FFD700",
-  },
-  leadBannerLabel: {
-    fontSize: 13,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
-    letterSpacing: 1,
-    marginRight: 8,
-  },
-  leadBannerSymbol: {
-    fontSize: 22,
-    color: "#FFD700",
-    textShadowColor: "#FFD700",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
-  leadBannerSymbolRed: {
-    color: "#FF5D6C",
-    textShadowColor: "#FF5D6C",
-  },
 
   // My hand
   myHandContainer: {
     position: "absolute",
-    bottom: 10,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1202,9 +1050,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   handCard: {
-    marginHorizontal: -8,
-    width: 55,
-    height: 80,
     borderRadius: 8,
     overflow: "hidden",
     shadowColor: "#000",
@@ -1241,36 +1086,19 @@ const styles = StyleSheet.create({
   selectedCardText: {
     color: "#2A1654",
   },
-  playButtonContainer: {
-    marginTop: 8,
-  },
-  playButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  playButtonText: {
-    fontSize: 14,
-    fontFamily: "Bangers_400Regular",
-    color: "#FFF",
-    letterSpacing: 1,
-  },
 
   // My info
   myInfoContainer: {
     position: "absolute",
-    bottom: 100,
     left: 0,
     right: 0,
     alignItems: "center",
   },
-  // For 3-4 players: put our own info in the bottom-left corner (90px wide,
-  // starting at the table's left margin) so it clears the centered card hand.
+  // For 3+ players: put our own info in the bottom-left corner so it clears the
+  // centered card hand. The offsets themselves are applied at render time, from
+  // the safe-area inset.
   myInfoLeft: {
-    left: 20,
     right: undefined,
-    bottom: 24,
-    width: 90,
     alignItems: "center",
   },
   myInfo: {
@@ -1321,4 +1149,4 @@ const styles = StyleSheet.create({
     color: "#FFF8E7",
     marginTop: 8,
   },
-});
+};

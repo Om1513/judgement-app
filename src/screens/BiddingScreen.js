@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ImageBackground,
-  StyleSheet,
   Animated,
   TouchableOpacity,
   Alert,
@@ -13,10 +12,17 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import socketService from "../services/socket";
-import CircleIconButton from "../components/CircleIconButton";
+import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
+import { useResponsive, useScaledStyles } from "../utils/responsive";
+
+// The bid row's geometry is pinned rather than derived from its contents - see
+// tableBidCell below for why. The badge is comfortably inside the cell, so no
+// combination of font metrics can make one push the other around.
+const BID_CELL_HEIGHT = 32;
+const BID_BADGE_HEIGHT = 28;
 
 // Display trump by its English suit name rather than the local name.
 const TRUMP_SUIT_NAMES = {
@@ -48,6 +54,36 @@ export default function BiddingScreen({ navigation, route }) {
     Inter_400Regular,
     Inter_700Bold,
   });
+
+  const r = useResponsive();
+  const styles = useScaledStyles(rawStyles);
+  const circle = useCircleButtonMetrics();
+
+  // Back / sound / scores, bottom-left. Spacing comes from the circle's real
+  // diameter rather than the old fixed 18 / 82 / 146.
+  //
+  // Plainly scaled, not safe-area offsets: in landscape the cutout inset lands
+  // on a side and runs to ~59pt, which walked this cluster inboard until it no
+  // longer read as a bottom-left corner group.
+  const controlsBottom = r.s(18);
+  const controlsLeft = r.s(18);
+  const buttonStride = circle.stride(12);
+
+  // The round pill mirrors the cluster in the opposite corner, so it shares the
+  // same 18pt bottom offset - the two corners then sit on one line.
+  const roundPillOffsets = { bottom: r.s(18), right: r.s(20) };
+
+  // The bidding panel is centred in the band between these edges, so shifting
+  // the band down by 6pt moves the title, bid buttons, trump and table with it.
+  // top and bottom move by the same amount on purpose: the band keeps its
+  // height, so an eight-player table has exactly as much room as before, and
+  // the panel still clears "Your Cards" underneath.
+  const modalBand = {
+    top: r.s(18),
+    left: r.s(10),
+    right: r.s(10),
+    bottom: r.s(74),
+  };
 
   // Get current round state
   const roundState = gameState?.roundState;
@@ -271,13 +307,14 @@ export default function BiddingScreen({ navigation, route }) {
                   isCompactTable && styles.tableCellCompact,
                   player.id === currentPlayerId && styles.tableCurrentPlayerCell,
                 ]}
+                testID="bid-cell"
               >
                 {isCurrentBidder ? (
-                  <View style={[styles.biddingIndicator, isCompactTable && styles.bidBadgeCompact]}>
+                  <View style={[styles.bidBadge, styles.biddingIndicator, isCompactTable && styles.bidBadgeCompact]}>
                     <Text style={[styles.biddingDots, isCompactTable && styles.biddingDotsCompact]}>...</Text>
                   </View>
                 ) : hasBid ? (
-                  <View style={[styles.bidValueContainer, isCompactTable && styles.bidBadgeCompact]}>
+                  <View style={[styles.bidBadge, styles.bidValueContainer, isCompactTable && styles.bidBadgeCompact]}>
                     <Text style={[styles.bidValueText, isCompactTable && styles.bidValueTextCompact]}>{bid}</Text>
                   </View>
                 ) : (
@@ -293,7 +330,7 @@ export default function BiddingScreen({ navigation, route }) {
 
   const renderMyCards = () => {
     return (
-      <View style={styles.myCardsContainer}>
+      <View style={[styles.myCardsContainer, { bottom: r.s(10) }]}>
         <Text style={styles.myCardsLabel}>Your Cards</Text>
         <ScrollView
           horizontal
@@ -348,7 +385,12 @@ export default function BiddingScreen({ navigation, route }) {
         resizeMode="cover"
       >
         {/* Round indicator - bottom right corner */}
-        <View style={styles.roundIndicator}>
+        <View
+          style={[
+            styles.roundIndicator,
+            roundPillOffsets,
+          ]}
+        >
           <Text style={styles.roundIndicatorText}>
             Round {currentRound}/{totalRounds}
           </Text>
@@ -358,6 +400,7 @@ export default function BiddingScreen({ navigation, route }) {
         <Animated.View
           style={[
             styles.modalOverlay,
+            modalBand,
             {
               opacity: fadeAnim,
               transform: [{ scale: modalScale }],
@@ -425,7 +468,7 @@ export default function BiddingScreen({ navigation, route }) {
         <CircleIconButton
           glyph="‹"
           glyphStyle={styles.backGlyph}
-          style={styles.backButton}
+          style={{ bottom: controlsBottom, left: controlsLeft }}
           accessibilityLabel="Leave game"
           onPress={() => {
             Alert.alert(
@@ -447,14 +490,16 @@ export default function BiddingScreen({ navigation, route }) {
         />
 
         {/* Sound toggle - immediately right of the back button */}
-        <SoundToggleButton style={styles.soundButton} />
+        <SoundToggleButton
+          style={{ bottom: controlsBottom, left: controlsLeft + buttonStride }}
+        />
 
         {/* Scores - completes the row. Opens a read-only peek at the running
             scoreboard without leaving the round. */}
         <CircleIconButton
           glyph="☰"
           glyphStyle={styles.scoresGlyph}
-          style={styles.scoresButton}
+          style={{ bottom: controlsBottom, left: controlsLeft + buttonStride * 2 }}
           accessibilityLabel="Show scores"
           onPress={() => {
             setPeekOpen(true);
@@ -475,7 +520,10 @@ export default function BiddingScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Baseline (iPhone 17 Pro, 874 x 402) values; useScaledStyles maps them onto
+// the current viewport. Edge offsets are applied at render time so they can
+// clear a device cutout.
+const rawStyles = {
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -489,8 +537,6 @@ const styles = StyleSheet.create({
   // Round Indicator
   roundIndicator: {
     position: "absolute",
-    bottom: 20,
-    right: 20,
     backgroundColor: "rgba(42, 22, 84, 0.9)",
     paddingVertical: 10,
     paddingHorizontal: 18,
@@ -505,22 +551,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Back and sound sit as a pair in the bottom-left, back on the outside.
-  // The offsets are the 52px circle plus a 12px gap, so they stay evenly
-  // spaced if either is repositioned.
-  backButton: {
-    bottom: 18,
-    left: 18,
-  },
-  soundButton: {
-    bottom: 18,
-    left: 82,
-  },
-  // Third in the row, same 64px stride as back -> sound.
-  scoresButton: {
-    bottom: 18,
-    left: 146,
-  },
   scoresGlyph: {
     fontSize: 22,
     lineHeight: 26,
@@ -533,13 +563,9 @@ const styles = StyleSheet.create({
     marginTop: -3,
   },
 
-  // Modal
+  // Modal. Its inset edges are supplied at render time from the safe area.
   modalOverlay: {
     position: "absolute",
-    top: 12,
-    left: 10,
-    right: 10,
-    bottom: 80,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -755,49 +781,71 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     color: "#2A1654",
   },
+  // A FIXED height, not a minimum. The three things this cell can hold - "...",
+  // a green bid box, or "-" - are all different natural heights, and the green
+  // one is tall enough that its line box tipped past the old 32pt minimum once
+  // font metrics and Android's font padding were added. The row then grew the
+  // moment the first player bid, and the whole panel grew with it. Pinning the
+  // height takes the cell's contents out of the calculation entirely.
   tableBidCell: {
     borderLeftWidth: 1,
     borderLeftColor: "rgba(255, 215, 0, 0.2)",
-    minHeight: 32,
+    height: BID_CELL_HEIGHT,
+  },
+  // One shared box for the "..." and green-bid badges. Identical height means a
+  // player going from "waiting to bid" to "bid placed" swaps the badge in place
+  // with no reflow - previously the green box was ~7pt taller than the amber one.
+  bidBadge: {
+    height: BID_BADGE_HEIGHT,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
   },
   biddingIndicator: {
     backgroundColor: "#F5A623",
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 6,
   },
   biddingDots: {
     fontSize: 14,
+    lineHeight: 17,
     fontFamily: "Inter_700Bold",
     color: "#2A1654",
+    includeFontPadding: false,
   },
   bidValueContainer: {
     backgroundColor: "#4CAF50",
     paddingHorizontal: 12,
-    paddingVertical: 3,
-    borderRadius: 6,
   },
   bidBadgeCompact: {
     paddingHorizontal: 6,
   },
+  // Explicit lineHeight on all three, and includeFontPadding off: without them
+   // the cell's height depends on the platform's font metrics, which is how this
+   // row came to be a different size on device than in the design.
   bidValueText: {
     fontSize: 20,
+    lineHeight: 24,
     fontFamily: "Inter_700Bold",
     color: "#FFF",
     textAlign: "center",
     paddingHorizontal: 5,
+    includeFontPadding: false,
   },
   bidValueTextCompact: {
     fontSize: 18,
+    lineHeight: 22,
     paddingHorizontal: 2,
   },
   biddingDotsCompact: {
     fontSize: 16,
+    lineHeight: 19,
   },
   noBidText: {
     fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Inter_400Regular",
     color: "#666",
+    includeFontPadding: false,
   },
   noBidTextCompact: {
     fontSize: 16,
@@ -806,7 +854,6 @@ const styles = StyleSheet.create({
   // My Cards
   myCardsContainer: {
     position: "absolute",
-    bottom: 10,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -848,4 +895,4 @@ const styles = StyleSheet.create({
   cardMiniRed: {
     color: "#e53935",
   },
-});
+};

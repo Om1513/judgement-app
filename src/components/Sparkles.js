@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import { View, Animated, StyleSheet } from "react-native";
+import { useScaledStyles } from "../utils/responsive";
 
 const Sparkle = ({ delay, startX, startY, size }) => {
+  const styles = useScaledStyles(rawStyles);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0)).current;
@@ -70,6 +72,7 @@ const Sparkle = ({ delay, startX, startY, size }) => {
 };
 
 export default function Sparkles() {
+  const styles = useScaledStyles(rawStyles);
   // Sparkle positions spread horizontally for side-by-side buttons
   const sparkles = [
     // Left button area
@@ -105,7 +108,7 @@ export default function Sparkles() {
   );
 }
 
-const styles = StyleSheet.create({
+const rawStyles = {
   container: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -119,4 +122,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-});
+};
