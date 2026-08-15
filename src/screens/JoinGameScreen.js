@@ -8,6 +8,7 @@ import {
   Animated,
   TouchableOpacity,
   Keyboard,
+  TouchableWithoutFeedback,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -87,12 +88,14 @@ const FloatingParticle = ({ delay, startX, startY, size }) => {
 export default function JoinGameScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
   const r = useResponsive();
-  // The content box's own inset, widened where a display cutout would
-  // otherwise sit under it. A no-op on a device with no cutout.
+  // The content box's own inset. Plainly scaled: the header bar lives inside
+  // this box, so the landscape cutout's ~59pt side inset was applied on top of
+  // the header's own offset and dragged the back / sound pair off the top-left
+  // corner.
   const contentInsets = {
-    paddingLeft: r.safeLeft(30),
-    paddingRight: r.safeRight(30),
-    paddingTop: r.safeTop(15),
+    paddingLeft: r.s(30),
+    paddingRight: r.s(30),
+    paddingTop: r.s(15),
   };
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
@@ -284,171 +287,180 @@ export default function JoinGameScreen({ navigation, route }) {
   ];
 
   return (
-    <View style={styles.container}>
-      <ImageBackground
-        source={require("../../assets/background_without_title.png")}
-        style={styles.background}
-        resizeMode="cover"
-      >
-        {/* Only show content after transition completes */}
-        {isReady && (
-          <>
-            {/* Overlay gradient */}
-            <LinearGradient
-              colors={["rgba(26, 16, 48, 0.7)", "transparent", "rgba(26, 16, 48, 0.5)"]}
-              locations={[0, 0.4, 1]}
-              style={styles.overlayGradient}
-            />
-
-            {/* Floating particles */}
-            {particles.map((particle, index) => (
-              <FloatingParticle
-                key={index}
-                delay={particle.delay}
-                startX={particle.startX}
-                startY={particle.startY}
-                size={particle.size}
-              />
-            ))}
-
-            {/* Main content */}
-            <Animated.View
-              style={[
-                styles.content,
-                contentInsets,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }],
-                },
-              ]}
-            >
-              {/* Shared top bar: controls and title on one line. */}
-              <ScreenHeader
-                title="Join Lobby"
-                left={
-                  <>
-                    <CircleIconButton
-                      inline
-                      glyph="‹"
-                      glyphStyle={styles.backGlyph}
-                      accessibilityLabel="Go back"
-                      onPress={handleGoBack}
-                    />
-                    <SoundToggleButton inline />
-                  </>
-                }
+    // Tapping anywhere that isn't the code field or a button dismisses the
+    // keyboard. Same wrapper the home screen uses for its name field, so the
+    // behaviour is consistent across the app's two text inputs.
+    //
+    // accessible={false} matters: without it this wrapper becomes one screen-
+    // sized accessibility element and a screen reader announces the whole page
+    // as a single button instead of reading the field and controls inside it.
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.container} testID="join-screen">
+        <ImageBackground
+          source={require("../../assets/background_without_title.png")}
+          style={styles.background}
+          resizeMode="cover"
+        >
+          {/* Only show content after transition completes */}
+          {isReady && (
+            <>
+              {/* Overlay gradient */}
+              <LinearGradient
+                colors={["rgba(26, 16, 48, 0.7)", "transparent", "rgba(26, 16, 48, 0.5)"]}
+                locations={[0, 0.4, 1]}
+                style={styles.overlayGradient}
               />
 
-              {/* Center Section - Input */}
-              <View style={styles.centerSection}>
-                <Animated.View
-                  style={[
-                    styles.inputSection,
-                    { transform: [{ translateX: shakeAnim }] },
-                  ]}
-                >
-                  <TextInput
-                    ref={inputRef}
-                    style={[
-                      styles.input,
-                      isFocused && styles.inputFocused,
-                      isInvalid && styles.inputInvalid,
-                    ]}
-                    value={lobbyCode}
-                    onChangeText={handleCodeChange}
-                    placeholder="Enter Code"
-                    placeholderTextColor="rgba(255, 220, 120, 0.85)"
-                    selectionColor="#FFD700"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    maxLength={6}
-                    onFocus={() => setIsFocused(true)}
-                    onBlur={() => setIsFocused(false)}
-                  />
+              {/* Floating particles */}
+              {particles.map((particle, index) => (
+                <FloatingParticle
+                  key={index}
+                  delay={particle.delay}
+                  startX={particle.startX}
+                  startY={particle.startY}
+                  size={particle.size}
+                />
+              ))}
 
-                  {/* Character count indicator */}
-                  <View style={styles.charCountContainer}>
-                    {[0, 1, 2, 3, 4, 5].map((index) => (
-                      <View
-                        key={index}
-                        style={[
-                          styles.charDot,
-                          index < lobbyCode.length && styles.charDotFilled,
-                        ]}
+              {/* Main content */}
+              <Animated.View
+                style={[
+                  styles.content,
+                  contentInsets,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }],
+                  },
+                ]}
+              >
+                {/* Shared top bar: controls and title on one line. */}
+                <ScreenHeader
+                  title="Join Lobby"
+                  left={
+                    <>
+                      <CircleIconButton
+                        inline
+                        glyph="‹"
+                        glyphStyle={styles.backGlyph}
+                        accessibilityLabel="Go back"
+                        onPress={handleGoBack}
                       />
-                    ))}
-                  </View>
-                </Animated.View>
-              </View>
+                      <SoundToggleButton inline />
+                    </>
+                  }
+                />
 
-              {/* Bottom Section - Join Button */}
-              <View style={styles.bottomSection}>
-                <Animated.View
-                  style={[
-                    styles.buttonContainer,
-                    { transform: [{ scale: buttonScaleAnim }] },
-                  ]}
-                >
-                  <TouchableOpacity
-                    onPress={handleJoinLobby}
-                    onPressIn={handleButtonPressIn}
-                    onPressOut={handleButtonPressOut}
-                    activeOpacity={1}
-                    style={styles.touchable}
+                {/* Center Section - Input */}
+                <View style={styles.centerSection}>
+                  <Animated.View
+                    style={[
+                      styles.inputSection,
+                      { transform: [{ translateX: shakeAnim }] },
+                    ]}
                   >
-                    <View style={[
-                      styles.shadowLayer,
-                      !isValidCode && styles.shadowLayerDisabled,
-                    ]}>
-                      <LinearGradient
-                        colors={isValidCode
-                          ? ["#FFE55C", "#FFCC00", "#FFB800", "#F5A623"]
-                          : ["#8A7A6A", "#6A5A4A", "#5A4A3A", "#4A3A2A"]
-                        }
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 0, y: 1 }}
-                        style={styles.buttonGradient}
-                      >
-                        {/* Glossy highlight overlay */}
-                        <LinearGradient
-                          colors={["rgba(255,255,255,0.5)", "rgba(255,255,255,0.2)", "transparent"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 0, y: 0.6 }}
-                          style={styles.glossOverlay}
+                    <TextInput
+                      ref={inputRef}
+                      style={[
+                        styles.input,
+                        isFocused && styles.inputFocused,
+                        isInvalid && styles.inputInvalid,
+                      ]}
+                      value={lobbyCode}
+                      onChangeText={handleCodeChange}
+                      placeholder="Enter Code"
+                      placeholderTextColor="rgba(255, 220, 120, 0.85)"
+                      selectionColor="#FFD700"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      maxLength={6}
+                      onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
+                    />
+
+                    {/* Character count indicator */}
+                    <View style={styles.charCountContainer}>
+                      {[0, 1, 2, 3, 4, 5].map((index) => (
+                        <View
+                          key={index}
+                          style={[
+                            styles.charDot,
+                            index < lobbyCode.length && styles.charDotFilled,
+                          ]}
                         />
-
-                        {isJoining ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text style={[
-                            styles.buttonText,
-                            !isValidCode && styles.buttonTextDisabled,
-                          ]}>
-                            Join Lobby
-                          </Text>
-                        )}
-
-                        {/* Inner bottom highlight */}
-                        <View style={styles.innerHighlight} />
-                      </LinearGradient>
+                      ))}
                     </View>
-                  </TouchableOpacity>
+                  </Animated.View>
+                </View>
 
-                  {/* Valid code glow effect */}
-                  {isValidCode && (
-                    <View style={styles.buttonGlowEffect} />
-                  )}
-                </Animated.View>
-              </View>
-            </Animated.View>
+                {/* Bottom Section - Join Button */}
+                <View style={styles.bottomSection}>
+                  <Animated.View
+                    style={[
+                      styles.buttonContainer,
+                      { transform: [{ scale: buttonScaleAnim }] },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      onPress={handleJoinLobby}
+                      onPressIn={handleButtonPressIn}
+                      onPressOut={handleButtonPressOut}
+                      activeOpacity={1}
+                      style={styles.touchable}
+                    >
+                      <View style={[
+                        styles.shadowLayer,
+                        !isValidCode && styles.shadowLayerDisabled,
+                      ]}>
+                        <LinearGradient
+                          colors={isValidCode
+                            ? ["#FFE55C", "#FFCC00", "#FFB800", "#F5A623"]
+                            : ["#8A7A6A", "#6A5A4A", "#5A4A3A", "#4A3A2A"]
+                          }
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 0, y: 1 }}
+                          style={styles.buttonGradient}
+                        >
+                          {/* Glossy highlight overlay */}
+                          <LinearGradient
+                            colors={["rgba(255,255,255,0.5)", "rgba(255,255,255,0.2)", "transparent"]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 0.6 }}
+                            style={styles.glossOverlay}
+                          />
 
-            {/* Back button */}
-          </>
-        )}
+                          {isJoining ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={[
+                              styles.buttonText,
+                              !isValidCode && styles.buttonTextDisabled,
+                            ]}>
+                              Join Lobby
+                            </Text>
+                          )}
 
-        <StatusBar style="light" hidden />
-      </ImageBackground>
-    </View>
+                          {/* Inner bottom highlight */}
+                          <View style={styles.innerHighlight} />
+                        </LinearGradient>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Valid code glow effect */}
+                    {isValidCode && (
+                      <View style={styles.buttonGlowEffect} />
+                    )}
+                  </Animated.View>
+                </View>
+              </Animated.View>
+
+              {/* Back button */}
+            </>
+          )}
+
+          <StatusBar style="light" hidden />
+        </ImageBackground>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 

@@ -47,7 +47,13 @@ export default function PlayerCard({
 
         {/* Player info */}
         <View style={styles.info}>
-          <Text style={[styles.name, isCompact && styles.nameCompact]}>
+          {/* Clipped rather than allowed to grow: the lobby lays cards out four
+              to a row, and a long name used to widen its card enough to push
+              the fourth onto the next line. */}
+          <Text
+            style={[styles.name, isCompact && styles.nameCompact]}
+            numberOfLines={1}
+          >
             {player.name}
           </Text>
 
@@ -122,6 +128,10 @@ const rawStyles = {
     borderWidth: 2,
     borderColor: "#5E3A9E",
     minWidth: 180,
+    // Four of these plus their margins have to fit one row of the lobby, which
+    // at the baseline width leaves ~208pt each. The name ellipsises inside
+    // whatever is left rather than the card growing past this.
+    maxWidth: 188,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

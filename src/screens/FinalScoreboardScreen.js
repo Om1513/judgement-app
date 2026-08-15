@@ -62,12 +62,15 @@ const TRUMP_DISPLAY = {
 export default function FinalScoreboardScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
   const r = useResponsive();
-  // The content box's own inset, widened where a display cutout would
-  // otherwise sit under it. A no-op on a device with no cutout.
+  // The content box's own inset. Plainly scaled: in landscape the display
+  // cutout's inset lands on a side and runs to ~59pt, and since the header bar
+  // lives inside this box that pulled the corner control cluster right off its
+  // corner. Which side it lands on flips with the rotation, so it was not even
+  // consistent between the two ways of holding the phone.
   const contentInsets = {
-    paddingLeft: r.safeLeft(4),
-    paddingRight: r.safeRight(4),
-    paddingTop: r.safeTop(4),
+    paddingLeft: r.s(4),
+    paddingRight: r.s(4),
+    paddingTop: r.s(4),
   };
   const header = useHeaderMetrics();
   const {

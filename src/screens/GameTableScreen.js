@@ -123,17 +123,27 @@ export default function GameTableScreen({ navigation, route }) {
   // a gap, rather than the old fixed 16 / 82 / 148, which only lined up while
   // the circle happened to be 52pt across.
   const buttonStride = circle.stride(14);
-  const controlsTop = r.safeTop(16);
-  const controlsLeft = r.safeLeft(16);
+
+  // Plainly scaled, not safe-area offsets. In landscape the display cutout's
+  // inset lands on a side and runs to ~59pt; applied here it walked the ‹ ♪ ☰
+  // cluster and the round/trump pill inboard until neither read as a corner
+  // control any more. The table is artwork behind them, so there is nothing
+  // underneath for the cutout to obscure.
+  const controlsTop = r.s(16);
+  const controlsLeft = r.s(16);
+  const roundPillOffsets = { top: r.s(16), right: r.s(16) };
 
   // The table's margins: enough room above for the header row and the
   // round/trump indicator, and below for the player's hand.
   const tableMargins = useMemo(
     () => ({
-      top: r.safeTop(TABLE_MARGIN_TOP),
-      bottom: r.safeBottom(TABLE_MARGIN_BOTTOM),
-      left: r.safeLeft(TABLE_MARGIN_SIDE),
-      right: r.safeRight(TABLE_MARGIN_SIDE),
+      // These set the table rect that every seat and played card is positioned
+      // inside, so an inset applied here does not just add padding - it moves
+      // the whole arrangement off the artwork it is meant to sit on.
+      top: r.s(TABLE_MARGIN_TOP),
+      bottom: r.s(TABLE_MARGIN_BOTTOM),
+      left: r.s(TABLE_MARGIN_SIDE),
+      right: r.s(TABLE_MARGIN_SIDE),
     }),
     [r]
   );
@@ -174,10 +184,7 @@ export default function GameTableScreen({ navigation, route }) {
   const handLayout = useMemo(
     () =>
       getHandCardLayout({
-        availableWidth: Math.max(
-          0,
-          r.width - r.safeLeft(0) - r.safeRight(0) - r.s(40)
-        ),
+        availableWidth: Math.max(0, r.width - r.s(40)),
         cardCount: myHand.length,
         cardWidth: r.s(HAND_CARD_WIDTH),
       }),
@@ -425,8 +432,8 @@ export default function GameTableScreen({ navigation, route }) {
         return {
           position: "absolute",
           width: r.s(SEAT_WIDTH),
-          right: r.safeRight(TABLE_MARGIN_SIDE),
-          bottom: r.safeBottom(24),
+          right: r.s(TABLE_MARGIN_SIDE),
+          bottom: r.s(24),
         };
       }
       const { left, top, width } = getSeatPosition(
@@ -554,7 +561,7 @@ export default function GameTableScreen({ navigation, route }) {
 
   const renderMyHand = () => {
     return (
-      <View style={[styles.myHandContainer, { bottom: r.safeBottom(10) }]}>
+      <View style={[styles.myHandContainer, { bottom: r.s(10) }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -658,7 +665,7 @@ export default function GameTableScreen({ navigation, route }) {
         <View
           style={[
             styles.roundIndicator,
-            { top: controlsTop, right: r.safeRight(16) },
+            roundPillOffsets,
           ]}
         >
           <Text style={styles.roundIndicatorText}>
@@ -777,11 +784,11 @@ export default function GameTableScreen({ navigation, route }) {
         <View
           style={[
             styles.myInfoContainer,
-            { bottom: r.safeBottom(100) },
+            { bottom: r.s(100) },
             players.length >= 3 && styles.myInfoLeft,
             players.length >= 3 && {
-              left: r.safeLeft(TABLE_MARGIN_SIDE),
-              bottom: r.safeBottom(24),
+              left: r.s(TABLE_MARGIN_SIDE),
+              bottom: r.s(24),
               width: r.s(SEAT_WIDTH),
             },
           ]}
@@ -836,8 +843,7 @@ export default function GameTableScreen({ navigation, route }) {
 
 // Baseline (iPhone 17 Pro, 874 x 402) values. useScaledStyles maps the whole
 // sheet onto the current viewport; anything genuinely position-dependent is
-// computed above from the table rect and the safe-area insets instead of
-// living here.
+// computed above from the measured table rect instead of living here.
 const rawStyles = {
   container: {
     flex: 1,

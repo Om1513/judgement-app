@@ -36,8 +36,14 @@ export default function HomeScreen({ navigation }) {
 
   // Bottom-left pair, laid out from the real circle diameter so the gap between
   // them survives a small phone floor-ing the button at the minimum tap target.
-  const controlsBottom = r.safeBottom(18);
-  const controlsLeft = r.safeLeft(18);
+  //
+  // Deliberately the plain scaled offset rather than a safe-area one. In
+  // landscape the cutout inset lands on a side (~59pt), which shoved this pair
+  // most of an inch inboard and stopped it reading as a bottom-left cluster at
+  // all. Home has no content in that corner to protect, and the buttons are
+  // round with their own margin, so the corner radius is not a real collision.
+  const controlsBottom = r.s(18);
+  const controlsLeft = r.s(18);
   const buttonStride = circle.stride(12);
 
   const [fontsLoaded] = useFonts({
@@ -176,15 +182,7 @@ export default function HomeScreen({ navigation }) {
 
           {/* Buttons - fixed at bottom, hidden when keyboard is open */}
           {!isKeyboardVisible && (
-            <View
-              style={[
-                styles.buttonContainer,
-                // 2% of the screen, or the home-indicator strip, whichever is
-                // further in. Already a fraction of the real viewport, so it is
-                // deliberately not put through the design scale as well.
-                { bottom: Math.max(r.height * 0.02, r.insets.bottom) },
-              ]}
-            >
+            <View style={styles.buttonContainer}>
               <View style={styles.buttonRow}>
                 <GameButton
                   title="Create Game"
@@ -288,8 +286,12 @@ const rawStyles = {
   inputContainerFocused: {
     marginBottom: 10,
   },
+  // Sits low on purpose, under the name field. A percentage rather than a
+  // scaled offset so it follows the screen's height, and NOT raised by the
+  // home-indicator inset - doing that lifted the row visibly off the bottom.
   buttonContainer: {
     position: "absolute",
+    bottom: "2%",
     left: 0,
     right: 0,
     alignItems: "center",

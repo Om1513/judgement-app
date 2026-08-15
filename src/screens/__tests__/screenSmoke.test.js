@@ -12,13 +12,15 @@
 // size from three to eight players.
 
 import React from "react";
-import { Dimensions } from "react-native";
-import { render } from "@testing-library/react-native";
+import { Dimensions, Keyboard, StyleSheet } from "react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 import HomeScreen from "../HomeScreen";
 import HowToPlayScreen from "../HowToPlayScreen";
 import GameTableScreen from "../GameTableScreen";
 import BiddingScreen from "../BiddingScreen";
+import LobbyScreen from "../LobbyScreen";
+import JoinGameScreen from "../JoinGameScreen";
 import ScoreBoardScreen from "../ScoreBoardScreen";
 import FinalWinnerScreen from "../FinalWinnerScreen";
 
@@ -31,6 +33,9 @@ jest.mock("../../services/socket", () => ({
     leaveLobby: jest.fn(),
     getScoreboardState: jest.fn(),
     scoreboardContinue: jest.fn(),
+    startGame: jest.fn(),
+    addBot: jest.fn(),
+    kickPlayer: jest.fn(),
   },
 }));
 
@@ -133,6 +138,34 @@ describe.each(Object.entries(VIEWPORTS))("on %s", (_name, viewport) => {
     expect(() => mounts(<HowToPlayScreen navigation={navigation} />)).not.toThrow();
   });
 
+  // Every lobby size, because the player grid chunks into rows of four: 5 is
+  // the first size that wraps, 8 the first that fills two rows exactly.
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])("renders a lobby of %i", (count) => {
+    expect(() =>
+      mounts(
+        <LobbyScreen
+          navigation={navigation}
+          route={{
+            params: {
+              lobbyCode: "ABC123",
+              hostId: "p0",
+              currentPlayerId: "p0",
+              currentPlayerName: "P0",
+              gameSettings: { maxPlayers: 8 },
+              initialPlayers: Array.from({ length: count }, (_, i) => ({
+                playerId: `p${i}`,
+                name: i === 1 ? "Bartholomew Winterbottom" : `P${i}`,
+                isHost: i === 0,
+                isBot: i > 2,
+                joinedAt: "2026-01-01T00:00:00.000Z",
+              })),
+            },
+          }}
+        />
+      )
+    ).not.toThrow();
+  });
+
   it("renders the bidding screen with a full table", () => {
     expect(() =>
       mounts(
@@ -185,5 +218,69 @@ describe.each(Object.entries(VIEWPORTS))("on %s", (_name, viewport) => {
         />
       )
     ).not.toThrow();
+  });
+});
+
+// A bid landing used to grow the whole bidding panel: the green "bid placed" box
+// was ~7pt taller than the amber "..." badge it replaced, which pushed the bid
+// row past its minHeight and took the panel with it. The row is now a fixed
+// height, so this asserts the thing that actually broke - that every cell in the
+// row resolves to the same height no matter which of the three states it holds.
+describe("the bidding row does not resize when a bid lands", () => {
+  /** One player who has bid, one mid-bid, one still to bid. */
+  const mixedBids = {
+    status: "BIDDING",
+    totalRounds: 4,
+    myHand: [{ suit: "spades", rank: "5" }],
+    players: [
+      { id: "p0", name: "P0", hasBid: true, bid: 2, isHost: true },
+      { id: "p1", name: "P1", hasBid: false, bid: null },
+      { id: "p2", name: "P2", hasBid: false, bid: null },
+    ],
+    roundState: {
+      roundNumber: 1,
+      cardsPerPlayer: 3,
+      currentBidderId: "p1",
+      trump: { suit: "hearts", symbol: "♥", name: "Hearts" },
+    },
+  };
+
+  it("gives every bid cell the same fixed height, whatever it contains", () => {
+    const { getAllByTestId, unmount } = render(
+      <BiddingScreen
+        navigation={navigation}
+        route={{ params: { gameState: mixedBids, currentPlayerId: "p2" } }}
+      />
+    );
+
+    const heights = getAllByTestId("bid-cell").map(
+      (cell) => StyleSheet.flatten(cell.props.style).height
+    );
+
+    expect(heights).toHaveLength(3);
+    // Fixed, not merely equal: a minHeight would also come out equal here while
+    // still being free to grow on a device with different font metrics.
+    for (const height of heights) expect(height).toBe(32);
+    unmount();
+  });
+});
+
+// The lobby-code field is one of only two text inputs in the app, and its
+// keyboard used to be dismissable only by submitting - tapping the artwork
+// around it left it up, covering the JOIN button underneath.
+describe("the join screen dismisses its keyboard on an outside tap", () => {
+  it("calls Keyboard.dismiss when the backdrop is pressed", () => {
+    const dismiss = jest.spyOn(Keyboard, "dismiss").mockImplementation(() => {});
+
+    const { getByTestId, unmount } = render(
+      <JoinGameScreen navigation={navigation} route={{ params: { playerName: "P0" } }} />
+    );
+
+    expect(dismiss).not.toHaveBeenCalled();
+    fireEvent.press(getByTestId("join-screen"));
+    expect(dismiss).toHaveBeenCalled();
+
+    unmount();
+    dismiss.mockRestore();
   });
 });

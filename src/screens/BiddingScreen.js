@@ -18,6 +18,12 @@ import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 
+// The bid row's geometry is pinned rather than derived from its contents - see
+// tableBidCell below for why. The badge is comfortably inside the cell, so no
+// combination of font metrics can make one push the other around.
+const BID_CELL_HEIGHT = 32;
+const BID_BADGE_HEIGHT = 28;
+
 // Display trump by its English suit name rather than the local name.
 const TRUMP_SUIT_NAMES = {
   spades: "Spades",
@@ -55,9 +61,29 @@ export default function BiddingScreen({ navigation, route }) {
 
   // Back / sound / scores, bottom-left. Spacing comes from the circle's real
   // diameter rather than the old fixed 18 / 82 / 146.
-  const controlsBottom = r.safeBottom(18);
-  const controlsLeft = r.safeLeft(18);
+  //
+  // Plainly scaled, not safe-area offsets: in landscape the cutout inset lands
+  // on a side and runs to ~59pt, which walked this cluster inboard until it no
+  // longer read as a bottom-left corner group.
+  const controlsBottom = r.s(18);
+  const controlsLeft = r.s(18);
   const buttonStride = circle.stride(12);
+
+  // The round pill mirrors the cluster in the opposite corner, so it shares the
+  // same 18pt bottom offset - the two corners then sit on one line.
+  const roundPillOffsets = { bottom: r.s(18), right: r.s(20) };
+
+  // The bidding panel is centred in the band between these edges, so shifting
+  // the band down by 6pt moves the title, bid buttons, trump and table with it.
+  // top and bottom move by the same amount on purpose: the band keeps its
+  // height, so an eight-player table has exactly as much room as before, and
+  // the panel still clears "Your Cards" underneath.
+  const modalBand = {
+    top: r.s(18),
+    left: r.s(10),
+    right: r.s(10),
+    bottom: r.s(74),
+  };
 
   // Get current round state
   const roundState = gameState?.roundState;
@@ -281,13 +307,14 @@ export default function BiddingScreen({ navigation, route }) {
                   isCompactTable && styles.tableCellCompact,
                   player.id === currentPlayerId && styles.tableCurrentPlayerCell,
                 ]}
+                testID="bid-cell"
               >
                 {isCurrentBidder ? (
-                  <View style={[styles.biddingIndicator, isCompactTable && styles.bidBadgeCompact]}>
+                  <View style={[styles.bidBadge, styles.biddingIndicator, isCompactTable && styles.bidBadgeCompact]}>
                     <Text style={[styles.biddingDots, isCompactTable && styles.biddingDotsCompact]}>...</Text>
                   </View>
                 ) : hasBid ? (
-                  <View style={[styles.bidValueContainer, isCompactTable && styles.bidBadgeCompact]}>
+                  <View style={[styles.bidBadge, styles.bidValueContainer, isCompactTable && styles.bidBadgeCompact]}>
                     <Text style={[styles.bidValueText, isCompactTable && styles.bidValueTextCompact]}>{bid}</Text>
                   </View>
                 ) : (
@@ -303,7 +330,7 @@ export default function BiddingScreen({ navigation, route }) {
 
   const renderMyCards = () => {
     return (
-      <View style={[styles.myCardsContainer, { bottom: r.safeBottom(10) }]}>
+      <View style={[styles.myCardsContainer, { bottom: r.s(10) }]}>
         <Text style={styles.myCardsLabel}>Your Cards</Text>
         <ScrollView
           horizontal
@@ -361,7 +388,7 @@ export default function BiddingScreen({ navigation, route }) {
         <View
           style={[
             styles.roundIndicator,
-            { bottom: r.safeBottom(20), right: r.safeRight(20) },
+            roundPillOffsets,
           ]}
         >
           <Text style={styles.roundIndicatorText}>
@@ -373,11 +400,8 @@ export default function BiddingScreen({ navigation, route }) {
         <Animated.View
           style={[
             styles.modalOverlay,
+            modalBand,
             {
-              top: r.safeTop(12),
-              left: r.safeLeft(10),
-              right: r.safeRight(10),
-              bottom: r.safeBottom(80),
               opacity: fadeAnim,
               transform: [{ scale: modalScale }],
             },
@@ -757,49 +781,71 @@ const rawStyles = {
     fontFamily: "Inter_700Bold",
     color: "#2A1654",
   },
+  // A FIXED height, not a minimum. The three things this cell can hold - "...",
+  // a green bid box, or "-" - are all different natural heights, and the green
+  // one is tall enough that its line box tipped past the old 32pt minimum once
+  // font metrics and Android's font padding were added. The row then grew the
+  // moment the first player bid, and the whole panel grew with it. Pinning the
+  // height takes the cell's contents out of the calculation entirely.
   tableBidCell: {
     borderLeftWidth: 1,
     borderLeftColor: "rgba(255, 215, 0, 0.2)",
-    minHeight: 32,
+    height: BID_CELL_HEIGHT,
+  },
+  // One shared box for the "..." and green-bid badges. Identical height means a
+  // player going from "waiting to bid" to "bid placed" swaps the badge in place
+  // with no reflow - previously the green box was ~7pt taller than the amber one.
+  bidBadge: {
+    height: BID_BADGE_HEIGHT,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
   },
   biddingIndicator: {
     backgroundColor: "#F5A623",
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 6,
   },
   biddingDots: {
     fontSize: 14,
+    lineHeight: 17,
     fontFamily: "Inter_700Bold",
     color: "#2A1654",
+    includeFontPadding: false,
   },
   bidValueContainer: {
     backgroundColor: "#4CAF50",
     paddingHorizontal: 12,
-    paddingVertical: 3,
-    borderRadius: 6,
   },
   bidBadgeCompact: {
     paddingHorizontal: 6,
   },
+  // Explicit lineHeight on all three, and includeFontPadding off: without them
+   // the cell's height depends on the platform's font metrics, which is how this
+   // row came to be a different size on device than in the design.
   bidValueText: {
     fontSize: 20,
+    lineHeight: 24,
     fontFamily: "Inter_700Bold",
     color: "#FFF",
     textAlign: "center",
     paddingHorizontal: 5,
+    includeFontPadding: false,
   },
   bidValueTextCompact: {
     fontSize: 18,
+    lineHeight: 22,
     paddingHorizontal: 2,
   },
   biddingDotsCompact: {
     fontSize: 16,
+    lineHeight: 19,
   },
   noBidText: {
     fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Inter_400Regular",
     color: "#666",
+    includeFontPadding: false,
   },
   noBidTextCompact: {
     fontSize: 16,

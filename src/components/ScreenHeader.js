@@ -34,21 +34,28 @@ export const HEADER_SIDE_INSET = 10;
  * much room the score table has.
  */
 export function useHeaderMetrics() {
-  const { scale, s, insets } = useResponsive();
+  const { scale, s } = useResponsive();
 
   return useMemo(() => {
     // Never shorter than the circles it contains, which on a small phone stop
     // scaling at the minimum tap target while the rest of the bar keeps going.
     const height = Math.max(s(HEADER_HEIGHT), getCircleButtonSize(scale) + s(2));
     const marginBottom = s(HEADER_MARGIN_BOTTOM);
+    // Plainly scaled, NOT widened by the safe-area inset. In landscape the
+    // cutout inset falls on a side and runs to ~59pt, which dragged the corner
+    // clusters most of an inch inboard - and on the screens that also pad their
+    // content box it was applied twice, so the back button ended up nearer the
+    // title than the edge. The buttons are round, inset, and sit over artwork,
+    // so the corner radius is not a real collision.
+    const sideInset = s(HEADER_SIDE_INSET);
     return {
       height,
       marginBottom,
       block: height + marginBottom,
-      leftInset: Math.max(s(HEADER_SIDE_INSET), insets.left),
-      rightInset: Math.max(s(HEADER_SIDE_INSET), insets.right),
+      leftInset: sideInset,
+      rightInset: sideInset,
     };
-  }, [scale, s, insets]);
+  }, [scale, s]);
 }
 
 export default function ScreenHeader({ title, left, right, titleStyle, style }) {
@@ -58,12 +65,11 @@ export default function ScreenHeader({ title, left, right, titleStyle, style }) 
 
   // The title is centred on the screen, so it needs clearance from BOTH button
   // clusters - a long title (a player name plus "'s Lobby") would otherwise run
-  // under them. Derived from the actual inset rather than the old flat 140,
-  // which was a guess that only held at one width.
-  const titleClearance = useMemo(() => {
-    const clearance = Math.max(metrics.leftInset, metrics.rightInset) + s(130);
-    return { paddingHorizontal: clearance };
-  }, [metrics.leftInset, metrics.rightInset, s]);
+  // under them. The side inset plus room for two circle buttons.
+  const titleClearance = useMemo(
+    () => ({ paddingHorizontal: metrics.leftInset + s(130) }),
+    [metrics.leftInset, s]
+  );
 
   return (
     <View

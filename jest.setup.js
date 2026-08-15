@@ -18,22 +18,49 @@ const { Dimensions } = require("react-native");
 const BASELINE_VIEWPORT = { width: 874, height: 402, scale: 3, fontScale: 1 };
 Dimensions.set({ window: BASELINE_VIEWPORT, screen: BASELINE_VIEWPORT });
 
+// Report the web fonts as already loaded.
+//
+// Every screen gates its real content behind `useFonts`, which under Jest never
+// resolves - so without this a rendered screen is only ever its font-loading
+// placeholder, and a test that mounts one is asserting nothing about the layout
+// underneath. Plain functions rather than jest.fn(), so the `clearMocks: true`
+// in jest.config.js cannot strip the implementation between tests.
+jest.mock("@expo-google-fonts/bangers", () => ({
+  useFonts: () => [true, null],
+  Bangers_400Regular: "Bangers_400Regular",
+}));
+
+jest.mock("@expo-google-fonts/inter", () => ({
+  useFonts: () => [true, null],
+  Inter_400Regular: "Inter_400Regular",
+  Inter_700Bold: "Inter_700Bold",
+}));
+
 // The audio manager is imported by most interactive components purely to play a
 // click. Replace it with spies so tests can assert a tap was registered without
 // booting an audio session.
+// Mirrors the real singleton's public surface (see src/services/audioManager.js).
+// It has to be the whole surface, not just playSound: useSoundEnabled reads
+// getSoundEnabled/initialize/subscribe on mount, so every screen with a mute
+// button touches all three.
 jest.mock("./src/services/audioManager", () => ({
   __esModule: true,
   default: {
     playSound: jest.fn(),
-    init: jest.fn(async () => {}),
-    startBackgroundMusic: jest.fn(async () => {}),
+    initialize: jest.fn(async () => {}),
     playBackgroundMusic: jest.fn(async () => {}),
-    stopBackgroundMusic: jest.fn(async () => {}),
+    pauseBackgroundMusic: jest.fn(),
+    resumeBackgroundMusic: jest.fn(),
+    stopBackgroundMusic: jest.fn(),
+    duckMusic: jest.fn(),
     // Called from the winner screen's cleanup, so any test that unmounts it
     // needs this present.
     restoreMusicVolume: jest.fn(),
     setSoundEnabled: jest.fn(async () => {}),
-    isSoundEnabled: jest.fn(() => true),
+    getSoundEnabled: jest.fn(() => true),
+    // Returns the unsubscribe function the hook stores as its effect cleanup;
+    // handing back undefined makes React throw on unmount.
+    subscribe: jest.fn(() => () => {}),
   },
 }));
 

@@ -22,18 +22,25 @@ import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
-import { useResponsive, useScaledStyles } from "../utils/responsive";
+import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
+
+// Four players per row, whatever the lobby size.
+const PLAYERS_PER_ROW = 4;
 
 export default function LobbyScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
   const r = useResponsive();
-  // The content box's own inset, widened where a display cutout would
-  // otherwise sit under it. A no-op on a device with no cutout.
+  // The content box's own inset. Plainly scaled: the landscape cutout inset
+  // runs to ~59pt and applied on top of the header's own offset, which dragged
+  // the back / sound pair and the add-bot button away from the top corners.
   const contentInsets = {
-    paddingLeft: r.safeLeft(20),
-    paddingRight: r.safeRight(20),
-    paddingTop: r.safeTop(22),
+    paddingLeft: r.s(20),
+    paddingRight: r.s(20),
+    paddingTop: r.s(22),
   };
+  // The copy / share icons are deliberately small - they must not out-shout the
+  // code - so the tap area is widened rather than the button.
+  const codeActionSlop = touchSlop(r.s(30));
   // Get params from navigation
   const {
     lobbyCode = "ABC123",
@@ -247,19 +254,20 @@ export default function LobbyScreen({ navigation, route }) {
     return host ? host.name : hostName;
   }, [players, hostName]);
 
-  // Calculate player layout based on count
-  const getPlayerLayout = useMemo(() => {
-    const count = players.length;
+  // Players in rows of four, host first. One rule for every lobby size, so the
+  // grid stays a grid: 5 players read as 4 + 1, 8 as 4 + 4. The row itself still
+  // wraps, which only matters on a viewport too narrow for four cards.
+  const playerRows = useMemo(() => {
     const host = players.find((p) => p.isHost);
-    const others = players.filter((p) => !p.isHost);
+    const ordered = host
+      ? [host, ...players.filter((p) => !p.isHost)]
+      : players;
 
-    if (count <= 4) {
-      return { layout: "row", host, others };
-    } else if (count <= 6) {
-      return { layout: "twoRows", host, others };
-    } else {
-      return { layout: "threeRows", host, others };
+    const rows = [];
+    for (let i = 0; i < ordered.length; i += PLAYERS_PER_ROW) {
+      rows.push(ordered.slice(i, i + PLAYERS_PER_ROW));
     }
+    return rows;
   }, [players]);
 
   if (!fontsLoaded) {
@@ -274,108 +282,26 @@ export default function LobbyScreen({ navigation, route }) {
     );
   }
 
-  const renderPlayers = () => {
-    const { layout, host, others } = getPlayerLayout;
-    // All player counts use the normal card size (cards wrap across rows).
-    const isCompact = false;
-
-    if (layout === "row") {
-      return (
-        <View style={styles.playersRow}>
-          {host && (
-            <PlayerCard
-              player={host}
-              isHost={isCurrentUserHost}
-              canRemove={false}
-              size={isCompact ? "compact" : "normal"}
-            />
-          )}
-          {others.map((player) => (
+  const renderPlayers = () => (
+    <View style={styles.playersContainer}>
+      {playerRows.map((row, index) => (
+        <View key={`row-${index}`} style={styles.playersRow}>
+          {row.map((player) => (
             <PlayerCard
               key={player.id}
               player={player}
               isHost={isCurrentUserHost}
-              canRemove={isCurrentUserHost}
-              onRemove={handleRemovePlayer}
-              size={isCompact ? "compact" : "normal"}
-            />
-          ))}
-        </View>
-      );
-    }
-
-    if (layout === "twoRows") {
-      // Split all players (host first) into a top row of 3 and a bottom row of
-      // the rest, e.g. 5 players => 3 on top, 2 on bottom.
-      const ordered = host ? [host, ...others] : others;
-      const firstRow = ordered.slice(0, 3);
-      const secondRow = ordered.slice(3);
-
-      return (
-        <View style={styles.playersContainer}>
-          <View style={styles.playersRow}>
-            {firstRow.map((player) => (
-              <PlayerCard
-                key={player.id}
-                player={player}
-                isHost={isCurrentUserHost}
-                canRemove={isCurrentUserHost}
-                onRemove={handleRemovePlayer}
-                size={isCompact ? "compact" : "normal"}
-              />
-            ))}
-          </View>
-          <View style={styles.playersRow}>
-            {secondRow.map((player) => (
-              <PlayerCard
-                key={player.id}
-                player={player}
-                isHost={isCurrentUserHost}
-                canRemove={isCurrentUserHost}
-                onRemove={handleRemovePlayer}
-                size={isCompact ? "compact" : "normal"}
-              />
-            ))}
-          </View>
-        </View>
-      );
-    }
-
-    // 7-8 players: split all players (host first) into a top row of 4 and a
-    // bottom row of the rest, e.g. 7 => 4 top / 3 bottom, 8 => 4 top / 4 bottom.
-    const ordered = host ? [host, ...others] : others;
-    const topRow = ordered.slice(0, 4);
-    const bottomRow = ordered.slice(4);
-
-    return (
-      <View style={styles.playersContainer}>
-        <View style={styles.playersRow}>
-          {topRow.map((player) => (
-            <PlayerCard
-              key={player.id}
-              player={player}
-              isHost={isCurrentUserHost}
+              // PlayerCard never offers to remove the host, so this can be the
+              // same for every card.
               canRemove={isCurrentUserHost}
               onRemove={handleRemovePlayer}
               size="normal"
             />
           ))}
         </View>
-        <View style={styles.playersRow}>
-          {bottomRow.map((player) => (
-            <PlayerCard
-              key={player.id}
-              player={player}
-              isHost={isCurrentUserHost}
-              canRemove={isCurrentUserHost}
-              onRemove={handleRemovePlayer}
-              size="normal"
-            />
-          ))}
-        </View>
-      </View>
-    );
-  };
+      ))}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -441,30 +367,47 @@ export default function LobbyScreen({ navigation, route }) {
                   <View style={styles.codeBox}>
                     <Text style={styles.codeLabel}>CODE:</Text>
                     <Text style={styles.codeText}>{lobbyCode}</Text>
+                    {/* Copy, then share. Glyphs rather than COPY / SHARE
+                        wordmarks: the code is the thing to read here, and two
+                        text pills either side of it competed with it. Both are
+                        square, so the pair reads as one control cluster.
+
+                        Both glyphs come from blocks this app already renders
+                        elsewhere (Dingbats for ✕ ✦, Arrows for →), so neither
+                        can turn up as a tofu box on a device where the rest of
+                        the UI is fine. */}
                     <TouchableOpacity
-                      style={styles.copyButton}
+                      style={styles.codeAction}
                       onPress={handleCopyCode}
                       activeOpacity={0.7}
+                      hitSlop={codeActionSlop}
+                      accessibilityRole="button"
+                      accessibilityLabel={copied ? "Lobby code copied" : "Copy lobby code"}
                     >
                       <LinearGradient
                         colors={copied ? ["#4CAF50", "#388E3C"] : ["#FFD700", "#F5A623"]}
-                        style={styles.copyButtonGradient}
+                        style={styles.codeActionGradient}
                       >
-                        <Text style={styles.copyButtonText}>
-                          {copied ? "COPIED" : "COPY"}
+                        {/* The tick is the confirmation the "COPIED" label used
+                            to give, in the same space. */}
+                        <Text style={[styles.codeActionGlyph, copied && styles.codeActionGlyphDone]}>
+                          {copied ? "✓" : "❐"}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.shareButton}
+                      style={[styles.codeAction, styles.shareAction]}
                       onPress={handleShareCode}
                       activeOpacity={0.7}
+                      hitSlop={codeActionSlop}
+                      accessibilityRole="button"
+                      accessibilityLabel="Share lobby code"
                     >
                       <LinearGradient
                         colors={["#5E3A9E", "#3D2272"]}
-                        style={styles.shareButtonGradient}
+                        style={styles.codeActionGradient}
                       >
-                        <Text style={styles.shareButtonText}>SHARE</Text>
+                        <Text style={[styles.codeActionGlyph, styles.shareGlyph]}>↗</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   </View>
@@ -552,12 +495,17 @@ const rawStyles = {
   content: {
     flex: 1,
   },
-  // Negative top margin pulls the code box and player count up into part of the
-  // header bar's 12pt bottom margin, tightening them to the title without
-  // moving the title itself. 6pt of clearance is left.
+  // Negative top margin pulls the code box, player count and min-players
+  // warning up through the header bar's 12pt bottom margin, tightening them to
+  // the title without moving the title itself.
+  //
+  // -12 consumes that margin exactly, so this block now sits flush against the
+  // header's box. There is a little further to go - the title's glyphs only fill
+  // 46 of the bar's 54pt - but past about -16 the code box starts to touch the
+  // title, so that is the hard stop rather than the arbitrary value it looks.
   topSection: {
     alignItems: "center",
-    marginTop: -6,
+    marginTop: -12,
     marginBottom: 10,
   },
   codeContainer: {
@@ -574,8 +522,11 @@ const rawStyles = {
     borderWidth: 2,
     borderColor: "#5E3A9E",
   },
+  // Set at the same size as the code itself, so "CODE:" and the code read as one
+  // line rather than a caption with a value after it. Kept cream, not gold, so
+  // the code is still the thing your eye lands on.
   codeLabel: {
-    fontSize: 14,
+    fontSize: 22,
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     marginRight: 8,
@@ -588,41 +539,43 @@ const rawStyles = {
     letterSpacing: 4,
     marginRight: 12,
   },
-  copyButton: {
+  // Square icon buttons, same gradients as the wordmark pills they replace:
+  // gold for copy, purple with a gold edge for share. Sized to the code's cap
+  // height so the cluster sits level with the text beside it.
+  codeAction: {
     borderRadius: 8,
     overflow: "hidden",
   },
-  copyButtonGradient: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  codeActionGradient: {
+    width: 30,
+    height: 30,
     borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  copyButtonText: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
+  codeActionGlyph: {
+    fontSize: 17,
+    lineHeight: 21,
     color: "#2A1654",
-    letterSpacing: 1,
+    textAlign: "center",
+    includeFontPadding: false,
   },
-  shareButton: {
-    borderRadius: 8,
-    overflow: "hidden",
+  // The tick reads small next to the copy glyph at the same point size.
+  codeActionGlyphDone: {
+    fontSize: 19,
+    color: "#0E2E12",
+  },
+  shareAction: {
     marginLeft: 8,
     borderWidth: 1,
     borderColor: "#FFD700",
   },
-  shareButtonGradient: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  shareButtonText: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
+  shareGlyph: {
     color: "#FFD700",
-    letterSpacing: 1,
+    fontSize: 19,
   },
   playerCount: {
-    fontSize: 16,
+    fontSize: 19,
     fontFamily: "Bangers_400Regular",
     color: "#FFFFFF",
     marginTop: 6,
@@ -659,11 +612,11 @@ const rawStyles = {
   // otherwise the player list would jump upward the moment a second player
   // joined, at the same instant the button changed colour.
   minPlayersSlot: {
-    height: 20,
+    height: 23,
     justifyContent: "center",
   },
   minPlayersText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Bangers_400Regular",
     color: "#FF6B6B",
     letterSpacing: 0.5,

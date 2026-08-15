@@ -108,12 +108,14 @@ function ScoringInfo({ scoringMode }) {
 export default function CreateGameScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
   const r = useResponsive();
-  // The content box's own inset, widened where a display cutout would
-  // otherwise sit under it. A no-op on a device with no cutout.
+  // The content box's own inset. Plainly scaled: adding the landscape cutout
+  // inset here pushed the whole page - the header cluster included - inboard by
+  // ~59pt on top of the header's own offset, which is what moved the back and
+  // sound buttons away from the top-left corner.
   const contentInsets = {
-    paddingLeft: r.safeLeft(10),
-    paddingRight: r.safeRight(10),
-    paddingTop: r.safeTop(15),
+    paddingLeft: r.s(10),
+    paddingRight: r.s(10),
+    paddingTop: r.s(15),
   };
   const playerName = route.params?.playerName || "Player";
   const [isReady, setIsReady] = useState(false);
