@@ -4,7 +4,7 @@
     "slug": "judgement",
     "version": "1.0.0",
     "orientation": "landscape",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo_kachuful.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
