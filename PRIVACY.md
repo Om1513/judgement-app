@@ -80,6 +80,3 @@ by updating the "Effective date" above.
 Questions or requests about this policy:
 
 **omsinghan25@icloud.com**
-
-> Replace the contact address above with the email you want published before
-> submitting to the App Store.
