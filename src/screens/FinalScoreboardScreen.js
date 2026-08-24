@@ -204,7 +204,14 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                   glyph="›"
                   glyphStyle={styles.backGlyph}
                   accessibilityLabel="Return to home"
-                  onPress={() => navigation.navigate("Home")}
+                  onPress={() => {
+                    // The game is over and they have read the result, so this is
+                    // the end of the session - reopening the app must not drop
+                    // them back onto a finished scoreboard. The server side is
+                    // left alone; only the saved pointer goes.
+                    void socketService.clearSavedSession();
+                    navigation.navigate("Home");
+                  }}
                 />
               </>
             }

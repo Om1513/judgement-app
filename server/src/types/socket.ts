@@ -4,6 +4,32 @@ import { LobbyState, LobbySettings } from './lobby';
 import { ClientGameState, ScoreboardState, GameWinner } from './game';
 import { Card } from './player';
 
+/** Why a connection was not given a session back. */
+export type SessionRestoreFailure =
+  /** The player is not a member of any lobby: finished, kicked, left, expired. */
+  | 'SESSION_NOT_FOUND'
+  /** The lookup itself failed (database error). The client must NOT treat this
+   *  as "your session is gone" - its saved session may still be perfectly good. */
+  | 'RESTORE_FAILED';
+
+/**
+ * The answer to "does this player have somewhere to be?", sent once per
+ * identified connection.
+ *
+ * `restored: true` carries everything the client needs to put the player back
+ * where they were, including - for a game sitting on the round scoreboard - the
+ * scoreboard itself, so a cold-started app can render the right phase without a
+ * second round trip. `gameState` is the same per-player view used during normal
+ * play: the player's own hand, and only card *counts* for everyone else.
+ */
+export interface SessionRestorePayload {
+  restored: boolean;
+  reason?: SessionRestoreFailure;
+  lobby: LobbyState | null;
+  gameState: ClientGameState | null;
+  scoreboard?: ScoreboardState | null;
+}
+
 // Client to Server events
 export interface ClientToServerEvents {
   // Player events. `clientId` is a stable, app-generated id used to recover the
@@ -39,12 +65,13 @@ export interface ServerToClientEvents {
   'connected': (data: { playerId: string; reconnected?: boolean }) => void;
   'error': (data: { message: string; code?: string }) => void;
 
-  // Emitted right after (re)connect when the player was already in a lobby or
-  // an in-progress game, so the client can restore the correct screen/state.
-  'session:restore': (data: {
-    lobby: LobbyState | null;
-    gameState: ClientGameState | null;
-  }) => void;
+  // Emitted exactly once per `player:connect`, immediately before `connected`,
+  // whether or not there was a session to give back. A warm reconnect uses it to
+  // refresh the open screen; a cold-started app uses it to decide between
+  // navigating back into the lobby/game and staying on Home. Always answering -
+  // including with `restored: false` - is what lets a cold start tell "you have
+  // nothing to come back to" apart from "the server never replied".
+  'session:restore': (data: SessionRestorePayload) => void;
 
   // Lobby events
   'lobby:created': (data: { lobby: LobbyState }) => void;

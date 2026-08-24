@@ -3,8 +3,12 @@
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SERVER_URL } from '../config';
+import { clearSession, saveSession } from './session';
 
 const CLIENT_ID_KEY = '@kachuful_client_id';
+
+// How long to wait for the server to answer the initial connect.
+const CONNECT_TIMEOUT_MS = 10000;
 
 /**
  * Generates a stable, reasonably-unique client id without requiring a crypto
@@ -19,12 +23,21 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.playerId = null;
+    this.playerName = '';
     this.clientId = null;
     this.isConnected = false;
     this.listeners = new Map();
-    // Last session payload pushed by the server on (re)connect, so screens can
-    // restore the correct view after a drop.
+    // Last *successful* session payload pushed by the server on (re)connect, so
+    // screens can restore the correct view after a drop. Null whenever the
+    // server's answer was "you have no session".
     this.lastSession = null;
+    // In-flight connect(), so overlapping callers share one socket rather than
+    // racing to open a second one.
+    this.connectPromise = null;
+    // Subscribers to the session answer. Held here rather than on the socket so
+    // a caller can subscribe before the socket exists - which is exactly what
+    // cold-start restore does.
+    this.sessionListeners = new Set();
   }
 
   /**
@@ -51,99 +64,250 @@ class SocketService {
 
   /**
    * Connects to the server with player name.
+   *
+   * Idempotent by design, because startup calls it from more than one place: an
+   * already-connected socket resolves immediately, an in-flight connect is
+   * shared, and a socket that exists but is still negotiating is waited on
+   * rather than replaced. There is one socket per app session - a second one
+   * would double every listener and every `session:restore`.
    */
   async connect(playerName) {
-    // Ensure we have a stable identity before opening the socket.
-    const clientId = await this.getClientId();
+    if (playerName) {
+      // Remembered so automatic reconnects re-identify with the current name.
+      this.playerName = playerName;
+    }
 
-    return new Promise((resolve, reject) => {
-      if (this.socket?.connected) {
-        resolve({ playerId: this.playerId });
-        return;
+    // Ensure we have a stable identity before opening the socket.
+    await this.getClientId();
+
+    if (this.socket?.connected && this.playerId) {
+      return { playerId: this.playerId };
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
+    const attempt = new Promise((resolve, reject) => {
+      if (!this.socket) {
+        this.socket = io(SERVER_URL, {
+          // WebSocket first, with long-polling fallback for networks/proxies
+          // that block raw WS upgrades (common on mobile data / corporate WiFi).
+          transports: ['websocket', 'polling'],
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          timeout: CONNECT_TIMEOUT_MS,
+        });
+        this._registerCoreHandlers();
       }
 
-      this.socket = io(SERVER_URL, {
-        // WebSocket first, with long-polling fallback for networks/proxies that
-        // block raw WS upgrades (common on mobile data / corporate WiFi).
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: Infinity,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 10000,
-      });
-
-      // Handle connection. This fires on the initial connect AND on every
-      // automatic reconnect, so we always (re)authenticate with our stable
-      // clientId, which lets the server restore our lobby/game session.
-      this.socket.on('connect', () => {
-        // Log the negotiated transport so production issues (e.g. stuck on
-        // HTTP long-polling instead of WebSocket) are easy to spot.
-        const transport = this.socket.io?.engine?.transport?.name;
-        console.log('Socket connected:', this.socket.id, 'transport:', transport);
-        this.socket.io?.engine?.once('upgrade', () => {
-          console.log('Socket transport upgraded:', this.socket.io.engine.transport.name);
-        });
-        this.isConnected = true;
-
-        this.socket.emit('player:connect', {
-          name: playerName,
-          clientId,
-          playerId: this.playerId || undefined,
-        });
-      });
-
-      // Server-pushed session recovery (lobby/game state after a reconnect).
-      // Cache only - screens that need it subscribe via socketService.on(),
-      // which attaches directly to the socket, so we must not re-dispatch here.
-      this.socket.on('session:restore', (data) => {
-        console.log('Session restored:', data?.lobby?.code, !!data?.gameState);
-        this.lastSession = data;
-      });
-
-      // Handle player connected confirmation
-      this.socket.on('connected', (data) => {
-        console.log('Player connected:', data.playerId);
-        this.playerId = data.playerId;
-        resolve({ playerId: data.playerId });
-      });
-
-      // Handle connection error
-      this.socket.on('connect_error', (error) => {
-        console.error('Connection error:', error);
-        reject(new Error('Failed to connect to server'));
-      });
-
-      // Handle disconnection
-      this.socket.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
-        this.isConnected = false;
-      });
-
-      // Handle generic errors
-      this.socket.on('error', (data) => {
-        console.error('Socket error:', data.message);
-        this._emitToListeners('error', data);
-      });
-
-      // Set timeout for initial connection
-      setTimeout(() => {
-        if (!this.isConnected) {
-          reject(new Error('Connection timeout'));
+      // One-shot listeners for *this* attempt only, so a later reconnect cannot
+      // settle an old promise.
+      let timer = null;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        this.socket?.off('connected', onConnected);
+        this.socket?.off('connect_error', onConnectError);
+        // Only if it is still ours: a caller that started a *later* attempt owns
+        // the field by then, and must not have it cleared out from under it.
+        if (this.connectPromise === attempt) {
+          this.connectPromise = null;
         }
-      }, 10000);
+      };
+      const onConnected = (data) => {
+        cleanup();
+        resolve({ playerId: data.playerId });
+      };
+      const onConnectError = (error) => {
+        cleanup();
+        reject(new Error(error?.message || 'Failed to connect to server'));
+      };
+
+      this.socket.on('connected', onConnected);
+      this.socket.on('connect_error', onConnectError);
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Connection timeout'));
+      }, CONNECT_TIMEOUT_MS);
+
+      // A socket created by an earlier attempt may already be connected but not
+      // yet identified; nudge it rather than waiting for a 'connect' that has
+      // already fired.
+      if (this.socket.connected) {
+        this._identify();
+      }
+    });
+
+    this.connectPromise = attempt;
+    return attempt;
+  }
+
+  /**
+   * Wires the handlers that belong to the socket itself rather than to one
+   * connect() call. Called exactly once per socket, so these can never stack up.
+   */
+  _registerCoreHandlers() {
+    // Fires on the initial connect AND on every automatic reconnect, so we
+    // always (re)authenticate with our stable clientId, which is what lets the
+    // server restore our lobby/game session.
+    this.socket.on('connect', () => {
+      // Log the negotiated transport so production issues (e.g. stuck on HTTP
+      // long-polling instead of WebSocket) are easy to spot.
+      const transport = this.socket.io?.engine?.transport?.name;
+      console.log('Socket connected:', this.socket.id, 'transport:', transport);
+      this.socket.io?.engine?.once('upgrade', () => {
+        console.log('Socket transport upgraded:', this.socket.io.engine.transport.name);
+      });
+      this.isConnected = true;
+      this._identify();
+    });
+
+    // The server's answer to "does this player have somewhere to be?", sent once
+    // per identification. Screens that need the state itself subscribe to
+    // lobby:update / game:update, which the server sends alongside; this handler
+    // owns the *session* consequences - what is cached, and what is persisted.
+    this.socket.on('session:restore', (data) => {
+      this._handleSessionRestore(data);
+    });
+
+    this.socket.on('connected', (data) => {
+      console.log('Player connected:', data.playerId);
+      this.playerId = data.playerId;
+      // `session:restore` is sent just *before* this, so on a first connect it
+      // arrives with no player id to file the session under. This is the first
+      // moment there is one.
+      if (this.lastSession?.lobby) {
+        this._rememberSession(this.lastSession.lobby);
+      }
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('Connection error:', error?.message || error);
+    });
+
+    // A temporary drop must not touch the saved session: the whole point of it
+    // is to survive exactly this.
+    this.socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      this.isConnected = false;
+    });
+
+    // Entering a lobby is what creates a session worth surviving a cold start.
+    // Recorded here, once, rather than in the create/join screens, so there is a
+    // single place that decides what "being in a game" means.
+    const remember = (data) => this._rememberSession(data?.lobby);
+    this.socket.on('lobby:created', remember);
+    this.socket.on('lobby:joined', remember);
+
+    // Being kicked is permanent - there is nothing left to come back to.
+    this.socket.on('lobby:kicked', () => {
+      void this.clearSavedSession();
+    });
+
+    this.socket.on('error', (data) => {
+      console.error('Socket error:', data.message);
+      this._emitToListeners('error', data);
     });
   }
 
   /**
+   * Files a lobby as the session to come back to after a cold start.
+   *
+   * A no-op until the server has issued a player id - the record is keyed on it,
+   * and guessing would file the session under the wrong player. The `connected`
+   * handler retries once the id arrives.
+   */
+  _rememberSession(lobby) {
+    if (!lobby || !this.playerId) {
+      return;
+    }
+    void saveSession({
+      playerId: this.playerId,
+      playerName: this.playerName,
+      lobbyCode: lobby.code,
+      lobbyId: lobby.id,
+    });
+  }
+
+  /** Identifies this connection to the server. */
+  _identify() {
+    this.socket.emit('player:connect', {
+      name: this.playerName,
+      clientId: this.clientId,
+      playerId: this.playerId || undefined,
+    });
+  }
+
+  /**
+   * Applies a `session:restore` answer: caches it, keeps the persisted pointer
+   * in step, and hands it to whoever is waiting (cold-start restore).
+   */
+  _handleSessionRestore(data) {
+    const restored = data?.restored === true && !!data?.lobby;
+
+    if (restored) {
+      console.log(
+        `[Session] Session restored: lobby ${data.lobby.code}` +
+          (data.gameState ? ` (in game, ${data.gameState.status})` : '')
+      );
+      this.lastSession = data;
+      // Refresh the pointer on every restore, so a lobby joined on one launch is
+      // still the one we ask for on the next.
+      this._rememberSession(data.lobby);
+    } else {
+      this.lastSession = null;
+      if (data?.reason === 'SESSION_NOT_FOUND') {
+        // Authoritative: the game finished, the lobby went, or we were removed.
+        console.log('[Session] No active session');
+        void this.clearSavedSession();
+      } else {
+        // RESTORE_FAILED, or a payload we do not understand. The session may
+        // still be perfectly good, so it is deliberately left alone.
+        console.log('[Session] Session could not be restored:', data?.reason || 'UNKNOWN');
+      }
+    }
+
+    for (const callback of [...this.sessionListeners]) {
+      try {
+        callback(data);
+      } catch (error) {
+        console.log('[Session] Restore listener failed:', error?.message);
+      }
+    }
+  }
+
+  /**
+   * Subscribes to the server's session answer. Returns an unsubscribe function.
+   * Safe to call before connect() - these listeners outlive any one socket.
+   */
+  onSession(callback) {
+    this.sessionListeners.add(callback);
+    return () => this.sessionListeners.delete(callback);
+  }
+
+  /** Forgets the persisted session pointer (and the cached payload with it). */
+  async clearSavedSession() {
+    this.lastSession = null;
+    await clearSession();
+  }
+
+  /**
    * Disconnects from the server.
+   *
+   * Closing the socket is not leaving a game, so the saved session survives -
+   * use leaveLobby()/leaveCurrentSession() for a deliberate exit.
    */
   disconnect() {
     if (this.socket) {
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
       this.playerId = null;
       this.isConnected = false;
+      this.connectPromise = null;
     }
   }
 
@@ -213,11 +377,16 @@ class SocketService {
 
   /**
    * Leaves the current lobby.
+   *
+   * This is the deliberate exit - Leave Lobby / Leave Game - so the saved
+   * session goes with it. Reopening the app afterwards must land on Home, not
+   * back in the game they chose to walk out of.
    */
   leaveLobby() {
     if (this.socket?.connected) {
       this.socket.emit('lobby:leave');
     }
+    void this.clearSavedSession();
   }
 
   /**
@@ -231,7 +400,7 @@ class SocketService {
       if (this.socket?.connected) {
         this.socket.emit('lobby:leave');
       }
-      this.lastSession = null;
+      void this.clearSavedSession();
       setTimeout(resolve, 600);
     });
   }
