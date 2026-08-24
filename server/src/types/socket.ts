@@ -55,6 +55,24 @@ export interface ServerToClientEvents {
   'lobby:player-joined': (data: { player: { id: string; name: string }; lobby: LobbyState }) => void;
   'lobby:player-left': (data: { playerId: string; lobby: LobbyState }) => void;
 
+  // A waiting-lobby player dropped out and is inside their reconnect grace
+  // period. Their seat is still theirs: show them as reconnecting, do not
+  // remove the card. `reconnectDeadline` is an ISO timestamp.
+  'lobby:player-disconnected': (data: {
+    playerId: string;
+    playerName: string;
+    reconnectDeadline: string;
+    lobby: LobbyState;
+  }) => void;
+  // The same player is back on a new socket with their original seat. This is
+  // deliberately NOT `lobby:player-joined` - a reconnect is not a new join, and
+  // must not replay join feedback such as sounds.
+  'lobby:player-reconnected': (data: {
+    playerId: string;
+    playerName: string;
+    lobby: LobbyState;
+  }) => void;
+
   // Game events
   'game:started': (data: { gameState: ClientGameState }) => void;
   'game:update': (data: { gameState: ClientGameState }) => void;

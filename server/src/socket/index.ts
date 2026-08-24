@@ -12,7 +12,8 @@ import { playerService } from '../services/player.service';
 import { lobbyService } from '../services/lobby.service';
 import { gameService } from '../services/game.service';
 import { botService } from '../services/bot.service';
-import { registerLobbyEvents, handleLobbyDisconnect } from './lobby.events';
+import { lobbyReconnectService } from '../services/lobbyReconnect.service';
+import { registerLobbyEvents, handleLobbyDisconnect, attachLobbyReconnect } from './lobby.events';
 import { registerGameEvents, handleGameDisconnect } from './game.events';
 import { registerScoreboardEvents } from './scoreboard.events';
 import { getCorsOrigin } from '../utils/corsOrigin';
@@ -42,6 +43,10 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
       transports: ['websocket', 'polling'],
     }
   );
+
+  // Give the waiting-room grace period its socket-backed effects. Done once
+  // here, not per connection, so hooks and timers cannot accumulate.
+  attachLobbyReconnect(io);
 
   // Connection handler
   io.on('connection', async (socket: TypedSocket) => {
@@ -148,6 +153,11 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
  * pushes the current lobby/game state so the client can resume where it left
  * off after a disconnect, app background, or WiFi<->mobile-data switch.
  *
+ * This is also where a waiting-room disconnect grace period is cancelled: the
+ * player is identified by the playerId their stable clientId resolved to, so
+ * they get *their* existing seat back rather than a new one, and the pending
+ * removal is dropped before it can fire.
+ *
  * Returns true when an existing session was restored.
  */
 async function restoreSession(socket: TypedSocket): Promise<boolean> {
@@ -156,14 +166,20 @@ async function restoreSession(socket: TypedSocket): Promise<boolean> {
   }
 
   try {
-    const lobby = await lobbyService.getPlayerLobby(socket.data.playerId);
-    if (!lobby) {
+    const found = await lobbyService.getPlayerLobby(socket.data.playerId);
+    if (!found) {
       return false;
     }
 
-    // Re-join the room so future broadcasts reach this socket again.
-    socket.data.lobbyId = lobby.id;
-    void socket.join(`lobby:${lobby.code}`);
+    // Re-join the room so future broadcasts reach this socket again - and so
+    // the reconnect service can see that this player is live again.
+    socket.data.lobbyId = found.id;
+    void socket.join(`lobby:${found.code}`);
+
+    // Reclaim a held seat, if this player had one. Returns the refreshed lobby
+    // (and has already told the room); null means there was nothing to reclaim,
+    // which is the normal case for a first connect.
+    const lobby = (await lobbyReconnectService.restorePlayer(found, socket.data.playerId)) ?? found;
 
     let clientState = null;
     if (lobby.status === 'IN_GAME') {
@@ -180,7 +196,8 @@ async function restoreSession(socket: TypedSocket): Promise<boolean> {
     );
 
     // Tell the client what to resume, and also refresh any already-mounted
-    // screens that listen for the standard update events.
+    // screens that listen for the standard update events. Deliberately never a
+    // join event: a reconnect is not a new join, so no join feedback replays.
     socket.emit('session:restore', { lobby, gameState: clientState });
     socket.emit('lobby:update', { lobby });
     if (clientState) {

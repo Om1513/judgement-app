@@ -14,6 +14,7 @@ import { io as createClient, Socket as ClientSocket } from 'socket.io-client';
 
 import app from '../../app';
 import { initializeSocket } from '../../socket';
+import { lobbyReconnectService } from '../../services/lobbyReconnect.service';
 
 export interface Harness {
   url: string;
@@ -31,6 +32,9 @@ export async function startTestServer(): Promise<Harness> {
   return {
     url: `http://127.0.0.1:${port}`,
     async close() {
+      // Any lobby seat still being held open belongs to this server; drop the
+      // timers so they cannot fire into a truncated database later.
+      lobbyReconnectService.cancelAll();
       await io.close();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     },
@@ -58,6 +62,8 @@ const OBSERVED_EVENTS = [
   'lobby:kicked',
   'lobby:player-joined',
   'lobby:player-left',
+  'lobby:player-disconnected',
+  'lobby:player-reconnected',
   'game:started',
   'game:update',
   'game:error',

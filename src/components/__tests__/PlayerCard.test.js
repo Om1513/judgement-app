@@ -42,6 +42,55 @@ describe("PlayerCard", () => {
   });
 });
 
+describe("a player who has dropped out", () => {
+  const away = { ...human, connected: false };
+
+  it("is still shown, with the same name and avatar", () => {
+    render(<PlayerCard player={away} />);
+
+    expect(screen.getByText("Riya")).toBeTruthy();
+    expect(screen.getByText("R")).toBeTruthy();
+  });
+
+  it("is labelled as reconnecting", () => {
+    render(<PlayerCard player={away} />);
+    expect(screen.getByText("RECONNECTING...")).toBeTruthy();
+  });
+
+  it("is not labelled while connected", () => {
+    render(<PlayerCard player={{ ...human, connected: true }} />);
+    expect(screen.queryByText("RECONNECTING...")).toBeNull();
+  });
+
+  it("is not labelled when the caller does not track presence", () => {
+    render(<PlayerCard player={human} />);
+    expect(screen.queryByText("RECONNECTING...")).toBeNull();
+  });
+
+  it("keeps the host badge, so the seat still reads as the host's", () => {
+    render(<PlayerCard player={{ ...host, connected: false }} />);
+
+    expect(screen.getByText("HOST")).toBeTruthy();
+    expect(screen.getByText("RECONNECTING...")).toBeTruthy();
+  });
+
+  it("can still be removed by the host", () => {
+    const onRemove = jest.fn();
+    render(<PlayerCard player={away} canRemove onRemove={onRemove} />);
+
+    fireEvent.press(screen.getByText("X"));
+
+    expect(onRemove).toHaveBeenCalledWith(away);
+  });
+
+  it("never applies to a bot, which has no connection to lose", () => {
+    render(<PlayerCard player={{ ...bot, connected: false }} />);
+
+    expect(screen.queryByText("RECONNECTING...")).toBeNull();
+    expect(screen.getByText("BOT")).toBeTruthy();
+  });
+});
+
 describe("the remove control", () => {
   it("is hidden when the viewer cannot remove anyone", () => {
     render(<PlayerCard player={human} canRemove={false} onRemove={() => {}} />);

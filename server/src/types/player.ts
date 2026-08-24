@@ -33,6 +33,39 @@ export interface LobbyPlayer {
   isBot: boolean;
   seatPosition: number;
   joinedAt: Date;
+  /**
+   * Waiting-room presence. False means they dropped out of a WAITING lobby and
+   * are inside their reconnect grace period - they still hold this seat, so
+   * clients show them as "Reconnecting..." rather than removing the card.
+   *
+   * Only tracked before the game starts: an in-progress game leaves this true
+   * and handles absence its own way (see handleGameDisconnect). Bots are always
+   * connected - they have no socket to lose.
+   */
+  connected: boolean;
+  /** When the current disconnect started; null while connected. */
+  disconnectedAt: Date | null;
+  /** When the held seat is given up if they have not returned; null while connected. */
+  reconnectDeadline: Date | null;
+}
+
+/** A lobby membership row's disconnect bookkeeping, read fresh for race checks. */
+export interface LobbyMembership {
+  lobbyId: string;
+  lobbyCode: string;
+  lobbyStatus: 'WAITING' | 'IN_GAME' | 'COMPLETED';
+  playerId: string;
+  isBot: boolean;
+  isHost: boolean;
+  connected: boolean;
+  disconnectedAt: Date | null;
+  reconnectDeadline: Date | null;
+  /**
+   * Bumped on every connect/disconnect transition. A removal timer captures the
+   * value it was scheduled against; a mismatch means the player has since
+   * reconnected (or dropped again) and the timer is stale.
+   */
+  disconnectGeneration: number;
 }
 
 // Player state in a game context

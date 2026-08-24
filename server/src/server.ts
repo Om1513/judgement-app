@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import app from './app';
 import { connectDB, disconnectDB, getDB } from './db/connection';
 import { initializeSocket } from './socket';
+import { lobbyReconnectService } from './services/lobbyReconnect.service';
 
 const PORT = process.env.PORT || 3001;
 
@@ -41,6 +42,12 @@ async function main(): Promise<void> {
     // Initialize Socket.IO
     initializeSocket(httpServer);
 
+    // Lobby seats held open for a reconnecting player have their deadline in the
+    // database, not just in a setTimeout, so a restart can pick the countdown
+    // back up instead of holding those seats forever. Deadlines that already
+    // passed while the process was down are settled immediately.
+    await lobbyReconnectService.recoverPendingGracePeriods();
+
     // Start server
     httpServer.listen(PORT, () => {
       console.log(`
@@ -60,6 +67,10 @@ async function main(): Promise<void> {
     // Graceful shutdown
     const shutdown = async (signal: string): Promise<void> => {
       console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+
+      // Pending grace periods are persisted, so dropping their in-memory timers
+      // loses nothing - the next boot resumes them from reconnectDeadline.
+      lobbyReconnectService.cancelAll();
 
       httpServer.close(async () => {
         console.log('HTTP server closed');

@@ -103,9 +103,26 @@ export function validatePlayerName(name: string): { valid: boolean; sanitized: s
 }
 
 /**
- * Checks if a lobby can start the game.
+ * The error surfaced when the host tries to deal while someone is mid-reconnect.
+ * Exported so tests and the client can match on it exactly.
  */
-export function canStartGame(playerCount: number, status: LobbyStatus): { canStart: boolean; reason?: string } {
+export const RECONNECT_PENDING_REASON =
+  'Waiting for all players to reconnect before starting the game.';
+
+/**
+ * Checks if a lobby can start the game.
+ *
+ * `disconnectedHumanCount` is how many human players are currently inside their
+ * disconnect grace period. Dealing a hand to someone who is not actually at the
+ * table strands their cards for the whole round, so the game waits for them to
+ * come back (or for their grace period to expire and free the seat) instead.
+ * Bots are never counted - they have no connection to lose.
+ */
+export function canStartGame(
+  playerCount: number,
+  status: LobbyStatus,
+  disconnectedHumanCount = 0
+): { canStart: boolean; reason?: string } {
   if (status !== 'WAITING') {
     return { canStart: false, reason: 'Game has already started' };
   }
@@ -115,6 +132,10 @@ export function canStartGame(playerCount: number, status: LobbyStatus): { canSta
       canStart: false,
       reason: `Need at least ${LOBBY_CONSTRAINTS.MIN_PLAYERS} players to start`,
     };
+  }
+
+  if (disconnectedHumanCount > 0) {
+    return { canStart: false, reason: RECONNECT_PENDING_REASON };
   }
 
   return { canStart: true };

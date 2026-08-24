@@ -8,9 +8,23 @@ import {
   JoinLobbyInput,
   UpdateLobbySettingsInput,
 } from '../types/lobby';
-import { LobbyPlayer } from '../types/player';
+import { LobbyMembership, LobbyPlayer } from '../types/player';
 import { generateLobbyCode, isValidLobbyCode } from '../utils/generateLobbyCode';
 import { validateLobbySettings, canStartGame } from '../utils/validateLobby';
+
+/** The state written when a player drops out of a waiting lobby. */
+export interface DisconnectMark {
+  lobby: LobbyState;
+  /** Generation the removal timer must still match when it fires. */
+  generation: number;
+  disconnectedAt: Date;
+  reconnectDeadline: Date;
+}
+
+/** How many human players are currently holding a seat open mid-reconnect. */
+export function countDisconnectedHumans(players: LobbyPlayer[]): number {
+  return players.filter(p => !p.isBot && !p.connected).length;
+}
 
 export class LobbyService {
   /**
@@ -186,9 +200,33 @@ export class LobbyService {
   }
 
   /**
-   * Removes a player from a lobby.
+   * Removes a player from a lobby because they chose to leave.
+   *
+   * This is the *explicit* exit - pressing Leave Lobby - so it takes effect
+   * immediately and never grants a disconnect grace period. An unexpected
+   * socket drop goes through lobbyReconnectService instead, which holds the seat
+   * and only ends up here if the player never comes back.
    */
   async leaveLobby(lobbyId: string, playerId: string): Promise<LobbyState | null> {
+    return this.removePlayerFromLobby(lobbyId, playerId);
+  }
+
+  /**
+   * Frees a player's seat and settles the consequences.
+   *
+   * The single removal path, shared by an explicit leave and by a grace period
+   * expiring, so the two can never drift apart. Returns the updated lobby, or
+   * null when the lobby itself is gone (see below).
+   *
+   * When the departing player was the host:
+   *   - the earliest-joined connected human inherits it;
+   *   - failing that, the earliest-joined human still inside their own grace
+   *     period inherits it (they hold a seat, and their own timer will settle
+   *     things if they never return);
+   *   - if only bots are left the lobby is closed, because a bot cannot host,
+   *     change settings or deal, and nobody is left to watch it.
+   */
+  async removePlayerFromLobby(lobbyId: string, playerId: string): Promise<LobbyState | null> {
     const db = getDB();
 
     const lobby = await this.getLobbyById(lobbyId);
@@ -209,20 +247,28 @@ export class LobbyService {
       },
     });
 
-    // If host left, handle host transfer or lobby deletion
-    if (lobby.hostPlayerId === playerId) {
-      const remainingPlayers = lobby.players.filter(p => p.playerId !== playerId);
+    const remainingPlayers = lobby.players.filter(p => p.playerId !== playerId);
 
-      if (remainingPlayers.length === 0) {
-        // Delete empty lobby
+    if (remainingPlayers.length === 0) {
+      // Delete empty lobby
+      await db.lobby.delete({
+        where: { id: lobbyId },
+      });
+      return null;
+    }
+
+    // If host left, hand the lobby on - or close it if there is nobody to hand
+    // it to.
+    if (lobby.hostPlayerId === playerId) {
+      const newHost = this.pickNewHost(remainingPlayers);
+
+      if (!newHost) {
         await db.lobby.delete({
           where: { id: lobbyId },
         });
         return null;
       }
 
-      // Transfer host to next player
-      const newHost = remainingPlayers[0];
       await db.lobby.update({
         where: { id: lobbyId },
         data: { hostPlayerId: newHost.playerId },
@@ -240,6 +286,21 @@ export class LobbyService {
     }
 
     return this.getLobbyById(lobbyId);
+  }
+
+  /**
+   * Chooses the next host from whoever is left. Connected humans first, then
+   * humans mid-reconnect, never a bot. Null when only bots remain.
+   */
+  private pickNewHost(remaining: LobbyPlayer[]): LobbyPlayer | null {
+    const humans = [...remaining]
+      .filter(p => !p.isBot)
+      .sort(
+        (a, b) =>
+          a.joinedAt.getTime() - b.joinedAt.getTime() || a.seatPosition - b.seatPosition
+      );
+
+    return humans.find(p => p.connected) ?? humans[0] ?? null;
   }
 
   /**
@@ -275,6 +336,156 @@ export class LobbyService {
     });
 
     return (await this.getLobbyById(lobbyId))!;
+  }
+
+  // -------------------------------------------------------------------------
+  // Waiting-room connection state
+  //
+  // These are the persistence half of the disconnect grace period; the timing
+  // and race handling live in lobbyReconnect.service.ts.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Marks a waiting-lobby player as temporarily disconnected, holding their
+   * seat until `graceMs` has elapsed.
+   *
+   * Returns null - meaning "nothing to do, do not start a timer" - for a bot, a
+   * lobby that is no longer waiting, a player who is not a member, or a player
+   * already marked disconnected (their existing timer still owns the seat).
+   */
+  async markPlayerDisconnected(
+    lobbyId: string,
+    playerId: string,
+    graceMs: number
+  ): Promise<DisconnectMark | null> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+      include: { player: true, lobby: true },
+    });
+
+    if (!row || row.player.isBot || row.lobby.status !== 'WAITING' || !row.connected) {
+      return null;
+    }
+
+    const disconnectedAt = new Date();
+    const reconnectDeadline = new Date(disconnectedAt.getTime() + graceMs);
+
+    const updated = await db.lobbyPlayer.update({
+      where: { id: row.id },
+      data: {
+        connected: false,
+        disconnectedAt,
+        reconnectDeadline,
+        // Every transition gets its own generation, so the timer scheduled
+        // against this disconnect can recognise itself as stale later.
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    const lobby = await this.getLobbyById(lobbyId);
+    if (!lobby) {
+      return null;
+    }
+
+    return {
+      lobby,
+      generation: updated.disconnectGeneration,
+      disconnectedAt,
+      reconnectDeadline,
+    };
+  }
+
+  /**
+   * Marks a player connected again, clearing their reconnect deadline.
+   *
+   * `changed` is false when they were already connected, which is the common
+   * case for a first-time connect and makes a duplicate "reconnected" broadcast
+   * easy to suppress.
+   */
+  async markPlayerConnected(
+    lobbyId: string,
+    playerId: string
+  ): Promise<{ lobby: LobbyState | null; changed: boolean }> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+    });
+
+    if (!row) {
+      return { lobby: null, changed: false };
+    }
+
+    if (row.connected) {
+      return { lobby: await this.getLobbyById(lobbyId), changed: false };
+    }
+
+    await db.lobbyPlayer.update({
+      where: { id: row.id },
+      data: {
+        connected: true,
+        disconnectedAt: null,
+        reconnectDeadline: null,
+        // Bumping here too invalidates the pending removal timer even if it
+        // has already fired and is waiting on this very read.
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), changed: true };
+  }
+
+  /**
+   * Reads a membership row fresh from the database, for the checks a removal
+   * timer must make before it is allowed to evict anyone.
+   */
+  async getMembership(lobbyId: string, playerId: string): Promise<LobbyMembership | null> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+      include: { player: true, lobby: true },
+    });
+
+    return row ? this.toMembership(row) : null;
+  }
+
+  /**
+   * Every held-open seat across all waiting lobbies, with the deadline it is
+   * held until. Used on boot to resume (or immediately settle) grace periods
+   * whose in-memory timers died with the previous process.
+   */
+  async getPendingReconnects(): Promise<LobbyMembership[]> {
+    const db = getDB();
+
+    const rows = await db.lobbyPlayer.findMany({
+      where: {
+        connected: false,
+        lobby: { status: 'WAITING' },
+        player: { isBot: false },
+      },
+      include: { player: true, lobby: true },
+      orderBy: { reconnectDeadline: 'asc' },
+    });
+
+    return rows.map(row => this.toMembership(row));
+  }
+
+  private toMembership(row: any): LobbyMembership {
+    return {
+      lobbyId: row.lobbyId,
+      lobbyCode: row.lobby.code,
+      lobbyStatus: row.lobby.status,
+      playerId: row.playerId,
+      isBot: row.player.isBot || false,
+      isHost: row.isHost,
+      connected: row.connected,
+      disconnectedAt: row.disconnectedAt,
+      reconnectDeadline: row.reconnectDeadline,
+      disconnectGeneration: row.disconnectGeneration,
+    };
   }
 
   /**
@@ -336,7 +547,11 @@ export class LobbyService {
       throw new Error('Only the host can start the game');
     }
 
-    const startCheck = canStartGame(lobby.playerCount, lobby.status);
+    const startCheck = canStartGame(
+      lobby.playerCount,
+      lobby.status,
+      countDisconnectedHumans(lobby.players)
+    );
     if (!startCheck.canStart) {
       throw new Error(startCheck.reason || 'Cannot start game');
     }
@@ -402,18 +617,32 @@ export class LobbyService {
    */
   private toLobbyState(lobby: any): LobbyState {
     const settings = lobby.settings as LobbySettings;
-    const players: LobbyPlayer[] = lobby.lobbyPlayers.map((lp: any) => ({
-      id: lp.id,
-      playerId: lp.playerId,
-      name: lp.player.name,
-      isHost: lp.isHost,
-      isBot: lp.player.isBot || false,
-      seatPosition: lp.seatPosition,
-      joinedAt: lp.joinedAt,
-    }));
+    const players: LobbyPlayer[] = lobby.lobbyPlayers.map((lp: any) => {
+      const isBot = lp.player.isBot || false;
+      return {
+        id: lp.id,
+        playerId: lp.playerId,
+        name: lp.player.name,
+        isHost: lp.isHost,
+        isBot,
+        seatPosition: lp.seatPosition,
+        joinedAt: lp.joinedAt,
+        // A bot has no socket, so it can never be "reconnecting" - report it as
+        // present regardless of what the column happens to hold.
+        connected: isBot ? true : lp.connected,
+        disconnectedAt: isBot ? null : lp.disconnectedAt ?? null,
+        reconnectDeadline: isBot ? null : lp.reconnectDeadline ?? null,
+      };
+    });
 
     const playerCount = players.length;
-    const startCheck = canStartGame(playerCount, lobby.status);
+    // A held-open seat still counts towards the lobby's size (so a ninth player
+    // cannot steal it) but blocks the deal until its owner is back.
+    const startCheck = canStartGame(
+      playerCount,
+      lobby.status,
+      countDisconnectedHumans(players)
+    );
 
     return {
       id: lobby.id,

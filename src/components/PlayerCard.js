@@ -19,6 +19,10 @@ export default function PlayerCard({
   const { s: scale } = useResponsive();
   const isCompact = size === "compact";
   const isBot = player.isBot || false;
+  // The seat is still theirs - they dropped out and the server is holding it
+  // open for them. Undefined means a caller that does not track presence, which
+  // reads as connected. Bots have no connection to lose.
+  const isReconnecting = !isBot && player.connected === false;
 
   // Get avatar colors based on player type
   const getAvatarColors = () => {
@@ -28,7 +32,15 @@ export default function PlayerCard({
   };
 
   return (
-    <View style={[styles.container, isCompact && styles.containerCompact]}>
+    <View
+      style={[
+        styles.container,
+        isCompact && styles.containerCompact,
+        // Muted, not removed: the avatar, name and seat all stay exactly where
+        // they were so the table does not reshuffle around a brief dropout.
+        isReconnecting && styles.containerReconnecting,
+      ]}
+    >
       <LinearGradient
         colors={["rgba(61, 34, 114, 0.8)", "rgba(42, 22, 84, 0.9)"]}
         style={[styles.card, isCompact && styles.cardCompact]}
@@ -80,6 +92,20 @@ export default function PlayerCard({
               </LinearGradient>
             </View>
           )}
+
+          {/* Reconnecting badge - deliberately muted, so a dropout reads as a
+              temporary state rather than an alarm. Same badge geometry as HOST
+              and BOT, so it sits in the existing rhythm of the card. */}
+          {isReconnecting && (
+            <View style={styles.reconnectingBadge}>
+              <LinearGradient
+                colors={["#6B6480", "#4A4560"]}
+                style={styles.reconnectingBadgeGradient}
+              >
+                <Text style={styles.reconnectingBadgeText}>RECONNECTING...</Text>
+              </LinearGradient>
+            </View>
+          )}
         </View>
 
         {/* Remove button - only for host viewing non-host players */}
@@ -118,6 +144,11 @@ const rawStyles = {
   },
   containerCompact: {
     margin: 5,
+  },
+  // Enough to read as "away" across the table, not so much that the name
+  // becomes hard to read.
+  containerReconnecting: {
+    opacity: 0.55,
   },
   card: {
     flexDirection: "row",
@@ -222,6 +253,23 @@ const rawStyles = {
     fontFamily: "Bangers_400Regular",
     color: "#FFFFFF",
     letterSpacing: 1,
+  },
+  reconnectingBadge: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+  },
+  reconnectingBadgeGradient: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  // A notch tighter than the other badges: the word is much longer than HOST or
+  // BOT and has to stay inside the card's fixed maximum width.
+  reconnectingBadgeText: {
+    fontSize: 9,
+    fontFamily: "Bangers_400Regular",
+    color: "#EFEAFF",
+    letterSpacing: 0.5,
   },
   removeButton: {
     marginLeft: 8,

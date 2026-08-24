@@ -27,6 +27,20 @@ import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
 // Four players per row, whatever the lobby size.
 const PLAYERS_PER_ROW = 4;
 
+// Server lobby player -> the shape the cards render from. `connected` is false
+// only while the server is holding that seat open for a player who dropped out;
+// an older server that does not send the field reads as connected.
+function toLobbyPlayer(p) {
+  return {
+    id: p.playerId,
+    name: p.name,
+    isHost: p.isHost,
+    isBot: p.isBot || false,
+    connected: p.connected !== false,
+    joinedAt: new Date(p.joinedAt).getTime(),
+  };
+}
+
 export default function LobbyScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
   const r = useResponsive();
@@ -60,15 +74,18 @@ export default function LobbyScreen({ navigation, route }) {
   // Initialize players from initial data or fallback to host
   const [players, setPlayers] = useState(() => {
     if (initialPlayers && initialPlayers.length > 0) {
-      return initialPlayers.map(p => ({
-        id: p.playerId,
-        name: p.name,
-        isHost: p.isHost,
-        isBot: p.isBot || false,
-        joinedAt: new Date(p.joinedAt).getTime(),
-      }));
+      return initialPlayers.map(toLobbyPlayer);
     }
-    return [{ id: hostId, name: hostName, isHost: true, isBot: false, joinedAt: Date.now() }];
+    return [
+      {
+        id: hostId,
+        name: hostName,
+        isHost: true,
+        isBot: false,
+        connected: true,
+        joinedAt: Date.now(),
+      },
+    ];
   });
 
   const [currentHostId, setCurrentHostId] = useState(hostId);
@@ -80,7 +97,11 @@ export default function LobbyScreen({ navigation, route }) {
     Bangers_400Regular,
   });
 
-  const canStartGame = players.length >= 2; // Changed to 2 for testing
+  // Dealing to somebody who is not actually at the table would strand their
+  // cards for the whole round, so the start waits for them. The server enforces
+  // the same rule - this only keeps the button honest. Bots never count.
+  const waitingForReconnect = players.some((p) => !p.isBot && !p.connected);
+  const canStartGame = players.length >= 2 && !waitingForReconnect; // Changed to 2 for testing
   const isCurrentUserHost = currentPlayerId === currentHostId;
 
   // Handle socket events for real-time updates
@@ -90,14 +111,9 @@ export default function LobbyScreen({ navigation, route }) {
       console.log('Lobby update:', data.lobby);
       const lobby = data.lobby;
 
-      // Update players list
-      setPlayers(lobby.players.map(p => ({
-        id: p.playerId,
-        name: p.name,
-        isHost: p.isHost,
-        isBot: p.isBot || false,
-        joinedAt: new Date(p.joinedAt).getTime(),
-      })));
+      // Update players list. A player mid-reconnect is still in here, holding
+      // their seat - the card stays put and simply shows as reconnecting.
+      setPlayers(lobby.players.map(toLobbyPlayer));
 
       // Update host if changed
       setCurrentHostId(lobby.hostPlayerId);
@@ -424,7 +440,9 @@ export default function LobbyScreen({ navigation, route }) {
                 <View style={styles.minPlayersSlot}>
                   {isCurrentUserHost && !canStartGame && (
                     <Text style={styles.minPlayersText}>
-                      Need at least 2 players to start
+                      {waitingForReconnect
+                        ? "Waiting for players to reconnect..."
+                        : "Need at least 2 players to start"}
                     </Text>
                   )}
                 </View>

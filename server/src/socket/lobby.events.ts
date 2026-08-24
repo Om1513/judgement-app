@@ -9,11 +9,68 @@ import {
   SocketErrorCodes,
 } from '../types/socket';
 import { lobbyService } from '../services/lobby.service';
+import { lobbyReconnectService } from '../services/lobbyReconnect.service';
 import { gameService } from '../services/game.service';
 import { botService } from '../services/bot.service';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+
+/**
+ * Gives the lobby reconnect service its Socket.IO-backed effects: how to tell
+ * whether a player is really still connected, and how to tell the room about a
+ * seat being held, reclaimed or given up.
+ *
+ * Called once per server from initializeSocket, so listeners and hooks cannot
+ * accumulate per connection.
+ */
+export function attachLobbyReconnect(io: TypedServer): void {
+  lobbyReconnectService.attach({
+    async hasLiveSocket(lobbyCode, playerId, excludeSocketId) {
+      const sockets = await io.in(`lobby:${lobbyCode}`).fetchSockets();
+      return sockets.some(s => s.data.playerId === playerId && s.id !== excludeSocketId);
+    },
+
+    onDisconnected(lobby, player, reconnectDeadline) {
+      console.log(
+        `Player ${player.name} dropped out of lobby ${lobby.code}; ` +
+          `holding their seat until ${reconnectDeadline.toISOString()}`
+      );
+
+      io.to(`lobby:${lobby.code}`).emit('lobby:player-disconnected', {
+        playerId: player.playerId,
+        playerName: player.name,
+        reconnectDeadline: reconnectDeadline.toISOString(),
+        lobby,
+      });
+      io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
+    },
+
+    onReconnected(lobby, player) {
+      console.log(`Player ${player.name} reclaimed their seat in lobby ${lobby.code}`);
+
+      io.to(`lobby:${lobby.code}`).emit('lobby:player-reconnected', {
+        playerId: player.playerId,
+        playerName: player.name,
+        lobby,
+      });
+      io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
+    },
+
+    onExpired(lobbyCode, playerId, lobby) {
+      console.log(`Grace period expired for ${playerId} in lobby ${lobbyCode}`);
+
+      // A null lobby means it was closed along with the seat, so there is
+      // nobody left in the room to tell.
+      if (!lobby) {
+        return;
+      }
+
+      io.to(`lobby:${lobbyCode}`).emit('lobby:player-left', { playerId, lobby });
+      io.to(`lobby:${lobbyCode}`).emit('lobby:update', { lobby });
+    },
+  });
+}
 
 /**
  * Registers lobby-related socket event handlers.
@@ -86,9 +143,37 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
         return;
       }
 
+      const requestedCode = code.toUpperCase();
+
       // Check if player is already in a lobby
       const existingLobby = await lobbyService.getPlayerLobby(socket.data.playerId);
       if (existingLobby) {
+        // Re-entering the lobby they already hold a seat in - a player who
+        // dropped out and is punching the code back in rather than letting the
+        // automatic reconnect finish. Identity here is the playerId resolved
+        // from their stable clientId, never their name, so two players with
+        // similar names cannot claim each other's seat. Give them their own seat
+        // back instead of an error.
+        if (existingLobby.code === requestedCode && existingLobby.status === 'WAITING') {
+          socket.data.lobbyId = existingLobby.id;
+          void socket.join(`lobby:${existingLobby.code}`);
+
+          const restored = await lobbyReconnectService.restorePlayer(
+            existingLobby,
+            socket.data.playerId
+          );
+          const lobby = restored ?? existingLobby;
+
+          console.log(`Player ${socket.data.playerName} rejoined lobby ${lobby.code} by code`);
+
+          socket.emit('lobby:joined', { lobby });
+          // restorePlayer already broadcast the change when there was one.
+          if (!restored) {
+            io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
+          }
+          return;
+        }
+
         socket.emit('lobby:error', {
           message: 'Already in a lobby. Leave first to join another.',
           code: SocketErrorCodes.ALREADY_IN_LOBBY,
@@ -97,7 +182,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       }
 
       // Find the lobby
-      const lobbyBefore = await lobbyService.getLobbyByCode(code.toUpperCase());
+      const lobbyBefore = await lobbyService.getLobbyByCode(requestedCode);
       if (!lobbyBefore) {
         socket.emit('lobby:error', {
           message: 'Lobby not found. Check the code and try again.',
@@ -108,7 +193,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
 
       // Join the lobby
       const lobby = await lobbyService.joinLobby({
-        code: code.toUpperCase(),
+        code: requestedCode,
         playerId: socket.data.playerId,
         playerName: playerName || socket.data.playerName,
       });
@@ -161,12 +246,14 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       }
 
       const lobbyCode = lobby.code;
+      const lobbyId = socket.data.lobbyId;
+
+      // Pressing Leave Lobby is deliberate, so it takes effect now: no grace
+      // period, and any timer left over from an earlier drop is dropped with it.
+      lobbyReconnectService.cancelGracePeriod(lobbyId, socket.data.playerId);
 
       // Leave the lobby
-      const updatedLobby = await lobbyService.leaveLobby(
-        socket.data.lobbyId,
-        socket.data.playerId
-      );
+      const updatedLobby = await lobbyService.leaveLobby(lobbyId, socket.data.playerId);
 
       // Leave the Socket.IO room
       void socket.leave(`lobby:${lobbyCode}`);
@@ -184,6 +271,9 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
           lobby: updatedLobby,
         });
         io.to(`lobby:${lobbyCode}`).emit('lobby:update', { lobby: updatedLobby });
+      } else {
+        // The lobby went with them - nothing left to hold a seat in.
+        lobbyReconnectService.cancelLobby(lobbyId);
       }
     } catch (error) {
       console.error('Error leaving lobby:', error);
@@ -214,6 +304,13 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
         socket.data.playerId,
         targetPlayerId
       );
+
+      // A kick is immediate and final. Dropping the target's grace-period timer
+      // stops it lingering, and because their membership row is now gone they
+      // have nothing to reclaim if they do reconnect - restoreSession finds no
+      // lobby for them and restores nothing. Done only once the kick has
+      // actually succeeded, so a rejected kick cannot strand a held seat.
+      lobbyReconnectService.cancelGracePeriod(socket.data.lobbyId, targetPlayerId);
 
       console.log(`Host ${socket.data.playerName} kicked player ${targetPlayerId} from lobby ${lobby.code}`);
 
@@ -332,11 +429,17 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
         return;
       }
 
-      // Start the game
+      // Start the game. This refuses while any human is inside a disconnect
+      // grace period - dealing a hand to somebody who is not at the table would
+      // strand their cards for the whole round.
       const { lobby, gameId } = await lobbyService.startGame(
         socket.data.lobbyId,
         socket.data.playerId
       );
+
+      // Waiting-room grace periods end here: from now on a disconnect is an
+      // in-game disconnect, and no lobby timer may remove a seated player.
+      lobbyReconnectService.cancelLobby(lobby.id);
 
       // Initialize game state
       await gameService.initializeGame(gameId, lobby.id);
@@ -373,10 +476,23 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
 }
 
 /**
- * Handles player disconnection from lobby.
+ * Handles an unexpected socket drop from a lobby.
+ *
+ * Nobody is removed here. A player sitting in a waiting lobby keeps their seat -
+ * name, position, host status and all - for the grace period, and is shown to
+ * the rest of the room as reconnecting; lobbyReconnectService removes them only
+ * if they never come back. An explicit Leave Lobby does not come through this
+ * path, so it stays immediate.
+ *
+ * A game already in progress is untouched, exactly as before: the player stays
+ * seated and handleGameDisconnect deals with it.
+ *
+ * Note this handler is registered once per socket by initializeSocket, and the
+ * broadcast side lives in the hooks installed by attachLobbyReconnect, so
+ * nothing here accumulates listeners.
  */
 export async function handleLobbyDisconnect(
-  io: TypedServer,
+  _io: TypedServer,
   socket: TypedSocket
 ): Promise<void> {
   if (!socket.data.lobbyId || !socket.data.playerId) {
@@ -385,27 +501,13 @@ export async function handleLobbyDisconnect(
 
   try {
     const lobby = await lobbyService.getLobbyById(socket.data.lobbyId);
-    if (!lobby) {
+    if (!lobby || lobby.status !== 'WAITING') {
       return;
     }
 
-    // Only remove from lobby if game hasn't started
-    if (lobby.status === 'WAITING') {
-      const updatedLobby = await lobbyService.leaveLobby(
-        socket.data.lobbyId,
-        socket.data.playerId
-      );
-
-      if (updatedLobby) {
-        io.to(`lobby:${lobby.code}`).emit('lobby:player-left', {
-          playerId: socket.data.playerId,
-          lobby: updatedLobby,
-        });
-        io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby: updatedLobby });
-      }
-    }
-    // If game is in progress, player stays in game but disconnected
-    // Could implement reconnection logic here
+    // Passing this socket's id lets the service ignore a disconnect that arrives
+    // late for a connection the player has already replaced.
+    await lobbyReconnectService.startGracePeriod(lobby, socket.data.playerId, socket.id);
   } catch (error) {
     console.error('Error handling lobby disconnect:', error);
   }

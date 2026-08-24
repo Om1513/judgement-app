@@ -13,6 +13,11 @@ The codebase has already been prepared for this:
   switches via a stable `clientId` — `server/prisma/schema.prisma`,
   `server/src/services/player.service.ts`, `server/src/socket/index.ts`,
   `src/services/socket.js`
+- **Waiting-lobby drops get a grace period**: a pre-game disconnect holds the
+  seat (name, position, host status) for `LOBBY_DISCONNECT_GRACE_MS` (30s) and
+  shows the player as reconnecting, instead of removing them —
+  `server/src/config/constants.ts`,
+  `server/src/services/lobbyReconnect.service.ts`
 - Container + platform configs: `server/Dockerfile`, `server/railway.json`,
   `render.yaml`, `eas.json`
 
@@ -110,6 +115,15 @@ socket → same player, game state restored). To see it in the app: start a game
 toggle the phone between WiFi and mobile data; the socket reconnects, the server
 re-emits your hand and the current turn, and play continues.
 
+The same holds **before** the game starts. Drop a player from a waiting lobby and
+their card stays put, dimmed and marked `RECONNECTING...`; the seat is theirs for
+30 seconds (`LOBBY_DISCONNECT_GRACE_MS`), the lobby still counts as that size so
+nobody can take the slot, and the host cannot deal until they are back. Miss the
+window and they are removed normally — with the lobby handed to the
+earliest-joined remaining human if the leaver was the host. Deadlines are stored
+on `LobbyPlayer.reconnectDeadline`, so a server restart resumes them rather than
+holding seats forever.
+
 ## 6. Performance / latency
 
 The biggest production latency lever for this app is **network round-trip
@@ -191,22 +205,19 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
 
 ## Known limitations / recommended next steps
 
-1. **Lobby (pre-game) disconnects still remove the player.** Only *in-progress
-   games* survive a disconnect. A grace period for the waiting room is a nice
-   follow-up (see `handleLobbyDisconnect` in `server/src/socket/lobby.events.ts`).
-2. **Cold-start auto-rejoin.** Mid-session reconnects restore state into the
+1. **Cold-start auto-rejoin.** Mid-session reconnects restore state into the
    already-open screen. Auto-navigating back into a game after the app is fully
    killed/reopened would use the `session:restore` event (now emitted by the
    server and cached on `socketService.lastSession`) from `HomeScreen`.
-3. **In-game disconnect UX.** A dropped player's turn currently waits on them;
+2. **In-game disconnect UX.** A dropped player's turn currently waits on them;
    consider a grace period + "disconnected" indicator or bot-takeover
    (`handleGameDisconnect` in `server/src/socket/game.events.ts`).
-4. **Schema management.** Deploy uses `prisma db push`. For audited schema
+3. **Schema management.** Deploy uses `prisma db push`. For audited schema
    history switch to `prisma migrate deploy` once the schema stabilizes.
-5. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
+4. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
    sessions, and moving the bot `setTimeout`/`actionLocks` out of process memory
    (`server/src/services/bot.service.ts`). Not needed until thousands of
    concurrent players.
-6. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
+5. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
    dep) is unused by the app — the real schema is `server/prisma/schema.prisma`.
    Safe to remove later to reduce confusion.
