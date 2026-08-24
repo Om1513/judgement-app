@@ -124,6 +124,31 @@ earliest-joined remaining human if the leaver was the host. Deadlines are stored
 on `LobbyPlayer.reconnectDeadline`, so a server restart resumes them rather than
 holding seats forever.
 
+### Cold start (app killed and reopened)
+
+Same mechanism, one launch later. The app persists only a pointer —
+`{playerId, playerName, lobbyCode, lobbyId}` under `@kachuful_session`, alongside
+the stable `@kachuful_client_id` — and on launch it connects, waits for
+`session:restore`, and navigates once to whichever screen the phase calls for
+(lobby, bidding, table, scoreboard, final scoreboard). Nothing is decided from
+the saved pointer alone: the server confirms the session and supplies the state,
+so a finished or abandoned game can never be re-entered.
+
+To see it: join a lobby or start a game, force-quit the app, reopen it. You get a
+short "Restoring game..." screen and then the game you were in, with your seat,
+host badge and own hand intact.
+
+Three outcomes, and they behave differently on purpose:
+
+| Server says | App does |
+| --- | --- |
+| `restored: true` | navigates to the restored screen |
+| `restored: false, reason: SESSION_NOT_FOUND` | clears the saved pointer, stays on Home, shows no error |
+| no answer / `RESTORE_FAILED` | stays on Home and **keeps** the pointer, so a flaky network does not lose a live game |
+
+Leaving on purpose (Leave Lobby / Leave Game / Home from the final scoreboard) or
+being kicked clears the pointer, so the next launch is an ordinary one.
+
 ## 6. Performance / latency
 
 The biggest production latency lever for this app is **network round-trip
@@ -205,19 +230,15 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
 
 ## Known limitations / recommended next steps
 
-1. **Cold-start auto-rejoin.** Mid-session reconnects restore state into the
-   already-open screen. Auto-navigating back into a game after the app is fully
-   killed/reopened would use the `session:restore` event (now emitted by the
-   server and cached on `socketService.lastSession`) from `HomeScreen`.
-2. **In-game disconnect UX.** A dropped player's turn currently waits on them;
+1. **In-game disconnect UX.** A dropped player's turn currently waits on them;
    consider a grace period + "disconnected" indicator or bot-takeover
    (`handleGameDisconnect` in `server/src/socket/game.events.ts`).
-3. **Schema management.** Deploy uses `prisma db push`. For audited schema
+2. **Schema management.** Deploy uses `prisma db push`. For audited schema
    history switch to `prisma migrate deploy` once the schema stabilizes.
-4. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
+3. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
    sessions, and moving the bot `setTimeout`/`actionLocks` out of process memory
    (`server/src/services/bot.service.ts`). Not needed until thousands of
    concurrent players.
-5. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
+4. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
    dep) is unused by the app — the real schema is `server/prisma/schema.prisma`.
    Safe to remove later to reduce confusion.

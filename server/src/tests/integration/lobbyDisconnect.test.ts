@@ -629,7 +629,15 @@ describe('a kicked player cannot reclaim their seat', () => {
     const rajAgain = await reconnect(raj);
     await flush(150);
 
-    assert.equal(countReceived(rajAgain, 'session:restore'), 0, 'no session was restored');
+    // The connection is still answered - a client that killed and reopened the
+    // app is waiting for one - but the answer is "there is nothing here".
+    const restores = rajAgain.received.filter(r => r.event === 'session:restore');
+    assert.equal(restores.length, 1, 'the connection was answered exactly once');
+    assert.deepEqual(
+      restores[0].payload,
+      { restored: false, reason: 'SESSION_NOT_FOUND', lobby: null, gameState: null },
+      'no session was restored'
+    );
     assert.equal(
       (await lobbyService.getLobbyById(lobbyId))!.playerCount,
       2,

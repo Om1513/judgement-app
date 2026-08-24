@@ -7,10 +7,12 @@ import {
   ServerToClientEvents,
   InterServerEvents,
   SocketData,
+  SessionRestorePayload,
 } from '../types/socket';
 import { playerService } from '../services/player.service';
 import { lobbyService } from '../services/lobby.service';
 import { gameService } from '../services/game.service';
+import { scoreboardService } from '../services/scoreboard.service';
 import { botService } from '../services/bot.service';
 import { lobbyReconnectService } from '../services/lobbyReconnect.service';
 import { registerLobbyEvents, handleLobbyDisconnect, attachLobbyReconnect } from './lobby.events';
@@ -98,8 +100,10 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
 
         // Restore an in-flight session (lobby / active game) for a returning
         // player, then tell them whether this was a fresh connect or a recovery.
-        const restored = await restoreSession(socket);
-        socket.emit('connected', { playerId: player.id, reconnected: restored });
+        // The session answer goes out first, so a client that is waiting for one
+        // has it in hand by the time `connected` resolves its connect() call.
+        const session = await restoreSession(socket);
+        socket.emit('connected', { playerId: player.id, reconnected: session.restored });
       } catch (error) {
         console.error('Error connecting player:', error);
         socket.emit('error', {
@@ -145,30 +149,47 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
   return io;
 }
 
+/** The answer for a connection with nothing to come back to. */
+function noSession(reason: SessionRestorePayload['reason']): SessionRestorePayload {
+  return { restored: false, reason, lobby: null, gameState: null };
+}
+
 /**
  * Restores an in-flight session for a (re)connecting socket.
  *
  * If the player is still a member of a lobby (and possibly an active game),
  * this re-attaches the socket to the lobby room, repopulates socket.data, and
  * pushes the current lobby/game state so the client can resume where it left
- * off after a disconnect, app background, or WiFi<->mobile-data switch.
+ * off after a disconnect, app background, WiFi<->mobile-data switch, or the app
+ * being killed outright and reopened.
  *
  * This is also where a waiting-room disconnect grace period is cancelled: the
  * player is identified by the playerId their stable clientId resolved to, so
  * they get *their* existing seat back rather than a new one, and the pending
  * removal is dropped before it can fire.
  *
- * Returns true when an existing session was restored.
+ * Always emits `session:restore`, including when there is nothing to restore -
+ * a cold-started client is waiting for that answer before it decides which
+ * screen to open, and silence is indistinguishable from an unreachable server.
+ * The two negative reasons are kept apart for the same purpose: only
+ * SESSION_NOT_FOUND means "forget your saved session".
+ *
+ * Returns the payload that was sent.
  */
-async function restoreSession(socket: TypedSocket): Promise<boolean> {
+async function restoreSession(socket: TypedSocket): Promise<SessionRestorePayload> {
+  const fail = (payload: SessionRestorePayload): SessionRestorePayload => {
+    socket.emit('session:restore', payload);
+    return payload;
+  };
+
   if (!socket.data.playerId) {
-    return false;
+    return fail(noSession('SESSION_NOT_FOUND'));
   }
 
   try {
     const found = await lobbyService.getPlayerLobby(socket.data.playerId);
     if (!found) {
-      return false;
+      return fail(noSession('SESSION_NOT_FOUND'));
     }
 
     // Re-join the room so future broadcasts reach this socket again - and so
@@ -182,32 +203,54 @@ async function restoreSession(socket: TypedSocket): Promise<boolean> {
     const lobby = (await lobbyReconnectService.restorePlayer(found, socket.data.playerId)) ?? found;
 
     let clientState = null;
+    let scoreboard = null;
     if (lobby.status === 'IN_GAME') {
       const game = await gameService.getGameByLobbyId(lobby.id);
       if (game) {
         socket.data.gameId = game.id;
         clientState = gameService.getClientGameState(game, socket.data.playerId);
+
+        // Between rounds the game screen is the scoreboard, and the client
+        // cannot render it from gameState alone. Fetching it here (rather than
+        // letting the client ask afterwards) is what stops a cold start landing
+        // on an empty scoreboard for a beat.
+        if (
+          game.gameState.status === 'ROUND_SCOREBOARD' ||
+          game.gameState.status === 'ROUND_COMPLETE'
+        ) {
+          scoreboard = await scoreboardService.getScoreboardState(game.id);
+        }
       }
     }
 
     console.log(
       `Restored session for ${socket.data.playerName} -> lobby ${lobby.code}` +
-        (clientState ? ' (in game)' : '')
+        (clientState ? ` (in game, ${clientState.status})` : '')
     );
+
+    const payload: SessionRestorePayload = {
+      restored: true,
+      lobby,
+      gameState: clientState,
+      scoreboard,
+    };
 
     // Tell the client what to resume, and also refresh any already-mounted
     // screens that listen for the standard update events. Deliberately never a
     // join event: a reconnect is not a new join, so no join feedback replays.
-    socket.emit('session:restore', { lobby, gameState: clientState });
+    socket.emit('session:restore', payload);
     socket.emit('lobby:update', { lobby });
     if (clientState) {
       socket.emit('game:update', { gameState: clientState });
     }
 
-    return true;
+    return payload;
   } catch (error) {
+    // Deliberately not SESSION_NOT_FOUND: the player may well still have a seat,
+    // and telling the client otherwise would make it throw away a valid saved
+    // session over a transient database problem.
     console.error('Error restoring session:', error);
-    return false;
+    return fail(noSession('RESTORE_FAILED'));
   }
 }
 
