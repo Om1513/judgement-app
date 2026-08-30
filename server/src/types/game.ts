@@ -116,7 +116,31 @@ export interface ClientPlayer {
   isCurrentTurn: boolean;
   cardCount: number;
   hasBid: boolean;
+  /**
+   * Live presence at the table. False means this player has dropped out and is
+   * inside their reconnect grace period; the seat is still theirs, so clients
+   * show "Reconnecting..." rather than rearranging the table.
+   */
+  connected: boolean;
+  /**
+   * The bot engine is playing this seat because their grace period elapsed.
+   * Clients show "Auto Playing". Bots at the table have this true from the
+   * start, so a bot and a taken-over human read the same way.
+   */
+  controlledByBot: boolean;
 }
+
+/**
+ * Who is actually at the table right now, keyed by playerId.
+ *
+ * Presence lives on the LobbyPlayer row rather than in the game state JSON -
+ * one seat, one presence record - so it is read alongside the game and handed to
+ * getClientGameState rather than being duplicated into the game state.
+ */
+export type PlayerPresence = Record<
+  string,
+  { connected: boolean; controlledByBot: boolean }
+>;
 
 // Client round state
 export interface ClientRoundState {

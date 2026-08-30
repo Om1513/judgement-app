@@ -34,19 +34,25 @@ export interface LobbyPlayer {
   seatPosition: number;
   joinedAt: Date;
   /**
-   * Waiting-room presence. False means they dropped out of a WAITING lobby and
-   * are inside their reconnect grace period - they still hold this seat, so
-   * clients show them as "Reconnecting..." rather than removing the card.
+   * Live presence. False means they dropped out and are inside their reconnect
+   * grace period - they still hold this seat, so clients show them as
+   * "Reconnecting..." rather than removing the card.
    *
-   * Only tracked before the game starts: an in-progress game leaves this true
-   * and handles absence its own way (see handleGameDisconnect). Bots are always
-   * connected - they have no socket to lose.
+   * Tracked both in the waiting room and during a live game; the two grace
+   * periods differ in what happens when they elapse (the seat is freed vs. the
+   * bot takes over). Bots are always connected - they have no socket to lose.
    */
   connected: boolean;
   /** When the current disconnect started; null while connected. */
   disconnectedAt: Date | null;
-  /** When the held seat is given up if they have not returned; null while connected. */
+  /** When the grace period runs out if they have not returned; null while connected. */
   reconnectDeadline: Date | null;
+  /**
+   * The bot engine is currently playing this seat, because the player's in-game
+   * grace period elapsed. Still the same player - same name, seat, hand, bid and
+   * score - only the controller changed. Cleared when they explicitly rejoin.
+   */
+  controlledByBot: boolean;
 }
 
 /** A lobby membership row's disconnect bookkeeping, read fresh for race checks. */
@@ -61,11 +67,15 @@ export interface LobbyMembership {
   disconnectedAt: Date | null;
   reconnectDeadline: Date | null;
   /**
-   * Bumped on every connect/disconnect transition. A removal timer captures the
-   * value it was scheduled against; a mismatch means the player has since
-   * reconnected (or dropped again) and the timer is stale.
+   * Bumped on every connect/disconnect transition. A removal or takeover timer
+   * captures the value it was scheduled against; a mismatch means the player has
+   * since reconnected (or dropped again) and the timer is stale.
    */
   disconnectGeneration: number;
+  /** The bot engine is currently playing this seat. */
+  controlledByBot: boolean;
+  /** The player answered the rejoin prompt with DISCARD. */
+  sessionDiscarded: boolean;
 }
 
 // Player state in a game context

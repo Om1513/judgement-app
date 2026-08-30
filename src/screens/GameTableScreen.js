@@ -20,6 +20,7 @@ import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import PlayedCard from "../components/PlayedCard";
 import { arrangeSeats } from "../utils/seating";
+import { RECONNECTING, seatStatus } from "../utils/presence";
 import { getPlayableCardIndexes } from "../utils/cardRules";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 import {
@@ -452,9 +453,19 @@ export default function GameTableScreen({ navigation, route }) {
 
     const isCurrentTurn = player.id === gameState?.currentTurnPlayerId;
     const isMe = player.id === currentPlayerId;
+    const status = seatStatus(player);
 
     return (
-      <View key={player.id} style={[styles.playerSeat, seatPlacement(position)]}>
+      <View
+        key={player.id}
+        style={[
+          styles.playerSeat,
+          seatPlacement(position),
+          // Muted, never moved: the seat, avatar and counts stay exactly where
+          // they were, so a dropout does not reshuffle the table.
+          status === RECONNECTING && styles.seatReconnecting,
+        ]}
+      >
         <View style={[styles.seatBox, isCurrentTurn && styles.seatBoxActive]}>
           {isCurrentTurn && (
             <Animated.View
@@ -486,6 +497,17 @@ export default function GameTableScreen({ navigation, route }) {
               {displayedTricks(player)} / {player.bid ?? 0}
             </Text>
           </View>
+
+          {/* Who is driving this seat, when it is not its owner. Deliberately
+              small and grey: a dropout is a temporary fact about the table, not
+              an alarm. */}
+          {status && (
+            <View style={styles.presenceBadge}>
+              <Text style={styles.presenceText} numberOfLines={1}>
+                {status}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -1010,6 +1032,27 @@ const rawStyles = {
     color: "#4CAF50",
     textAlign: "center",
     paddingHorizontal: 5,
+  },
+
+  // Enough to read as "away" across the table, not so much that the name and
+  // counts become hard to follow - the seat is still in play.
+  seatReconnecting: {
+    opacity: 0.6,
+  },
+  presenceBadge: {
+    backgroundColor: "rgba(107, 100, 128, 0.85)",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
+    marginTop: 3,
+    maxWidth: 80,
+  },
+  presenceText: {
+    fontSize: 8,
+    fontFamily: "Bangers_400Regular",
+    color: "#EFEAFF",
+    textAlign: "center",
+    letterSpacing: 0.5,
   },
 
   // Played-card placeholder slot (shown until a player plays this trick)

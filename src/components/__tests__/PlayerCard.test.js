@@ -91,6 +91,38 @@ describe("a player who has dropped out", () => {
   });
 });
 
+describe("a seat the bot has taken over", () => {
+  const takenOver = { ...human, connected: false, controlledByBot: true };
+
+  it("is still the same player, with the same name and avatar", () => {
+    render(<PlayerCard player={takenOver} />);
+
+    expect(screen.getByText("Riya")).toBeTruthy();
+    expect(screen.getByText("R")).toBeTruthy();
+  });
+
+  it("is labelled as auto playing rather than reconnecting", () => {
+    render(<PlayerCard player={takenOver} />);
+
+    expect(screen.getByText("AUTO PLAYING")).toBeTruthy();
+    expect(screen.queryByText("RECONNECTING...")).toBeNull();
+  });
+
+  it("keeps the host badge - the seat is still the host's", () => {
+    render(<PlayerCard player={{ ...host, connected: false, controlledByBot: true }} />);
+
+    expect(screen.getByText("HOST")).toBeTruthy();
+    expect(screen.getByText("AUTO PLAYING")).toBeTruthy();
+  });
+
+  it("is not labelled for a real bot, which is badged BOT instead", () => {
+    render(<PlayerCard player={{ ...bot, controlledByBot: true }} />);
+
+    expect(screen.queryByText("AUTO PLAYING")).toBeNull();
+    expect(screen.getByText("BOT")).toBeTruthy();
+  });
+});
+
 describe("the remove control", () => {
   it("is hidden when the viewer cannot remove anyone", () => {
     render(<PlayerCard player={human} canRemove={false} onRemove={() => {}} />);

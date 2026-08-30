@@ -118,9 +118,14 @@ export function registerScoreboardEvents(io: TypedServer, socket: TypedSocket): 
             await broadcastFinalWinner(io, socket.data.gameId);
           } else {
             // Send new round bidding state
+            const presence = await gameService.getPresence(lobby.id);
             const sockets = await io.in(`lobby:${lobby.code}`).fetchSockets();
             for (const s of sockets) {
-              const clientState = gameService.getClientGameState(updatedGame, s.data.playerId);
+              const clientState = gameService.getClientGameState(
+                updatedGame,
+                s.data.playerId,
+                presence
+              );
               s.emit('round:bidding-started', { gameState: clientState });
             }
 

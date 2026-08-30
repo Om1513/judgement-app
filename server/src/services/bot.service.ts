@@ -145,6 +145,10 @@ export class BotService {
 
   /**
    * Broadcasts updated game state to all players in the lobby.
+   *
+   * Delegates to the shared broadcast in socket/playFlow rather than repeating
+   * it, so bot-driven updates carry exactly what human-driven ones do - table
+   * presence included.
    */
   private async broadcastGameState(gameId: string): Promise<void> {
     if (!this.io) {
@@ -152,28 +156,39 @@ export class BotService {
       return;
     }
 
-    const game = await gameService.getGameById(gameId);
-    if (!game) {
-      return;
-    }
-
-    const ref = await gameService.getLobbyRef(gameId);
-    if (!ref) {
-      return;
-    }
-
-    // Get all sockets in the lobby room
-    const sockets = await this.io.in(`lobby:${ref.code}`).fetchSockets();
-
-    // Send personalized game state to each player
-    for (const socket of sockets) {
-      const clientState = gameService.getClientGameState(game, socket.data.playerId);
-      socket.emit('game:update', { gameState: clientState });
-    }
+    const { broadcastGameUpdate } = await import('../socket/playFlow');
+    await broadcastGameUpdate(this.io, gameId);
   }
 
   /**
-   * Checks if the current turn player is a bot and schedules their action.
+   * Whether the bot engine is currently the controller of this seat.
+   *
+   * True for an actual bot player, and equally true for a human whose in-game
+   * grace period elapsed and whose seat the bot has taken over. Both are driven
+   * by the same code from here on - which is the whole point: a taken-over seat
+   * plays exactly like a normal bot, with exactly the same information.
+   *
+   * Re-checked at the moment an action fires, not just when it is scheduled: a
+   * player who rejoins in between takes their seat back, and the queued bot
+   * action must recognise that it is no longer the controller.
+   */
+  private async isBotControlled(lobbyId: string, playerId: string): Promise<boolean> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+      select: { controlledByBot: true, player: { select: { isBot: true } } },
+    });
+
+    if (!row) {
+      return false;
+    }
+    return row.player.isBot || row.controlledByBot;
+  }
+
+  /**
+   * Checks whether the current turn belongs to the bot engine - a real bot, or a
+   * human seat it has taken over - and schedules their action.
    */
   async processPendingBotActions(gameId: string): Promise<void> {
     const game = await gameService.getGameById(gameId);
@@ -191,28 +206,27 @@ export class BotService {
       return;
     }
 
-    // Check if current turn player is a bot
-    const db = getDB();
-    const currentPlayer = await db.player.findUnique({
-      where: { id: currentTurnPlayerId },
-    });
+    const ref = await gameService.getLobbyRef(gameId);
+    if (!ref) {
+      return;
+    }
 
-    if (!currentPlayer || !currentPlayer.isBot) {
+    if (!(await this.isBotControlled(ref.lobbyId, currentTurnPlayerId))) {
       return;
     }
 
     // Schedule bot action based on game phase
     if (state.status === 'BIDDING') {
-      this.scheduleBotBid(gameId, currentTurnPlayerId);
+      this.scheduleBotBid(gameId, ref.lobbyId, currentTurnPlayerId);
     } else if (state.status === 'PLAYING') {
-      this.scheduleBotCardPlay(gameId, currentTurnPlayerId);
+      this.scheduleBotCardPlay(gameId, ref.lobbyId, currentTurnPlayerId);
     }
   }
 
   /**
-   * Schedules a delayed bid submission for a bot.
+   * Schedules a delayed bid submission for a bot (or a taken-over seat).
    */
-  private scheduleBotBid(gameId: string, botPlayerId: string): void {
+  private scheduleBotBid(gameId: string, lobbyId: string, botPlayerId: string): void {
     const lockKey = `bid:${gameId}:${botPlayerId}`;
 
     // Check if already processing
@@ -233,6 +247,12 @@ export class BotService {
 
         // Verify it's still the bot's turn and we're still bidding
         if (game.currentTurnPlayerId !== botPlayerId || game.gameState.status !== 'BIDDING') {
+          return;
+        }
+
+        // And that the bot is still this seat's controller: a player who rejoined
+        // while this was queued bids for themselves.
+        if (!(await this.isBotControlled(lobbyId, botPlayerId))) {
           return;
         }
 
@@ -288,9 +308,9 @@ export class BotService {
   }
 
   /**
-   * Schedules a delayed card play for a bot.
+   * Schedules a delayed card play for a bot (or a taken-over seat).
    */
-  private scheduleBotCardPlay(gameId: string, botPlayerId: string): void {
+  private scheduleBotCardPlay(gameId: string, lobbyId: string, botPlayerId: string): void {
     const lockKey = `play:${gameId}:${botPlayerId}`;
 
     // Check if already processing
@@ -311,6 +331,12 @@ export class BotService {
 
         // Verify it's still the bot's turn and we're still playing
         if (game.currentTurnPlayerId !== botPlayerId || game.gameState.status !== 'PLAYING') {
+          return;
+        }
+
+        // And that the bot is still this seat's controller: a player who rejoined
+        // while this was queued plays their own card.
+        if (!(await this.isBotControlled(lobbyId, botPlayerId))) {
           return;
         }
 
@@ -369,6 +395,11 @@ export class BotService {
 
   /**
    * Schedules bot continues for scoreboard phase.
+   *
+   * Bot-controlled human seats are included, and have to be: the round
+   * scoreboard advances only when *everybody* has pressed Continue, so a seat
+   * nobody is driving would leave the rest of the table stuck on a button that
+   * never turns green - the exact "a disconnect must never block the game" case.
    */
   scheduleBotContinues(gameId: string): void {
     // Delay to fetch game state after other operations
@@ -401,10 +432,10 @@ export class BotService {
           confirmations.filter(c => c.hasContinued).map(c => c.playerId)
         );
 
-        // Find bots that haven't continued yet
+        // Find bot-controlled seats that haven't continued yet
         for (const lp of lobby.players) {
-          if (lp.isBot && !continuedPlayerIds.has(lp.playerId)) {
-            this.scheduleSingleBotContinue(gameId, lp.playerId, currentRound.id);
+          if (lp.controlledByBot && !continuedPlayerIds.has(lp.playerId)) {
+            this.scheduleSingleBotContinue(gameId, lobby.id, lp.playerId, currentRound.id);
           }
         }
       } catch (error) {
@@ -416,7 +447,12 @@ export class BotService {
   /**
    * Schedules a single bot's continue action.
    */
-  private scheduleSingleBotContinue(gameId: string, botPlayerId: string, roundId: string): void {
+  private scheduleSingleBotContinue(
+    gameId: string,
+    lobbyId: string,
+    botPlayerId: string,
+    roundId: string
+  ): void {
     const lockKey = `continue:${gameId}:${botPlayerId}`;
 
     // Check if already processing
@@ -434,6 +470,12 @@ export class BotService {
         // Re-verify game is still in scoreboard phase
         const game = await gameService.getGameById(gameId);
         if (!game || game.gameState.status !== 'ROUND_SCOREBOARD') {
+          return;
+        }
+
+        // A player who rejoined while this was queued presses Continue for
+        // themselves.
+        if (!(await this.isBotControlled(lobbyId, botPlayerId))) {
           return;
         }
 
@@ -537,9 +579,14 @@ export class BotService {
           await broadcastFinalWinner(this.io, gameId);
         } else {
           // Send new round bidding state
+          const presence = await gameService.getPresence(lobby.id);
           const sockets = await this.io.in(`lobby:${lobby.code}`).fetchSockets();
           for (const s of sockets) {
-            const clientState = gameService.getClientGameState(updatedGame, s.data.playerId);
+            const clientState = gameService.getClientGameState(
+              updatedGame,
+              s.data.playerId,
+              presence
+            );
             s.emit('round:bidding-started', { gameState: clientState });
           }
 

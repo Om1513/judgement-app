@@ -32,3 +32,26 @@ function envMs(name: string, fallback: number): number {
  * Override with LOBBY_DISCONNECT_GRACE_MS.
  */
 export const LOBBY_DISCONNECT_GRACE_MS = envMs('LOBBY_DISCONNECT_GRACE_MS', 30_000);
+
+/**
+ * How long a player who drops out of a LIVE GAME is shown as "Reconnecting..."
+ * before the bot starts playing their seat for them.
+ *
+ * Nothing is taken away when this elapses: the same seat, hand, bid, score and
+ * name stay exactly where they are, and only the *controller* changes. It exists
+ * because the alternative is worse - a hand that never gets played blocks three
+ * other people indefinitely, which is the one failure mode a card game cannot
+ * absorb.
+ *
+ * Deliberately the same 30 seconds as the waiting room, for the same reason: it
+ * comfortably covers a Socket.IO reconnect cycle (reconnectionDelayMax on the
+ * client is 5s), an app switching to the background, or WiFi handing over to
+ * mobile data, while being short enough that the table is not left staring at an
+ * empty seat.
+ *
+ * Coming back after it has elapsed is not automatic - see
+ * services/gameReconnect.service.ts for the rejoin/discard decision.
+ *
+ * Override with GAME_DISCONNECT_GRACE_MS.
+ */
+export const GAME_DISCONNECT_GRACE_MS = envMs('GAME_DISCONNECT_GRACE_MS', 30_000);

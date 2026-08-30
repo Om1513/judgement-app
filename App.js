@@ -9,8 +9,14 @@ import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 import AppNavigator from "./src/navigation/AppNavigator";
 import LandscapeGate from "./src/components/LandscapeGate";
 import RestoringOverlay from "./src/components/RestoringOverlay";
+import RejoinPrompt from "./src/components/RejoinPrompt";
 import audioManager from "./src/services/audioManager";
-import { RestoreStatus, runColdStartRestore } from "./src/services/sessionRestore";
+import socketService from "./src/services/socket";
+import {
+  RestoreStatus,
+  resolveRestoreTarget,
+  runColdStartRestore,
+} from "./src/services/sessionRestore";
 
 // Matches the splash background in app.json, so the handoff from the native
 // splash into the first screen is invisible rather than a flash.
@@ -56,6 +62,17 @@ export default function App() {
   const restoreStartedRef = useRef(false);
   const navigatedRef = useRef(false);
 
+  // The game the server is holding for us, played by the bot until we say
+  // otherwise. Lives here, alongside the restore, because it is the same
+  // question - "where should this player be?" - and there must be exactly one
+  // answer to it: two places asking would produce two navigations.
+  //
+  // It is deliberately NOT only a cold-start concern. The same offer arrives when
+  // a phone that was backgrounded past its grace period comes back with the game
+  // screen still mounted, and it has to be asked there too.
+  const [rejoinOffer, setRejoinOffer] = useState(null);
+  const [rejoinBusy, setRejoinBusy] = useState(false);
+
   // Loading the fonts here, once, is what stops individual screens from
   // rendering a font-less placeholder on their way in. Screens still call
   // useFonts, but by then it resolves from cache instead of blocking a paint.
@@ -89,30 +106,44 @@ export default function App() {
   };
 
   /**
-   * Performs the one navigation a restore is allowed to make.
+   * Replaces the stack with Home -> target.
+   *
+   * `reset` rather than `navigate`: there is no half-built history to unwind, and
+   * Leave Lobby / Leave Game still has a Home to go back to. The single place any
+   * session decision is allowed to move the user, so a cold-start restore and an
+   * accepted rejoin cannot land on different screens by different routes.
+   */
+  const openTarget = useCallback((target) => {
+    if (!target || !navigationRef.current?.isReady()) {
+      return false;
+    }
+    navigationRef.current.reset({
+      index: 1,
+      routes: [{ name: "Home" }, { name: target.name, params: target.params }],
+    });
+    return true;
+  }, []);
+
+  /**
+   * Performs the one navigation the cold-start restore is allowed to make.
    *
    * Guarded twice over - by the target being consumed and by `navigatedRef` -
    * because this is called from two places (the restore finishing, and
    * navigation becoming ready) and whichever happens second must do nothing.
-   *
-   * `reset` rather than `navigate`: it replaces the whole stack with
-   * Home -> target, so there is no half-built history, and Leave Lobby / Leave
-   * Game still has a Home to go back to.
    */
   const applyRestoreTarget = useCallback(() => {
     const target = pendingTargetRef.current;
-    if (!target || navigatedRef.current || !navigationRef.current?.isReady()) {
+    if (!target || navigatedRef.current) {
+      return;
+    }
+    if (!openTarget(target)) {
       return;
     }
 
     navigatedRef.current = true;
     pendingTargetRef.current = null;
-    navigationRef.current.reset({
-      index: 1,
-      routes: [{ name: "Home" }, { name: target.name, params: target.params }],
-    });
     setRestoreStatus(RestoreStatus.RESTORED);
-  }, []);
+  }, [openTarget]);
 
   useEffect(() => {
     // React 18 double-invokes effects in dev; a second restore would mean a
@@ -137,6 +168,11 @@ export default function App() {
           applyRestoreTarget();
           return;
         }
+        if (result.status === RestoreStatus.REJOIN_AVAILABLE) {
+          // Deliberately no navigation: the prompt goes up over Home and the
+          // player decides. Nothing about the game is entered until they do.
+          setRejoinOffer(result.offer);
+        }
         // NO_SESSION and FAILED both mean "carry on as a normal launch" - a
         // session that merely could not be reached is kept for the next one, and
         // no error is shown for what is usually just an expired game.
@@ -151,6 +187,81 @@ export default function App() {
       cancelled = true;
     };
   }, [applyRestoreTarget]);
+
+  // A rejoin offer can also arrive long after launch: a phone that was
+  // backgrounded past its grace period reconnects with the game screen still
+  // mounted, and the server's answer is the same REJOIN_AVAILABLE. Subscribing
+  // for the whole app lifetime - here, once - is what makes the warm and cold
+  // cases one flow instead of two.
+  useEffect(() => {
+    return socketService.onSession((payload) => {
+      if (payload?.reason === "REJOIN_AVAILABLE" && payload.rejoin) {
+        setRejoinOffer(payload.rejoin);
+        return;
+      }
+      // Only an answer that actually settles the question takes the prompt down:
+      // restored, gone for good, or discarded. RESTORE_FAILED settles nothing -
+      // dismissing on it would leave the player with a game they can still
+      // rejoin and no way left to say so.
+      const settled =
+        payload?.restored === true ||
+        payload?.reason === "SESSION_NOT_FOUND" ||
+        payload?.reason === "SESSION_DISCARDED";
+      if (settled) {
+        setRejoinOffer(null);
+      }
+    });
+  }, []);
+
+  /** REJOIN GAME: take the seat back, then open whatever phase it is now in. */
+  const handleRejoin = useCallback(async () => {
+    setRejoinBusy(true);
+    try {
+      const payload = await socketService.rejoinSession();
+      const target = resolveRestoreTarget(payload, {
+        playerId: socketService.playerId,
+        playerName: socketService.playerName,
+      });
+
+      if (target) {
+        setRejoinOffer(null);
+        // Consume any pending cold-start target: this navigation supersedes it.
+        pendingTargetRef.current = null;
+        navigatedRef.current = true;
+        openTarget(target);
+        setRestoreStatus(RestoreStatus.RESTORED);
+      } else {
+        // The server never answered, or answered with something we cannot open.
+        // The prompt deliberately stays up: dismissing it would leave the player
+        // on Home with no way back into a game that is still theirs.
+        console.log("[Session] Rejoin produced no screen to open");
+      }
+    } finally {
+      setRejoinBusy(false);
+    }
+  }, [openTarget]);
+
+  /**
+   * DISCARD: we are not going back to that game.
+   *
+   * The game keeps running for everybody else with the bot in our seat; all that
+   * ends is our claim on it. Home, with a clean stack.
+   */
+  const handleDiscard = useCallback(async () => {
+    setRejoinBusy(true);
+    try {
+      await socketService.discardSession();
+    } finally {
+      setRejoinOffer(null);
+      setRejoinBusy(false);
+      if (navigationRef.current?.isReady()) {
+        navigatedRef.current = true;
+        pendingTargetRef.current = null;
+        navigationRef.current.reset({ index: 0, routes: [{ name: "Home" }] });
+      }
+      setRestoreStatus(RestoreStatus.NO_SESSION);
+    }
+  }, []);
 
   const handleNavigationReady = () => {
     syncMusicToRoute();
@@ -182,7 +293,17 @@ export default function App() {
           {/* Over the navigator, not instead of it: the stack is already mounted
               and warming up underneath, so the restored screen appears the
               moment the answer arrives. */}
-          {restoreStatus === RestoreStatus.RESTORING && <RestoringOverlay />}
+          {restoreStatus === RestoreStatus.RESTORING && !rejoinOffer && <RestoringOverlay />}
+          {/* Above the restoring overlay in the tree so an offer that arrives
+              during a cold start replaces the spinner rather than sitting under
+              it. */}
+          <RejoinPrompt
+            visible={!!rejoinOffer}
+            offer={rejoinOffer}
+            busy={rejoinBusy}
+            onRejoin={handleRejoin}
+            onDiscard={handleDiscard}
+          />
         </View>
       </LandscapeGate>
     </SafeAreaProvider>

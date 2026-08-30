@@ -10,14 +10,19 @@
 //
 //   saved pointer  ->  connect  ->  session:restore  ->  one navigation
 //
-// Two rules shape the whole flow:
+// Three rules shape the whole flow:
 //
 //   * The server decides. Nothing is navigated from the saved pointer alone -
 //     it is only a reason to ask. The answer, and the state, come from the
 //     server, so a finished or abandoned game can never be re-entered.
 //   * "No session" and "no answer" are different. Only an explicit
-//     SESSION_NOT_FOUND erases the saved pointer; a timeout or an unreachable
-//     server leaves it exactly where it was, to be retried on the next launch.
+//     SESSION_NOT_FOUND (or our own DISCARD) erases the saved pointer; a timeout
+//     or an unreachable server leaves it exactly where it was, to be retried on
+//     the next launch.
+//   * A game the bot has taken over is NOT auto-entered. The server answers
+//     REJOIN_AVAILABLE, and the launch ends by asking the player instead of
+//     navigating - cards have been played in their name, and being dropped into a
+//     hand they no longer recognise is worse than being asked.
 
 import socketService from './socket';
 import { clearSession, loadSession } from './session';
@@ -30,6 +35,11 @@ export const RestoreStatus = {
   RESTORING: 'RESTORING',
   /** The server confirmed a session; `target` says where to go. */
   RESTORED: 'RESTORED',
+  /**
+   * There is a live game holding this player's seat, played by the bot. Nothing
+   * is navigated: `offer` describes what is waiting, and the player chooses.
+   */
+  REJOIN_AVAILABLE: 'REJOIN_AVAILABLE',
   /** There is nothing to come back to. Home, with no error shown. */
   NO_SESSION: 'NO_SESSION',
   /** We could not find out. Home, and the saved session is kept. */
@@ -204,9 +214,15 @@ export async function runColdStartRestore({
   }
 
   if (payload.restored !== true) {
-    if (payload.reason === 'SESSION_NOT_FOUND') {
-      // Expired, finished, kicked, or left from another device. Normal - the
-      // pointer is dropped and the player just sees Home.
+    if (payload.reason === 'REJOIN_AVAILABLE' && payload.rejoin) {
+      // The game is still running, with the bot in their seat. Deliberately not
+      // a navigation: the launch ends here and the player is asked.
+      console.log(`[Session] Rejoin available for lobby ${payload.rejoin.lobbyCode}`);
+      return { status: RestoreStatus.REJOIN_AVAILABLE, offer: payload.rejoin };
+    }
+    if (payload.reason === 'SESSION_NOT_FOUND' || payload.reason === 'SESSION_DISCARDED') {
+      // Expired, finished, kicked, left from another device, or discarded by the
+      // player themselves. Normal - the pointer is dropped and they see Home.
       console.log('[Session] Session expired');
       await clearSession();
       return { status: RestoreStatus.NO_SESSION };

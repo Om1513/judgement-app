@@ -19,10 +19,14 @@ export default function PlayerCard({
   const { s: scale } = useResponsive();
   const isCompact = size === "compact";
   const isBot = player.isBot || false;
+  // The bot is playing this seat for a human whose in-game grace period ran out.
+  // Checked before "reconnecting" because it is the later state of the same
+  // dropout, and it is the one that actually changes what the table sees happen.
+  const isAutoPlaying = !isBot && player.controlledByBot === true;
   // The seat is still theirs - they dropped out and the server is holding it
   // open for them. Undefined means a caller that does not track presence, which
   // reads as connected. Bots have no connection to lose.
-  const isReconnecting = !isBot && player.connected === false;
+  const isReconnecting = !isBot && !isAutoPlaying && player.connected === false;
 
   // Get avatar colors based on player type
   const getAvatarColors = () => {
@@ -38,7 +42,7 @@ export default function PlayerCard({
         isCompact && styles.containerCompact,
         // Muted, not removed: the avatar, name and seat all stay exactly where
         // they were so the table does not reshuffle around a brief dropout.
-        isReconnecting && styles.containerReconnecting,
+        (isReconnecting || isAutoPlaying) && styles.containerReconnecting,
       ]}
     >
       <LinearGradient
@@ -103,6 +107,19 @@ export default function PlayerCard({
                 style={styles.reconnectingBadgeGradient}
               >
                 <Text style={styles.reconnectingBadgeText}>RECONNECTING...</Text>
+              </LinearGradient>
+            </View>
+          )}
+
+          {/* The same muted badge one state further on: they did not come back in
+              time, so the bot is finishing their hands. */}
+          {isAutoPlaying && (
+            <View style={styles.reconnectingBadge}>
+              <LinearGradient
+                colors={["#6B6480", "#4A4560"]}
+                style={styles.reconnectingBadgeGradient}
+              >
+                <Text style={styles.reconnectingBadgeText}>AUTO PLAYING</Text>
               </LinearGradient>
             </View>
           )}

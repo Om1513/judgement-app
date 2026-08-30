@@ -10,6 +10,11 @@ const CLIENT_ID_KEY = '@kachuful_client_id';
 // How long to wait for the server to answer the initial connect.
 const CONNECT_TIMEOUT_MS = 10000;
 
+// How long to wait for the server to answer a rejoin/discard decision. Shorter
+// than the connect timeout because the socket is already up by then: this is one
+// round trip, not a negotiation.
+const SESSION_ANSWER_TIMEOUT_MS = 8000;
+
 /**
  * Generates a stable, reasonably-unique client id without requiring a crypto
  * polyfill (not always available in React Native).
@@ -31,6 +36,11 @@ class SocketService {
     // screens can restore the correct view after a drop. Null whenever the
     // server's answer was "you have no session".
     this.lastSession = null;
+    // The server's standing offer of a game the bot has taken over, or null.
+    // Held here rather than in a screen because it can arrive at any moment - on
+    // a cold start, or on a reconnect while any screen is open - and exactly one
+    // place in the app is allowed to act on it (see App.js).
+    this.pendingRejoin = null;
     // In-flight connect(), so overlapping callers share one socket rather than
     // racing to open a second one.
     this.connectPromise = null;
@@ -254,13 +264,27 @@ class SocketService {
           (data.gameState ? ` (in game, ${data.gameState.status})` : '')
       );
       this.lastSession = data;
+      this.pendingRejoin = null;
       // Refresh the pointer on every restore, so a lobby joined on one launch is
       // still the one we ask for on the next.
       this._rememberSession(data.lobby);
+    } else if (data?.reason === 'REJOIN_AVAILABLE' && data.rejoin) {
+      // A game is being held for us, played by the bot. Not restored - and
+      // deliberately so: re-entering is the player's decision, and until they
+      // make it there is no state to cache and nothing to navigate to. The saved
+      // pointer stays exactly where it is, because the session is very much alive.
+      console.log(
+        `[Session] A game is waiting in lobby ${data.rejoin.lobbyCode} ` +
+          `(${data.rejoin.status}, round ${data.rejoin.currentRound})`
+      );
+      this.lastSession = null;
+      this.pendingRejoin = data.rejoin;
     } else {
       this.lastSession = null;
-      if (data?.reason === 'SESSION_NOT_FOUND') {
-        // Authoritative: the game finished, the lobby went, or we were removed.
+      this.pendingRejoin = null;
+      if (data?.reason === 'SESSION_NOT_FOUND' || data?.reason === 'SESSION_DISCARDED') {
+        // Authoritative: the game finished, the lobby went, we were removed, or
+        // we said ourselves that we were not coming back.
         console.log('[Session] No active session');
         void this.clearSavedSession();
       } else {
@@ -291,7 +315,56 @@ class SocketService {
   /** Forgets the persisted session pointer (and the cached payload with it). */
   async clearSavedSession() {
     this.lastSession = null;
+    this.pendingRejoin = null;
     await clearSession();
+  }
+
+  /**
+   * Answers a rejoin offer with REJOIN GAME, resolving with the server's session
+   * payload once the seat is genuinely ours again.
+   *
+   * The answer comes back on the same `session:restore` event as every other
+   * session decision, so there is one code path for "here is your game" no matter
+   * what prompted it. Resolves with null if the server does not answer, leaving
+   * the caller on the screen it was on rather than half-navigating.
+   */
+  rejoinSession(timeoutMs = SESSION_ANSWER_TIMEOUT_MS) {
+    return this._answerSessionOffer('session:rejoin', timeoutMs);
+  }
+
+  /**
+   * Answers a rejoin offer with DISCARD: we are not coming back to that game.
+   *
+   * The game itself is untouched - the other players play on with the bot in our
+   * seat. The server confirms with SESSION_DISCARDED, which is what clears the
+   * saved pointer, so the next launch opens on Home.
+   */
+  discardSession(timeoutMs = SESSION_ANSWER_TIMEOUT_MS) {
+    return this._answerSessionOffer('session:discard', timeoutMs);
+  }
+
+  /** Emits a session decision and waits for the single answer it produces. */
+  _answerSessionOffer(event, timeoutMs) {
+    return new Promise((resolve) => {
+      if (!this.socket?.connected) {
+        resolve(null);
+        return;
+      }
+
+      let settled = false;
+      const finish = (payload) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(payload);
+      };
+
+      const unsubscribe = this.onSession(finish);
+      const timer = setTimeout(() => finish(null), timeoutMs);
+
+      this.socket.emit(event);
+    });
   }
 
   /**

@@ -230,15 +230,15 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
 
 ## Known limitations / recommended next steps
 
-1. **In-game disconnect UX.** A dropped player's turn currently waits on them;
-   consider a grace period + "disconnected" indicator or bot-takeover
-   (`handleGameDisconnect` in `server/src/socket/game.events.ts`).
-2. **Schema management.** Deploy uses `prisma db push`. For audited schema
+1. **Schema management.** Deploy uses `prisma db push`. For audited schema
    history switch to `prisma migrate deploy` once the schema stabilizes.
-3. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
-   sessions, and moving the bot `setTimeout`/`actionLocks` out of process memory
-   (`server/src/services/bot.service.ts`). Not needed until thousands of
-   concurrent players.
-4. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
+2. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
+   sessions, and moving the bot `setTimeout`/`actionLocks` and the disconnect
+   grace-period timers out of process memory
+   (`server/src/services/bot.service.ts`,
+   `server/src/services/gameReconnect.service.ts`). The grace-period deadlines
+   themselves are persisted, so a restart resumes them - but two instances would
+   each run their own timers. Not needed until thousands of concurrent players.
+3. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
    dep) is unused by the app — the real schema is `server/prisma/schema.prisma`.
    Safe to remove later to reduce confusion.

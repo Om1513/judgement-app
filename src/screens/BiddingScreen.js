@@ -16,6 +16,7 @@ import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIc
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
+import { seatStatus } from "../utils/presence";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // The bid row's geometry is pinned rather than derived from its contents - see
@@ -279,6 +280,16 @@ export default function BiddingScreen({ navigation, route }) {
               {player.isHost && (
                 <View style={styles.hostBadge}>
                   <Text style={styles.hostBadgeText}>HOST</Text>
+                </View>
+              )}
+              {/* Who is driving this seat, when it is not its owner - the bidding
+                  table is where a taken-over seat is most confusing without it,
+                  since a bid appears that its owner never made. */}
+              {seatStatus(player) && (
+                <View style={styles.presenceBadge}>
+                  <Text style={styles.presenceText} numberOfLines={1}>
+                    {seatStatus(player)}
+                  </Text>
                 </View>
               )}
             </View>
@@ -780,6 +791,22 @@ const rawStyles = {
     fontSize: 8,
     fontFamily: "Inter_700Bold",
     color: "#2A1654",
+  },
+  // Same geometry as the HOST badge so it sits in the rhythm of the cell, muted
+  // rather than coloured: a dropout is a fact about the table, not an alarm.
+  presenceBadge: {
+    backgroundColor: "rgba(107, 100, 128, 0.9)",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 2,
+    maxWidth: 76,
+  },
+  presenceText: {
+    fontSize: 7,
+    fontFamily: "Inter_700Bold",
+    color: "#EFEAFF",
+    textAlign: "center",
   },
   // A FIXED height, not a minimum. The three things this cell can hold - "...",
   // a green bid box, or "-" - are all different natural heights, and the green
