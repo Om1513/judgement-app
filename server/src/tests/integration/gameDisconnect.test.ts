@@ -1058,7 +1058,11 @@ describe('leaving a game on purpose', () => {
     const [om] = clients;
 
     om.socket.emit('lobby:leave');
-    await flush(150);
+    // Leaving mid-game is handled several database writes deep and tells no
+    // client when the seat flips, so there is no event to wait on - but the row
+    // itself is the thing being asserted, so wait for that rather than guessing
+    // at a delay.
+    await untilTakenOver(lobbyId, om.playerId);
 
     assert.equal(
       gameReconnectService.isPending(lobbyId, om.playerId),
@@ -1075,11 +1079,11 @@ describe('leaving a game on purpose', () => {
   });
 
   test('is never restored on a later launch', async () => {
-    const { clients } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const { clients, lobbyId } = await gameOf(['Om', 'Yukta', 'Raj']);
     const [om] = clients;
 
     om.socket.emit('lobby:leave');
-    await flush(150);
+    await untilTakenOver(lobbyId, om.playerId);
 
     const omAgain = await coldStart(om);
     const answer = lastSessionAnswer(omAgain);
@@ -1096,7 +1100,7 @@ describe('leaving a game on purpose', () => {
     const [om] = clients;
 
     om.socket.emit('lobby:leave');
-    await flush(200);
+    await untilTakenOver(lobbyId, om.playerId);
 
     const created = await waitFor<{ lobby: LobbyState }>(om.socket, 'lobby:created', () =>
       om.socket.emit('lobby:create', { playerName: om.name })
@@ -1108,11 +1112,11 @@ describe('leaving a game on purpose', () => {
   });
 
   test('leaves the player free to join somebody else s lobby', async () => {
-    const { clients } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const { clients, lobbyId } = await gameOf(['Om', 'Yukta', 'Raj']);
     const [om] = clients;
 
     om.socket.emit('lobby:leave');
-    await flush(200);
+    await untilTakenOver(lobbyId, om.playerId);
 
     // A fresh lobby hosted by somebody entirely different.
     const neha = await client('Neha');
