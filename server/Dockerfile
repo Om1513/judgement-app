@@ -33,5 +33,14 @@ EXPOSE 3001
 
 # On boot, sync the schema to the database (creates tables on a fresh DB),
 # then start the server. Client is already generated, so skip regeneration.
-# For stricter control later, switch to `prisma migrate deploy`.
+#
+# The audited alternative is `prisma migrate deploy`, and prisma/migrations/ (in
+# the image, copied above) is ready for it - but it cannot be switched on here
+# unilaterally. The live database was created by `db push`, so it has the tables
+# without the `_prisma_migrations` bookkeeping table, and `migrate deploy`
+# refuses that with `P3005: The database schema is not empty`. Baseline the
+# existing database once (one command, no downtime, no data touched - see
+# "Switching to migrate deploy" in DEPLOYMENT.md), then swap this line for:
+#
+#   CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/server.js"]
 CMD ["sh", "-c", "node node_modules/prisma/build/index.js db push --skip-generate && node dist/server.js"]
