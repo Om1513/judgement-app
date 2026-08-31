@@ -339,10 +339,11 @@ export class LobbyService {
   }
 
   // -------------------------------------------------------------------------
-  // Waiting-room connection state
+  // Connection state
   //
-  // These are the persistence half of the disconnect grace period; the timing
-  // and race handling live in lobbyReconnect.service.ts.
+  // These are the persistence half of the disconnect grace periods; the timing
+  // and race handling live in lobbyReconnect.service.ts (waiting room) and
+  // gameReconnect.service.ts (live game).
   // -------------------------------------------------------------------------
 
   /**
@@ -358,6 +359,33 @@ export class LobbyService {
     playerId: string,
     graceMs: number
   ): Promise<DisconnectMark | null> {
+    return this.markDisconnected(lobbyId, playerId, graceMs, 'WAITING');
+  }
+
+  /**
+   * Marks a player in a LIVE GAME as temporarily disconnected, so the table sees
+   * them as reconnecting while their bot-takeover countdown runs.
+   *
+   * Same bookkeeping and the same generation guard as the waiting-room case -
+   * one seat, one presence record - it differs only in requiring the lobby to be
+   * IN_GAME, and in what the expiry does (hand the seat to the bot rather than
+   * free it). Returns null for a bot, a lobby that is not in a game, a
+   * non-member, or a player already disconnected.
+   */
+  async markGamePlayerDisconnected(
+    lobbyId: string,
+    playerId: string,
+    graceMs: number
+  ): Promise<DisconnectMark | null> {
+    return this.markDisconnected(lobbyId, playerId, graceMs, 'IN_GAME');
+  }
+
+  private async markDisconnected(
+    lobbyId: string,
+    playerId: string,
+    graceMs: number,
+    requiredStatus: 'WAITING' | 'IN_GAME'
+  ): Promise<DisconnectMark | null> {
     const db = getDB();
 
     const row = await db.lobbyPlayer.findUnique({
@@ -365,7 +393,7 @@ export class LobbyService {
       include: { player: true, lobby: true },
     });
 
-    if (!row || row.player.isBot || row.lobby.status !== 'WAITING' || !row.connected) {
+    if (!row || row.player.isBot || row.lobby.status !== requiredStatus || !row.connected) {
       return null;
     }
 
@@ -438,6 +466,156 @@ export class LobbyService {
   }
 
   /**
+   * Hands a seat to the bot engine when its owner's grace period has run out.
+   *
+   * Nothing else about the player changes - name, seat, hand, bid, score and
+   * tricks won all stay exactly where they are, because this is the same player
+   * with a different controller, not a substitution.
+   *
+   * A single conditional write, not read-then-write, and that is the point: the
+   * seat is only claimed while it is still absent, still un-taken-over and still
+   * on the generation the timer was scheduled against. A player who reconnects
+   * in the same instant bumps that generation, so the timer loses the race
+   * cleanly instead of parking a bot on a seat somebody is sitting in.
+   */
+  async claimSeatForBot(
+    lobbyId: string,
+    playerId: string,
+    expectedGeneration: number
+  ): Promise<{ lobby: LobbyState | null; changed: boolean }> {
+    const db = getDB();
+
+    const { count } = await db.lobbyPlayer.updateMany({
+      where: {
+        lobbyId,
+        playerId,
+        connected: false,
+        controlledByBot: false,
+        disconnectGeneration: expectedGeneration,
+      },
+      data: { controlledByBot: true },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), changed: count > 0 };
+  }
+
+  /**
+   * Gives a player their seat back while they are still only "reconnecting" -
+   * the ordinary, automatic case, with no bot involved.
+   *
+   * Conditional on the seat still being un-taken-over, so a reconnect landing at
+   * the same moment as the takeover timer cannot end up with the row claiming
+   * both a present human and a playing bot. `changed: false` means the caller
+   * must re-read to find out which of the two won.
+   */
+  async reclaimSeatFromGrace(
+    lobbyId: string,
+    playerId: string
+  ): Promise<{ lobby: LobbyState | null; changed: boolean }> {
+    const db = getDB();
+
+    const { count } = await db.lobbyPlayer.updateMany({
+      where: { lobbyId, playerId, connected: false, controlledByBot: false },
+      data: {
+        connected: true,
+        disconnectedAt: null,
+        reconnectDeadline: null,
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), changed: count > 0 };
+  }
+
+  /**
+   * Gives a returning player their seat back and takes the bot off it, in one
+   * write so there is no instant in which the seat has two controllers or none.
+   *
+   * This is the explicit REJOIN GAME answer, so it is unconditional: whatever the
+   * seat's state was - reconnecting, bot-controlled, previously discarded - the
+   * human now owns it. `sessionDiscarded` is cleared too, because choosing to
+   * rejoin plainly overrides an earlier DISCARD.
+   */
+  async markGamePlayerRejoined(
+    lobbyId: string,
+    playerId: string
+  ): Promise<{ lobby: LobbyState | null; changed: boolean }> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+    });
+
+    if (!row) {
+      return { lobby: null, changed: false };
+    }
+
+    const alreadyBack = row.connected && !row.controlledByBot && !row.sessionDiscarded;
+    if (alreadyBack) {
+      return { lobby: await this.getLobbyById(lobbyId), changed: false };
+    }
+
+    await db.lobbyPlayer.update({
+      where: { id: row.id },
+      data: {
+        connected: true,
+        disconnectedAt: null,
+        reconnectDeadline: null,
+        controlledByBot: false,
+        sessionDiscarded: false,
+        // Invalidates any takeover timer still in flight, including one that has
+        // already fired and is waiting on its own read of this row.
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), changed: true };
+  }
+
+  /**
+   * Records that a player answered the rejoin prompt with DISCARD.
+   *
+   * They stay in the game - the bot keeps playing their seat, and the other
+   * players are not affected in any way - but `session:restore` will no longer
+   * offer the game back to them. The bot control flag is set here as well, so
+   * discarding from *inside* the grace period (before the takeover timer has
+   * fired) does not leave a seat with nobody driving it.
+   */
+  async markSessionDiscarded(
+    lobbyId: string,
+    playerId: string
+  ): Promise<{ lobby: LobbyState | null; changed: boolean }> {
+    const db = getDB();
+
+    const row = await db.lobbyPlayer.findUnique({
+      where: { lobbyId_playerId: { lobbyId, playerId } },
+      include: { player: true },
+    });
+
+    if (!row || row.player.isBot) {
+      return { lobby: null, changed: false };
+    }
+
+    if (row.sessionDiscarded && row.controlledByBot && !row.connected) {
+      return { lobby: await this.getLobbyById(lobbyId), changed: false };
+    }
+
+    await db.lobbyPlayer.update({
+      where: { id: row.id },
+      data: {
+        sessionDiscarded: true,
+        controlledByBot: true,
+        connected: false,
+        disconnectedAt: row.disconnectedAt ?? new Date(),
+        reconnectDeadline: null,
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), changed: true };
+  }
+
+  /**
    * Reads a membership row fresh from the database, for the checks a removal
    * timer must make before it is allowed to evict anyone.
    */
@@ -473,6 +651,29 @@ export class LobbyService {
     return rows.map(row => this.toMembership(row));
   }
 
+  /**
+   * Every seat in a live game whose owner is absent but not yet played by the
+   * bot, with the deadline the takeover is due at. The in-game counterpart of
+   * getPendingReconnects: used on boot to resume - or immediately settle - a
+   * countdown whose in-memory timer died with the previous process.
+   */
+  async getPendingGameDisconnects(): Promise<LobbyMembership[]> {
+    const db = getDB();
+
+    const rows = await db.lobbyPlayer.findMany({
+      where: {
+        connected: false,
+        controlledByBot: false,
+        lobby: { status: 'IN_GAME' },
+        player: { isBot: false },
+      },
+      include: { player: true, lobby: true },
+      orderBy: { reconnectDeadline: 'asc' },
+    });
+
+    return rows.map(row => this.toMembership(row));
+  }
+
   private toMembership(row: any): LobbyMembership {
     return {
       lobbyId: row.lobbyId,
@@ -485,6 +686,8 @@ export class LobbyService {
       disconnectedAt: row.disconnectedAt,
       reconnectDeadline: row.reconnectDeadline,
       disconnectGeneration: row.disconnectGeneration,
+      controlledByBot: row.controlledByBot ?? false,
+      sessionDiscarded: row.sessionDiscarded ?? false,
     };
   }
 
@@ -632,6 +835,9 @@ export class LobbyService {
         connected: isBot ? true : lp.connected,
         disconnectedAt: isBot ? null : lp.disconnectedAt ?? null,
         reconnectDeadline: isBot ? null : lp.reconnectDeadline ?? null,
+        // A bot seat is always bot-controlled; a human seat only while their
+        // in-game grace period has elapsed and they have not rejoined.
+        controlledByBot: isBot ? true : lp.controlledByBot ?? false,
       };
     });
 

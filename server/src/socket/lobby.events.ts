@@ -8,10 +8,13 @@ import {
   SocketData,
   SocketErrorCodes,
 } from '../types/socket';
+import { LobbyState } from '../types/lobby';
 import { lobbyService } from '../services/lobby.service';
 import { lobbyReconnectService } from '../services/lobbyReconnect.service';
+import { gameReconnectService } from '../services/gameReconnect.service';
 import { gameService } from '../services/game.service';
 import { botService } from '../services/bot.service';
+import { isGameFinished } from './game.events';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -248,9 +251,21 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       const lobbyCode = lobby.code;
       const lobbyId = socket.data.lobbyId;
 
-      // Pressing Leave Lobby is deliberate, so it takes effect now: no grace
-      // period, and any timer left over from an earlier drop is dropped with it.
+      // Pressing Leave Lobby / Leave Game is deliberate, so it takes effect now:
+      // no grace period, and any timer left over from an earlier drop is dropped
+      // with it.
       lobbyReconnectService.cancelGracePeriod(lobbyId, socket.data.playerId);
+      gameReconnectService.cancelGracePeriod(lobbyId, socket.data.playerId);
+
+      // Walking out of a game that is under way is not the same as walking out of
+      // a lobby. The other players are mid-round with cards already dealt, so the
+      // seat cannot simply vanish - deleting it would leave the table waiting
+      // forever on a turn nobody can take. It is exactly the DISCARD case: the
+      // player is done with this game, and the bot finishes their hands.
+      if (lobby.status === 'IN_GAME') {
+        await handleLeaveDuringGame(io, socket, lobby);
+        return;
+      }
 
       // Leave the lobby
       const updatedLobby = await lobbyService.leaveLobby(lobbyId, socket.data.playerId);
@@ -311,6 +326,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       // lobby for them and restores nothing. Done only once the kick has
       // actually succeeded, so a rejected kick cannot strand a held seat.
       lobbyReconnectService.cancelGracePeriod(socket.data.lobbyId, targetPlayerId);
+      gameReconnectService.cancelGracePeriod(socket.data.lobbyId, targetPlayerId);
 
       console.log(`Host ${socket.data.playerName} kicked player ${targetPlayerId} from lobby ${lobby.code}`);
 
@@ -455,8 +471,9 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       // Send personalized game state to each player (hiding others' cards)
       const game = await gameService.getGameById(gameId);
       if (game) {
+        const presence = await gameService.getPresence(lobby.id);
         for (const s of sockets) {
-          const clientState = gameService.getClientGameState(game, s.data.playerId);
+          const clientState = gameService.getClientGameState(game, s.data.playerId, presence);
           s.emit('game:started', { gameState: clientState });
         }
       }
@@ -473,6 +490,47 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       });
     }
   });
+}
+
+/**
+ * Walking out of a game that is under way.
+ *
+ * Explicit and immediate - no grace period and no later automatic restoration -
+ * but the seat is not deleted: the game keeps its player count, its turn order
+ * and its dealt hands, and the bot plays out the seat exactly as it would after a
+ * takeover. Recorded as a discard, so reopening the app lands on Home rather
+ * than offering back a game they chose to walk out of.
+ *
+ * A finished game has none of those constraints, so leaving one still removes the
+ * membership normally - the caller only routes here while the lobby is IN_GAME
+ * with a live game.
+ */
+async function handleLeaveDuringGame(
+  io: TypedServer,
+  socket: TypedSocket,
+  lobby: LobbyState
+): Promise<void> {
+  const playerId = socket.data.playerId;
+  const game = await gameService.getGameByLobbyId(lobby.id);
+
+  if (game && !isGameFinished(game.gameState.status)) {
+    await gameReconnectService.discard(lobby, playerId);
+    console.log(`Player ${socket.data.playerName} left game in lobby ${lobby.code}`);
+  } else {
+    // The game is over; the seat has no hands left to play, so it can go.
+    const updated = await lobbyService.leaveLobby(lobby.id, playerId);
+    if (updated) {
+      io.to(`lobby:${lobby.code}`).emit('lobby:player-left', { playerId, lobby: updated });
+      io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby: updated });
+    } else {
+      lobbyReconnectService.cancelLobby(lobby.id);
+      gameReconnectService.cancelLobby(lobby.id);
+    }
+  }
+
+  void socket.leave(`lobby:${lobby.code}`);
+  socket.data.lobbyId = null;
+  socket.data.gameId = null;
 }
 
 /**

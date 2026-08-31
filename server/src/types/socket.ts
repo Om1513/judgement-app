@@ -4,30 +4,64 @@ import { LobbyState, LobbySettings } from './lobby';
 import { ClientGameState, ScoreboardState, GameWinner } from './game';
 import { Card } from './player';
 
-/** Why a connection was not given a session back. */
-export type SessionRestoreFailure =
+/** Why a connection was not simply put back where it was. */
+export type SessionRestoreReason =
   /** The player is not a member of any lobby: finished, kicked, left, expired. */
   | 'SESSION_NOT_FOUND'
   /** The lookup itself failed (database error). The client must NOT treat this
    *  as "your session is gone" - its saved session may still be perfectly good. */
-  | 'RESTORE_FAILED';
+  | 'RESTORE_FAILED'
+  /**
+   * There IS a live game holding this player's seat, but the bot has taken it
+   * over, so coming back is their decision rather than something that happens to
+   * them. `rejoin` describes the offer; the client answers with `session:rejoin`
+   * or `session:discard`. The saved session pointer must be KEPT.
+   */
+  | 'REJOIN_AVAILABLE'
+  /**
+   * They already answered DISCARD for this game. Authoritative and final: the
+   * client should forget its saved session, and no prompt is shown again.
+   */
+  | 'SESSION_DISCARDED';
+
+/**
+ * The offer behind REJOIN_AVAILABLE: enough to explain what is waiting, and
+ * nothing more. Deliberately carries no cards, no hand and no other player's
+ * state - the player has not rejoined yet, so they are not entitled to any of it.
+ */
+export interface RejoinOffer {
+  gameId: string;
+  lobbyCode: string;
+  /** Phase the game is in, so the prompt can say what they would be coming back to. */
+  status: ClientGameState['status'];
+  currentRound: number;
+  totalRounds: number;
+}
 
 /**
  * The answer to "does this player have somewhere to be?", sent once per
- * identified connection.
+ * identified connection (and again in reply to `session:rejoin` /
+ * `session:discard`).
  *
  * `restored: true` carries everything the client needs to put the player back
  * where they were, including - for a game sitting on the round scoreboard - the
  * scoreboard itself, so a cold-started app can render the right phase without a
  * second round trip. `gameState` is the same per-player view used during normal
  * play: the player's own hand, and only card *counts* for everyone else.
+ *
+ * `restored: false` with `reason: 'REJOIN_AVAILABLE'` is the one case where a
+ * session exists and is deliberately NOT entered: see SessionRestoreReason.
+ * Reporting it as a non-restore is what makes an older client do the right thing
+ * (stay on Home, keep its saved session) rather than half-enter a game.
  */
 export interface SessionRestorePayload {
   restored: boolean;
-  reason?: SessionRestoreFailure;
+  reason?: SessionRestoreReason;
   lobby: LobbyState | null;
   gameState: ClientGameState | null;
   scoreboard?: ScoreboardState | null;
+  /** Only set alongside `reason: 'REJOIN_AVAILABLE'`. */
+  rejoin?: RejoinOffer | null;
 }
 
 // Client to Server events
@@ -50,6 +84,12 @@ export interface ClientToServerEvents {
   'game:submit-bid': (data: { bid: number }) => void;
   'game:play-card': (data: { card: Card }) => void;
   'game:state-request': () => void;
+
+  // The two answers to a REJOIN_AVAILABLE offer. Both are authoritative
+  // server-side decisions keyed on the connection's already-established
+  // identity - a client cannot name the game or the player it wants to be.
+  'session:rejoin': () => void;
+  'session:discard': () => void;
 
   // Scoreboard events
   'scoreboard:get-state': () => void;
@@ -163,6 +203,8 @@ export const SocketErrorCodes = {
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',
   INVALID_ACTION: 'INVALID_ACTION',
   ALREADY_IN_LOBBY: 'ALREADY_IN_LOBBY',
+  /** The bot is playing this seat; the player must answer the rejoin prompt first. */
+  REJOIN_REQUIRED: 'REJOIN_REQUIRED',
 } as const;
 
 export type SocketErrorCode = typeof SocketErrorCodes[keyof typeof SocketErrorCodes];

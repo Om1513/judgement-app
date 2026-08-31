@@ -6,6 +6,7 @@ import app from './app';
 import { connectDB, disconnectDB, getDB } from './db/connection';
 import { initializeSocket } from './socket';
 import { lobbyReconnectService } from './services/lobbyReconnect.service';
+import { gameReconnectService } from './services/gameReconnect.service';
 
 const PORT = process.env.PORT || 3001;
 
@@ -48,6 +49,12 @@ async function main(): Promise<void> {
     // passed while the process was down are settled immediately.
     await lobbyReconnectService.recoverPendingGracePeriods();
 
+    // The same for seats in a live game: their bot-takeover deadline is
+    // persisted too, so a restart cannot leave a table waiting indefinitely on a
+    // seat nobody is driving. Deadlines that already passed are handed to the bot
+    // at once.
+    await gameReconnectService.recoverPendingTakeovers();
+
     // Start server
     httpServer.listen(PORT, () => {
       console.log(`
@@ -71,6 +78,7 @@ async function main(): Promise<void> {
       // Pending grace periods are persisted, so dropping their in-memory timers
       // loses nothing - the next boot resumes them from reconnectDeadline.
       lobbyReconnectService.cancelAll();
+      gameReconnectService.cancelAll();
 
       httpServer.close(async () => {
         console.log('HTTP server closed');

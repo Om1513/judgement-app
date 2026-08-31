@@ -38,6 +38,11 @@ export const HAND_WINNER_DURATION = pauseMs('HAND_WINNER_DURATION_MS', 1800);
  * Sends a personalized game state update to every player in the game's lobby.
  * Pass `preloadedGame` when the caller already has the fresh game in hand to
  * avoid a redundant re-fetch.
+ *
+ * Every update carries the table's presence (who is reconnecting, whose seat the
+ * bot is playing) alongside the game state, because the two change
+ * independently: a takeover is not a game action, so there would otherwise be no
+ * broadcast to hang it off.
  */
 export async function broadcastGameUpdate(
   io: TypedServer,
@@ -54,10 +59,11 @@ export async function broadcastGameUpdate(
     return;
   }
 
+  const presence = await gameService.getPresence(ref.lobbyId);
   const sockets = await io.in(`lobby:${ref.code}`).fetchSockets();
   let lastSize = 0;
   for (const s of sockets) {
-    const clientState = gameService.getClientGameState(game, s.data.playerId);
+    const clientState = gameService.getClientGameState(game, s.data.playerId, presence);
     if (perfEnabled) {
       lastSize = payloadSize({ gameState: clientState });
     }
@@ -70,6 +76,44 @@ export async function broadcastGameUpdate(
       players: sockets.length,
       bytesPerPlayer: lastSize,
     });
+  }
+}
+
+/**
+ * Nudges a game that may be waiting on a seat the bot has just taken over.
+ *
+ * A takeover is not a game action, so nothing else would prompt the engine to
+ * look at whose turn it is. Which prompt is needed depends on the phase - a bid
+ * or a card during play, a Continue on the round scoreboard - and getting the
+ * scoreboard case wrong is what would leave three players stuck on a Continue
+ * button that never turns green.
+ *
+ * Idempotent: every path it calls re-reads the game and no-ops when the seat is
+ * not actually waiting, so calling it needlessly is free.
+ */
+export async function resumeAfterTakeover(io: TypedServer, gameId: string): Promise<void> {
+  const { botService } = await import('../services/bot.service');
+
+  await broadcastGameUpdate(io, gameId);
+
+  const game = await gameService.getGameById(gameId);
+  if (!game) {
+    return;
+  }
+
+  switch (game.gameState.status) {
+    case 'BIDDING':
+    case 'PLAYING':
+    case 'HAND_WINNER':
+      await botService.processPendingBotActions(gameId);
+      break;
+    case 'ROUND_SCOREBOARD':
+      botService.scheduleBotContinues(gameId);
+      break;
+    default:
+      // ROUND_COMPLETE is a transient state on the way to the scoreboard, and a
+      // finished game has nothing left to play.
+      break;
   }
 }
 
@@ -206,6 +250,10 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
     winner: result.winners[0] || { id: '', name: 'Unknown' },
   });
 
-  // Game is over - drop the cached lobby ref to bound memory.
+  // Game is over - drop the cached lobby ref to bound memory, and any takeover
+  // countdown still running against it. There are no turns left to block, so a
+  // seat that is still absent has nothing for a bot to play.
   gameService.clearLobbyRef(gameId);
+  const { gameReconnectService } = await import('../services/gameReconnect.service');
+  gameReconnectService.cancelLobby(ref.lobbyId);
 }

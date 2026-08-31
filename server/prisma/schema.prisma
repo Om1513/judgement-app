@@ -70,21 +70,40 @@ model LobbyPlayer {
   seatPosition Int
   joinedAt     DateTime @default(now())
 
-  // --- Waiting-room disconnect grace period ---------------------------------
-  // A player who drops out of a WAITING lobby is NOT removed straight away:
-  // the seat is held for LOBBY_DISCONNECT_GRACE_MS so a dropped WiFi, a network
-  // switch or a backgrounded app can be recovered without losing their place.
+  // --- Disconnect grace period (waiting room AND live game) -----------------
+  // A player who drops out is NOT removed straight away: the seat is held for
+  // LOBBY_DISCONNECT_GRACE_MS (waiting lobby) or GAME_DISCONNECT_GRACE_MS (live
+  // game) so a dropped WiFi, a network switch or a backgrounded app can be
+  // recovered without losing their place.
   //
   // `connected` is the live presence flag broadcast to clients.
   // `reconnectDeadline` is persisted (rather than living only in a setTimeout)
   // so a server restart can resume - or immediately settle - the countdown.
   // `disconnectGeneration` increments on every connect/disconnect transition
-  // and is the guard that stops a stale removal timer from evicting a player
-  // who has since reconnected. Bots have no socket and stay connected forever.
+  // and is the guard that stops a stale timer from acting on a player who has
+  // since reconnected. Bots have no socket and stay connected forever.
+  //
+  // These four columns are shared by both grace periods on purpose: one seat,
+  // one presence record. Which service owns a row is decided by the lobby's
+  // status, and the two never overlap (a lobby is WAITING or IN_GAME, and every
+  // waiting-room timer is dropped when the game starts).
   connected            Boolean   @default(true)
   disconnectedAt       DateTime?
   reconnectDeadline    DateTime?
   disconnectGeneration Int       @default(0)
+
+  // --- In-game bot takeover / rejoin ----------------------------------------
+  // When a game-disconnect grace period runs out the seat is NOT vacated and no
+  // second player is created: the same seat, hand, bid, score and name stay
+  // exactly where they are and the bot engine starts playing them.
+  // `controlledByBot` is that handover, and clearing it is what gives control
+  // back to the human when they explicitly rejoin.
+  //
+  // `sessionDiscarded` records the other answer to the rejoin prompt: "I do not
+  // want to come back to this game". It stops `session:restore` from offering
+  // the game again, while leaving the game itself running for everybody else.
+  controlledByBot      Boolean   @default(false)
+  sessionDiscarded     Boolean   @default(false)
 
   // Relations
   lobby  Lobby  @relation(fields: [lobbyId], references: [id], onDelete: Cascade)

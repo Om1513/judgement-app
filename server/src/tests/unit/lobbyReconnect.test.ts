@@ -47,6 +47,7 @@ class FakeLobbies implements LobbyReconnectStore {
       connected: true,
       disconnectedAt: null,
       reconnectDeadline: null,
+      controlledByBot: false,
       ...options,
     };
     this.seats.push(player);
@@ -142,6 +143,10 @@ class FakeLobbies implements LobbyReconnectStore {
       disconnectedAt: seat.disconnectedAt,
       reconnectDeadline: seat.reconnectDeadline,
       disconnectGeneration: this.generation(playerId),
+      // The waiting room never hands a seat to a bot - that is the in-game grace
+      // period's business (see gameReconnect.test.ts).
+      controlledByBot: seat.controlledByBot,
+      sessionDiscarded: false,
     };
   }
 

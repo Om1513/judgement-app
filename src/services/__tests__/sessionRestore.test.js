@@ -328,6 +328,16 @@ describe("runColdStartRestore", () => {
     expect(await loadSession()).toMatchObject({ lobbyCode: "ABC123" });
   });
 
+  test("a discarded session is forgotten, exactly like one that expired", async () => {
+    await saveSession({ playerId: "p-om", playerName: "Om", lobbyCode: "ABC123" });
+    stubSocket({ answer: { restored: false, reason: "SESSION_DISCARDED", lobby: null } });
+
+    const result = await runColdStartRestore();
+
+    expect(result.status).toBe(RestoreStatus.NO_SESSION);
+    expect(await loadSession()).toBeNull();
+  });
+
   test("a session left behind by an explicit leave never gets restored", async () => {
     // Leaving clears the pointer; the launch after it is an ordinary one, and
     // the server is never even asked.
@@ -337,5 +347,77 @@ describe("runColdStartRestore", () => {
 
     expect(result.status).toBe(RestoreStatus.NO_SESSION);
     expect(socketService.connect).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A game the bot has taken over
+// ---------------------------------------------------------------------------
+
+describe("a launch into a game the bot has taken over", () => {
+  const REJOIN_OFFER = {
+    gameId: "game-1",
+    lobbyCode: "ABC123",
+    status: "PLAYING",
+    currentRound: 2,
+    totalRounds: 4,
+  };
+
+  const rejoinAnswer = {
+    restored: false,
+    reason: "REJOIN_AVAILABLE",
+    lobby: null,
+    gameState: null,
+    rejoin: REJOIN_OFFER,
+  };
+
+  test("ends by asking rather than by navigating", async () => {
+    await saveSession({ playerId: "p-om", playerName: "Om", lobbyCode: "ABC123" });
+    stubSocket({ answer: rejoinAnswer });
+
+    const result = await runColdStartRestore();
+
+    expect(result.status).toBe(RestoreStatus.REJOIN_AVAILABLE);
+    expect(result.offer).toEqual(REJOIN_OFFER);
+    // Deliberately no target: nothing may move the player until they answer.
+    expect(result.target).toBeUndefined();
+  });
+
+  test("keeps the saved session, because the game is very much alive", async () => {
+    await saveSession({ playerId: "p-om", playerName: "Om", lobbyCode: "ABC123" });
+    stubSocket({ answer: rejoinAnswer });
+
+    await runColdStartRestore();
+
+    expect(await loadSession()).toMatchObject({ lobbyCode: "ABC123" });
+  });
+
+  test("an offer with nothing in it is treated as a refusal, not a prompt", async () => {
+    // A REJOIN_AVAILABLE with no offer is a payload we cannot act on; better to
+    // stay on Home with the session intact than to prompt about nothing.
+    await saveSession({ playerId: "p-om", playerName: "Om", lobbyCode: "ABC123" });
+    stubSocket({ answer: { restored: false, reason: "REJOIN_AVAILABLE", lobby: null } });
+
+    const result = await runColdStartRestore();
+
+    expect(result.status).toBe(RestoreStatus.FAILED);
+    expect(await loadSession()).toMatchObject({ lobbyCode: "ABC123" });
+  });
+
+  test("the answer to an accepted rejoin maps to a screen like any other restore", () => {
+    // The server replies to session:rejoin on the same event, so the navigation
+    // decision is the shared one rather than a second code path.
+    const gameState = gameStateWith("PLAYING");
+    const target = resolveRestoreTarget(
+      { restored: true, lobby: { ...LOBBY, status: "IN_GAME" }, gameState },
+      { playerId: "p-om", playerName: "Om" }
+    );
+
+    expect(target.name).toBe("GameTable");
+    expect(target.params.gameState).toBe(gameState);
+  });
+
+  test("a rejoin offer cannot be mistaken for a screen to open", () => {
+    expect(resolveRestoreTarget(rejoinAnswer, { playerId: "p-om" })).toBeNull();
   });
 });

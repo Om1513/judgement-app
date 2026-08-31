@@ -12,6 +12,7 @@ import {
 
   ClientPlayer,
   ClientRoundState,
+  PlayerPresence,
 } from '../types/game';
 import { Card, GamePlayer } from '../types/player';
 import { lobbyService } from './lobby.service';
@@ -62,6 +63,49 @@ export class GameService {
   /** Drops a game's cached lobby ref (call when the game is over). */
   clearLobbyRef(gameId: string): void {
     this.lobbyRefCache.delete(gameId);
+  }
+
+  /**
+   * Who is actually at the table right now, keyed by playerId.
+   *
+   * Read from the LobbyPlayer rows rather than from the game state JSON, so
+   * presence has exactly one home and a takeover cannot be recorded in one place
+   * and missed in another. Deliberately not cached: it is the one part of a
+   * broadcast that changes for reasons the game state knows nothing about, and a
+   * stale "Reconnecting..." badge is precisely the bug this feature exists to
+   * avoid. One indexed query per broadcast, alongside the ones already made.
+   */
+  async getPresence(lobbyId: string): Promise<PlayerPresence> {
+    const db = getDB();
+
+    const rows = await db.lobbyPlayer.findMany({
+      where: { lobbyId },
+      select: {
+        playerId: true,
+        connected: true,
+        controlledByBot: true,
+        player: { select: { isBot: true } },
+      },
+    });
+
+    const presence: PlayerPresence = {};
+    for (const row of rows) {
+      const isBot = row.player.isBot;
+      presence[row.playerId] = {
+        // A bot has no socket to lose, so it is never "reconnecting" and is
+        // always bot-controlled - which is what makes a bot and a taken-over
+        // human read identically at the table.
+        connected: isBot ? true : row.connected,
+        controlledByBot: isBot ? true : row.controlledByBot,
+      };
+    }
+    return presence;
+  }
+
+  /** The presence map for a game, or an empty one if the game is unknown. */
+  async getPresenceForGame(gameId: string): Promise<PlayerPresence> {
+    const ref = await this.getLobbyRef(gameId);
+    return ref ? this.getPresence(ref.lobbyId) : {};
   }
 
   /**
@@ -235,8 +279,17 @@ export class GameService {
   /**
    * Gets the client-facing game state for a specific player.
    * Hides other players' cards.
+   *
+   * `presence` (see getPresence) adds who is actually at the table, so the UI can
+   * label a seat "Reconnecting..." or "Auto Playing". Omitting it means "assume
+   * everyone is present", which is only correct at moments where that is
+   * guaranteed - the deal, where the game refuses to start otherwise.
    */
-  getClientGameState(game: Game, playerId: string): ClientGameState {
+  getClientGameState(
+    game: Game,
+    playerId: string,
+    presence: PlayerPresence = {}
+  ): ClientGameState {
     const state = game.gameState;
     const currentPlayer = state.players.find(p => p.id === playerId);
     const roundState = state.roundState;
@@ -278,6 +331,8 @@ export class GameService {
       isCurrentTurn: p.isCurrentTurn,
       cardCount: p.hand.length,
       hasBid: roundState ? roundState.bids[p.id] !== undefined : false,
+      connected: presence[p.id]?.connected ?? true,
+      controlledByBot: presence[p.id]?.controlledByBot ?? false,
     }));
 
     return {
