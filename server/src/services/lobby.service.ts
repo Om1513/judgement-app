@@ -784,13 +784,25 @@ export class LobbyService {
   }
 
   /**
-   * Gets the lobby a player is currently in.
+   * Gets the lobby a player is currently participating in.
+   *
+   * Deliberately blind to a seat the player has walked away from - a DISCARD, or
+   * Leave Game mid-round. That membership row still exists, because the bot is
+   * playing the seat out for the rest of the table, but it is no longer *theirs*:
+   * it must not be restored to them, and above all it must not answer "are you
+   * already in a lobby?" with yes. Otherwise leaving one game locks a player out
+   * of creating or joining another until the game they left happens to finish.
+   *
+   * Ordered most-recently-joined first, because a player who left one game and
+   * started another genuinely has two membership rows, and the new one is the one
+   * they are in. Without the ordering the database would pick either.
    */
   async getPlayerLobby(playerId: string): Promise<LobbyState | null> {
     const db = getDB();
 
     const lobbyPlayer = await db.lobbyPlayer.findFirst({
-      where: { playerId },
+      where: { playerId, sessionDiscarded: false },
+      orderBy: { joinedAt: 'desc' },
       include: {
         lobby: {
           include: {
