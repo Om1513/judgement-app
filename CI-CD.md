@@ -145,24 +145,25 @@ prisma db push --force-reset --skip-generate --accept-data-loss
 ```
 
 `--force-reset` drops the public schema and rebuilds every table from
-`prisma/schema.prisma`. This is *the same mechanism production uses* — the
-container's boot command is `prisma db push` (see `server/Dockerfile`). So a
-green integration run is direct evidence that provisioning a brand-new database
-and playing a game on it works. `integration/schema.test.ts` asserts that
+`prisma/schema.prisma` — fast, and it guarantees each run starts from nothing.
+Production no longer uses this mechanism (its boot command is `prisma migrate
+deploy`); what the `migrations` job covers instead is that the recorded
+migrations produce this same schema, so the two cannot quietly diverge. A green
+integration run is direct evidence that provisioning a brand-new database and
+playing a game on it works. `integration/schema.test.ts` asserts that
 explicitly: every table exists, the `GameStatus` enum has the values the code
 transitions through, cascades work, and a full lobby → game → round → scoreboard
 flow persists.
 
 > **Note on migrations.** The integration suites keep using `db push
-> --force-reset` because they need a *fast reset to empty*, which is exactly
-> what it is good at, and because it is still what the production container runs
-> on boot. The migration history in `server/prisma/migrations/` is validated
+> --force-reset` because they need a *fast reset to empty*, which is exactly what
+> it is good at. The migration history in `server/prisma/migrations/` is validated
 > separately by the `migrations` job (§8): `migrate deploy` into an empty
 > database, then a drift check against `schema.prisma`. Two jobs, two claims —
 > "a fresh database can be provisioned and played on" and "the recorded
-> migrations still describe the real schema". Switching production over to
-> `migrate deploy` needs the live Supabase database baselined first; that is a
-> deployment decision, not a testing one. See §10 and DEPLOYMENT.md §1.
+> migrations still describe that same schema". Production applies the migrations
+> (`migrate deploy` on boot); the live database was baselined onto `0_init` once,
+> which is recorded in DEPLOYMENT.md §1.
 
 ---
 
@@ -386,7 +387,7 @@ Deployment already exists and is owned by the platforms, not by this repository
 
 | Piece | How it deploys today |
 |---|---|
-| Game server | **Railway**, watching `main` via its own GitHub integration. Root directory `server`, builds `server/Dockerfile`, health check `GET /health`. On boot: `prisma db push` then `node dist/server.js`. |
+| Game server | **Railway**, watching `main` via its own GitHub integration. Root directory `server`, builds `server/Dockerfile`, health check `GET /health`. On boot: `prisma migrate deploy` then `node dist/server.js`. |
 | Database | **Supabase** Postgres. `DATABASE_URL` (transaction pooler, 6543) and `DIRECT_URL` (session pooler, 5432) are set as Railway variables. |
 | Mobile app | **EAS** — `eas build` / `eas submit`, run manually, profiles in `eas.json`. |
 | Alternative | `render.yaml` exists as a Render blueprint; unused. |
@@ -404,7 +405,7 @@ holds a deploy until the commit's checks pass, which makes the real flow:
 
 ```
 PR      → CI
-merge   → CI on main → Railway waits for CI → build image → prisma db push → deploy
+merge   → CI on main → Railway waits for CI → build image → migrate deploy → deploy
 ```
 
 ### If you later want deploys driven from here instead
@@ -436,39 +437,30 @@ tag, is the natural next step.
 
 Ordered by how much they would actually buy:
 
-1. **Prisma migrations — one step left.** `db push` cannot express a rename and
-   will happily drop a column. The migration history now exists
-   (`server/prisma/migrations/0_init`, a baseline generated offline) and the
-   `migrations` CI job applies it to an empty database *and* checks for drift.
-   What remains is the deployment half: baseline the live Supabase database with
-   `prisma migrate resolve --applied 0_init` (a bookkeeping insert — no DDL, no
-   downtime), then switch the container's boot command to `prisma migrate
-   deploy`. Until that happens, production schema changes are still unrecorded.
-   Exact steps: DEPLOYMENT.md §1, *Switching to `migrate deploy`*.
-2. **Unused tables.** `RoundTrick` and `TrickCard` exist in the schema but are
+1. **Unused tables.** `RoundTrick` and `TrickCard` exist in the schema but are
    never written to — trick state lives in `Game.gameStateJson`, and only
    `GameAction` records the plays. Either populate them or drop them; right now
    they are a false promise to anyone reading the schema.
-3. **Screen-level tests.** `HomeScreen`, `LobbyScreen`, `BiddingScreen`,
+2. **Screen-level tests.** `HomeScreen`, `LobbyScreen`, `BiddingScreen`,
    `GameTableScreen`, `ScoreBoardScreen` are untested. They need
    `socketService` and navigation mocked; worth doing for the bidding grid
    (forbidden-bid button state) and the game table (enabled/disabled cards)
    in particular.
-4. **Lobby disconnect grace period.** A player who drops *before* the game starts
+3. **Lobby disconnect grace period.** A player who drops *before* the game starts
    is removed from the lobby immediately (`handleLobbyDisconnect`); only
    in-progress games survive a drop. Add a grace period, then test it.
-5. **Reconnect mid-trick.** `session:restore` is covered at the service level but
+4. **Reconnect mid-trick.** `session:restore` is covered at the service level but
    not over a socket — worth a test that drops a client mid-trick and asserts the
    restored hand and turn.
-6. **Node version alignment.** Move `server/Dockerfile` to `node:22-slim` (or 24)
+5. **Node version alignment.** Move `server/Dockerfile` to `node:22-slim` (or 24)
    so development, CI and production agree, and add an `engines` field.
-7. **`react-hooks/exhaustive-deps`.** 25 warnings. Most are mount-only animation
+6. **`react-hooks/exhaustive-deps`.** 25 warnings. Most are mount-only animation
    effects that want an explicit disable comment rather than a dependency; worth
    a pass so the rule can be promoted to an error.
-8. **Concurrency under load.** Two players acting at the same instant both
+7. **Concurrency under load.** Two players acting at the same instant both
    read-modify-write `Game.gameStateJson`. The turn check makes this benign in
    practice, but nothing tests it, and there is no optimistic locking.
-9. **Coverage reporting service.** Coverage is printed and the app's HTML report
+8. **Coverage reporting service.** Coverage is printed and the app's HTML report
    uploaded as an artifact; wiring it to Codecov (or similar) would give
    per-PR deltas.
 

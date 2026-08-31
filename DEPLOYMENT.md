@@ -39,7 +39,8 @@ The codebase has already been prepared for this:
 Why two: `DATABASE_URL` is the **transaction-mode** pooler (6543) used for
 runtime queries; `pgbouncer=true` makes Prisma disable prepared statements,
 which that mode doesn't support. `DIRECT_URL` is the **session-mode** pooler
-(5432), which `prisma db push` needs because transaction mode can't run DDL.
+(5432), which schema changes need because transaction mode can't run DDL — this
+is the one the container's boot-time `prisma migrate deploy` uses.
 `schema.prisma` wires them up via `url` and `directUrl`.
 
 **Never use the direct host** `db.PROJECT_REF.supabase.co` — it is IPv6-only and
@@ -73,47 +74,47 @@ edit without its migration fails the build.
 
 `prisma db push` (`npm --prefix server run db:push`) applies the schema without
 recording anything. Fine for a scratch local database and for the integration
-tests, which reset a disposable Postgres on every run. It is **not** the
-long-term production mechanism: it leaves no history, so there is no record of
-what was applied when, and no review step in front of a destructive change.
+tests, which reset a disposable Postgres on every run. It must **never** be
+pointed at production: it leaves no history, so there is no record of what was
+applied when, and no review step in front of a destructive change.
 
-**The live deployment still boots with `db push`** — see below for why, and for
-the one command that changes it.
+**The live deployment boots with `prisma migrate deploy`** (see
+`server/Dockerfile`), so every production schema change is one of the recorded
+migrations in `server/prisma/migrations/` — and a database in a state Prisma does
+not recognise fails the deploy instead of being silently reshaped.
 
-### Switching to `migrate deploy`
+### How the live database got here (baselining, done once)
 
-The migration history exists and is verified (`0_init` is a baseline of the
-current schema, generated offline with `prisma migrate diff`; it was never run
-against a real database). What is *not* yet true is the state of the live
-database: it was created by `db push`, so it has all the tables but no
-`_prisma_migrations` table. `migrate deploy` refuses that outright —
-`P3005: The database schema is not empty` — so flipping the boot command first
-would fail the deploy rather than migrate anything.
-
-Baseline the existing database once, then flip. Run this against production with
-`DIRECT_URL` pointed at the session-mode pooler:
+The database predates the migration history: it was originally created by
+`db push`, so it had all the tables but no `_prisma_migrations` table, and
+`migrate deploy` refuses that outright with
+`P3005: The database schema is not empty`. It was baselined once to fix that:
 
 ```bash
 cd server
-npm run db:migrate:status                 # expect: no migrations applied yet
+# 1. read-only: prove the live schema matches schema.prisma exactly, so that
+#    0_init is a truthful description of what is already there
+npx prisma migrate diff --from-url "$DIRECT_URL" \
+  --to-schema-datamodel prisma/schema.prisma --exit-code   # -> "No difference detected."
+
+# 2. record 0_init as already applied - one bookkeeping row, no DDL, no downtime
 npx prisma migrate resolve --applied 0_init
-npm run db:migrate:status                 # expect: "Database schema is up to date!"
+
+# 3. confirm
+npm run db:migrate:status                                  # -> "Database schema is up to date!"
 ```
 
-`migrate resolve --applied` only inserts a bookkeeping row. It runs no DDL,
-touches no game data, and needs no downtime. Then swap the `CMD` in
-`server/Dockerfile` to the `migrate deploy` line already written there as a
-comment, and redeploy. From then on a deploy applies exactly the migrations in
-`server/prisma/migrations/` and stops if the database is in a state it does not
-recognise, instead of silently reshaping it.
+Nothing to repeat — it is done, and the recorded history now starts at `0_init`.
+The procedure is kept here because it is the same one you would need for any
+*other* database that was built with `db push` (a staging copy, or a restored
+snapshot taken before the baseline). Step 1 is the important one: if it reports
+any difference, that database does not match `0_init` and baselining it would
+record a lie.
 
-Two things to know before you do it. `0_init` must be a truthful description of
-what production already has — it was generated from the current `schema.prisma`,
-so this holds as long as production is actually up to date with that schema
-(confirm with `prisma migrate status` after baselining; it compares them). And
-once the flip is done, stop using `db push` against production — pushing again
-would change the schema without recording it, and the next `migrate deploy`
-would then be working from a false picture of the database.
+**Never run `db push` against production.** It changes the schema without
+recording it, which would leave the next `migrate deploy` reasoning from a false
+picture of the database. Schema changes go through `npm run db:migrate` locally,
+committed with their migration.
 
 ## 2. Deploy the backend (Railway)
 
@@ -127,9 +128,9 @@ would then be working from a false picture of the database.
    - `NODE_ENV` = `production`
    - `CORS_ORIGIN` = `*` (tighten later if you ship a web build)
    - `PORT` is injected by Railway automatically — do **not** set it.
-5. Deploy. On boot the container runs `prisma db push` (creates all tables on the
-   fresh Supabase DB) then starts the server. Health check: `GET /health`.
-   For the audited alternative, see *Switching to `migrate deploy`* above.
+5. Deploy. On boot the container runs `prisma migrate deploy` (applies every
+   migration in `server/prisma/migrations/`, which creates all tables on a fresh
+   Supabase DB) then starts the server. Health check: `GET /health`.
 6. Under **Settings → Networking**, generate a public domain. You'll get something
    like `https://judgement-server-production.up.railway.app`. TLS/`wss://` is
    automatic. **This URL is your API host.**
@@ -294,12 +295,7 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
 
 ## Known limitations / recommended next steps
 
-1. **Schema management.** Deploy still boots with `prisma db push`, so schema
-   changes reach production unrecorded. The migration history and the CI check
-   are now in place; what remains is baselining the live database and flipping
-   the Dockerfile `CMD` — one command, no downtime. See
-   *Switching to `migrate deploy`* in section 1.
-2. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
+1. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
    sessions, and moving the bot `setTimeout`/`actionLocks` and the disconnect
    grace-period timers out of process memory
    (`server/src/services/bot.service.ts`,
