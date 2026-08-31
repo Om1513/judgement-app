@@ -284,8 +284,11 @@ class SocketService {
       this.pendingRejoin = null;
       if (data?.reason === 'SESSION_NOT_FOUND' || data?.reason === 'SESSION_DISCARDED') {
         // Authoritative: the game finished, the lobby went, we were removed, or
-        // we said ourselves that we were not coming back.
-        console.log('[Session] No active session');
+        // we said ourselves that we were not coming back. The reason is logged
+        // rather than flattened to one message - the two look identical from the
+        // outside and telling them apart is the difference between "nothing to
+        // come back to" and "the server still has a seat filed under you".
+        console.log(`[Session] No active session (${data.reason})`);
         void this.clearSavedSession();
       } else {
         // RESTORE_FAILED, or a payload we do not understand. The session may

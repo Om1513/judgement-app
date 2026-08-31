@@ -223,7 +223,7 @@ export async function runColdStartRestore({
     if (payload.reason === 'SESSION_NOT_FOUND' || payload.reason === 'SESSION_DISCARDED') {
       // Expired, finished, kicked, left from another device, or discarded by the
       // player themselves. Normal - the pointer is dropped and they see Home.
-      console.log('[Session] Session expired');
+      console.log(`[Session] Nothing to restore (${payload.reason})`);
       await clearSession();
       return { status: RestoreStatus.NO_SESSION };
     }

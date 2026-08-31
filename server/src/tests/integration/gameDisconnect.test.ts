@@ -862,8 +862,56 @@ describe('DISCARD', () => {
     const answer = lastSessionAnswer(later);
 
     assert.equal(answer.restored, false);
-    assert.equal(answer.reason, 'SESSION_DISCARDED', 'not prompted again');
-    assert.equal(answer.rejoin, undefined);
+    assert.equal(answer.rejoin, undefined, 'not prompted again');
+    // The seat they walked away from is the bot's now, so as far as "where is
+    // this player?" is concerned they are nowhere - which is exactly what frees
+    // them to start something else.
+    assert.equal(answer.reason, 'SESSION_NOT_FOUND');
+  });
+
+  test('frees the player to create a brand-new lobby straight away', async () => {
+    // The regression that made this whole path unusable: the discarded seat is
+    // kept so the bot can play it, and it used to answer "you are already in a
+    // lobby", locking the player out of every new game until the old one ended.
+    gameReconnectService.configure({ graceMs: 40 });
+    const { clients, lobbyId, gameId, code } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const [om] = clients;
+
+    const back = await coldStartAfterTakeover(om, lobbyId);
+    await waitFor(back.socket, 'session:restore', () => back.socket.emit('session:discard'));
+
+    const created = await waitFor<{ lobby: LobbyState }>(back.socket, 'lobby:created', () =>
+      back.socket.emit('lobby:create', { playerName: back.name })
+    );
+
+    assert.notEqual(created.lobby.code, code, 'a genuinely new lobby');
+    assert.equal(created.lobby.hostPlayerId, om.playerId, 'and they host it');
+    assert.equal(created.lobby.status, 'WAITING');
+
+    // The game they left is untouched, still three seats, bot on theirs.
+    assert.equal((await getState(gameId)).players.length, 3);
+    assert.equal((await seatRow(lobbyId, om.playerId)).controlledByBot, true);
+  });
+
+  test('the new lobby is what a later launch restores, not the abandoned game', async () => {
+    // Two membership rows now exist for one player. The one that must win is the
+    // one they are actually sitting in.
+    gameReconnectService.configure({ graceMs: 40 });
+    const { clients, lobbyId } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const [om] = clients;
+
+    const back = await coldStartAfterTakeover(om, lobbyId);
+    await waitFor(back.socket, 'session:restore', () => back.socket.emit('session:discard'));
+    const created = await waitFor<{ lobby: LobbyState }>(back.socket, 'lobby:created', () =>
+      back.socket.emit('lobby:create', { playerName: back.name })
+    );
+
+    const later = await coldStart(back);
+    const answer = lastSessionAnswer(later);
+
+    assert.equal(answer.restored, true);
+    assert.equal(answer.lobby!.code, created.lobby.code, 'the new lobby, not the old game');
+    assert.equal(answer.gameState, null, 'and not carrying the abandoned game s state');
   });
 
   test('the remaining players carry on and finish the round', async () => {
@@ -1037,8 +1085,47 @@ describe('leaving a game on purpose', () => {
     const answer = lastSessionAnswer(omAgain);
 
     assert.equal(answer.restored, false);
-    assert.equal(answer.reason, 'SESSION_DISCARDED');
+    assert.equal(answer.reason, 'SESSION_NOT_FOUND');
     assert.equal(answer.rejoin, undefined, 'not prompted about a game they walked out of');
+  });
+
+  test('leaves the player free to start a new game immediately', async () => {
+    // Pressing Leave Game and then Create Game is the single most obvious thing
+    // to do next, and the bot-played seat left behind must not block it.
+    const { clients, lobbyId, code } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const [om] = clients;
+
+    om.socket.emit('lobby:leave');
+    await flush(200);
+
+    const created = await waitFor<{ lobby: LobbyState }>(om.socket, 'lobby:created', () =>
+      om.socket.emit('lobby:create', { playerName: om.name })
+    );
+
+    assert.notEqual(created.lobby.code, code);
+    assert.equal(created.lobby.playerCount, 1);
+    assert.equal((await seatRow(lobbyId, om.playerId)).controlledByBot, true, 'old seat bot-played');
+  });
+
+  test('leaves the player free to join somebody else s lobby', async () => {
+    const { clients } = await gameOf(['Om', 'Yukta', 'Raj']);
+    const [om] = clients;
+
+    om.socket.emit('lobby:leave');
+    await flush(200);
+
+    // A fresh lobby hosted by somebody entirely different.
+    const neha = await client('Neha');
+    const hosted = await waitFor<{ lobby: LobbyState }>(neha.socket, 'lobby:created', () =>
+      neha.socket.emit('lobby:create', { playerName: 'Neha' })
+    );
+
+    const joined = await waitFor<{ lobby: LobbyState }>(om.socket, 'lobby:joined', () =>
+      om.socket.emit('lobby:join', { code: hosted.lobby.code, playerName: om.name })
+    );
+
+    assert.equal(joined.lobby.code, hosted.lobby.code);
+    assert.equal(joined.lobby.playerCount, 2);
   });
 
   test('leaving a waiting lobby still removes the seat, exactly as before', async () => {

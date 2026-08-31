@@ -214,6 +214,11 @@ async function restoreSession(socket: TypedSocket): Promise<SessionRestorePayloa
         // final: no room, no state, nothing to prompt about. Deliberately not
         // joined to the lobby room either - a discarded player should not keep
         // receiving the table's broadcasts.
+        //
+        // getPlayerLobby already skips a walked-away-from seat, so in practice we
+        // do not get here; this is the same rule stated where it matters most,
+        // because the cost of being wrong is handing somebody a hand of cards
+        // they are no longer entitled to.
         console.log(
           `${socket.data.playerName} has discarded their session in lobby ${found.code}`
         );
