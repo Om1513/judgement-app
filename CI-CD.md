@@ -71,6 +71,11 @@ npm run build       # both
 `npm run test:integration`, `npm run test:coverage`, `npm run db:test:up`,
 `npm run db:test:down`
 
+Prisma (all read `prisma/schema.prisma`): `npm run db:generate`,
+`npm run db:migrate` (`migrate dev` — creates a migration), `npm run db:push`
+(local scratch DB only), `npm run db:migrate:deploy`, `npm run db:migrate:status`,
+`npm run db:studio`
+
 ---
 
 ## 3. Test layout
@@ -148,12 +153,16 @@ explicitly: every table exists, the `GameStatus` enum has the values the code
 transitions through, cascades work, and a full lobby → game → round → scoreboard
 flow persists.
 
-> **Note on migrations.** This project has no `prisma/migrations` directory; it
-> has always used `db push`, in development and in production. CI therefore
-> validates the mechanism that is actually in use rather than a parallel one that
-> is not. Moving to `prisma migrate deploy` would be an improvement (reviewable
-> diffs, no accidental drops), but it needs the live Supabase database baselined
-> first — a deployment decision, not a testing one. See §10.
+> **Note on migrations.** The integration suites keep using `db push
+> --force-reset` because they need a *fast reset to empty*, which is exactly
+> what it is good at, and because it is still what the production container runs
+> on boot. The migration history in `server/prisma/migrations/` is validated
+> separately by the `migrations` job (§8): `migrate deploy` into an empty
+> database, then a drift check against `schema.prisma`. Two jobs, two claims —
+> "a fresh database can be provisioned and played on" and "the recorded
+> migrations still describe the real schema". Switching production over to
+> `migrate deploy` needs the live Supabase database baselined first; that is a
+> deployment decision, not a testing one. See §10 and DEPLOYMENT.md §1.
 
 ---
 
@@ -287,23 +296,31 @@ CI fails on errors and never runs `--fix`.
 Runs on every `pull_request` and every `push` to `main`.
 
 ```
-quality              unit-tests          integration-tests      build            docker           audit
-├─ npm ci (both)     ├─ npm ci (both)    ├─ postgres service    ├─ npm ci        ├─ docker build  ├─ server prod
-├─ prisma generate   ├─ prisma generate  ├─ npm ci (server)     ├─ tsc           │  ./server      │  deps must be
-├─ eslint            ├─ jest --coverage  ├─ prisma generate     ├─ expo export   └─ verify        │  clean @ high
-└─ tsc --noEmit      └─ server unit      ├─ db push --force-    │  --platform       dist/         └─ full report
-                        tests            │  reset (from empty)  │  web              server.js        (informational)
-                                         └─ integration +      └─ upload
-                                            socket tests           artifact
+quality              unit-tests          integration-tests       migrations
+├─ npm ci (both)     ├─ npm ci (both)    ├─ postgres service     ├─ postgres service
+├─ prisma generate   ├─ prisma generate  ├─ npm ci (server)      ├─ npm ci (server)
+├─ eslint            ├─ jest --coverage  ├─ prisma generate      ├─ migrate deploy
+└─ tsc --noEmit      └─ server unit      ├─ db push --force-     │  (from empty)
+                        tests            │  reset (from empty)   └─ drift check vs
+                                         └─ integration +           schema.prisma
+                                            socket tests
                                             + coverage
-                                                    │
-                                                    ▼
-                                              ci-success
+
+build                docker              audit
+├─ npm ci            ├─ docker build     ├─ server prod deps
+├─ tsc               │  ./server         │  must be clean @ high
+├─ expo export       └─ verify dist/     └─ full report
+│  --platform web       server.js           (informational)
+└─ upload artifact
+
+                              │
+                              ▼
+                         ci-success
 ```
 
 Design notes:
 
-- **Six parallel jobs, no artificial dependencies.** Only `ci-success` has
+- **Seven parallel jobs, no artificial dependencies.** Only `ci-success` has
   `needs:`. Lint failures and integration failures surface at the same time
   instead of one hiding the other.
 - **`ci-success`** is the single check to require in branch protection. It fails
@@ -419,11 +436,15 @@ tag, is the natural next step.
 
 Ordered by how much they would actually buy:
 
-1. **Prisma migrations.** `db push` cannot express a rename and will happily drop
-   a column. Baseline the Supabase database
-   (`prisma migrate diff` → `migrate resolve --applied`), then switch the
-   container's boot command to `prisma migrate deploy` and add a CI step that
-   applies migrations to an empty database *and* checks for drift.
+1. **Prisma migrations — one step left.** `db push` cannot express a rename and
+   will happily drop a column. The migration history now exists
+   (`server/prisma/migrations/0_init`, a baseline generated offline) and the
+   `migrations` CI job applies it to an empty database *and* checks for drift.
+   What remains is the deployment half: baseline the live Supabase database with
+   `prisma migrate resolve --applied 0_init` (a bookkeeping insert — no DDL, no
+   downtime), then switch the container's boot command to `prisma migrate
+   deploy`. Until that happens, production schema changes are still unrecorded.
+   Exact steps: DEPLOYMENT.md §1, *Switching to `migrate deploy`*.
 2. **Unused tables.** `RoundTrick` and `TrickCard` exist in the schema but are
    never written to — trick state lives in `Game.gameStateJson`, and only
    `GameAction` records the plays. Either populate them or drop them; right now

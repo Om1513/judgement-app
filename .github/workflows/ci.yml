@@ -151,6 +151,66 @@ jobs:
         run: npm --prefix server run test:coverage
 
   # ---------------------------------------------------------------------------
+  # The migration history. Two things are checked, both against a throwaway
+  # database: that server/prisma/migrations applies cleanly to an empty
+  # Postgres, and that replaying it lands exactly on schema.prisma. The second
+  # is the one that matters day to day - it fails the moment someone edits
+  # schema.prisma without generating the matching migration, which is how a
+  # migration history silently stops describing the real schema.
+  # ---------------------------------------------------------------------------
+  migrations:
+    name: Prisma migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kachuful_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Disposable and local to the job. Validating migrations must never need
+      # production credentials, and this job has none.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kachuful_test?schema=public
+      # Schema changes go through directUrl; here it is the same server.
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/kachuful_test?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix server ci
+
+      - name: Apply every migration to an empty database
+        run: npm --prefix server run db:migrate:deploy
+
+      - name: Check the migrations still match schema.prisma
+        # Replays prisma/migrations into a scratch schema and diffs the result
+        # against schema.prisma. --exit-code makes any difference a failure.
+        working-directory: server
+        run: |
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "postgresql://postgres:postgres@127.0.0.1:5432/postgres?schema=shadow" \
+            --exit-code
+
+  # ---------------------------------------------------------------------------
   # Production builds. A pull request must not be mergeable if either half of
   # the product cannot be built for release.
   # ---------------------------------------------------------------------------
@@ -267,13 +327,14 @@ jobs:
     name: CI success
     runs-on: ubuntu-latest
     if: always()
-    needs: [quality, unit-tests, integration-tests, build, docker, audit]
+    needs: [quality, unit-tests, integration-tests, migrations, build, docker, audit]
     steps:
       - name: Fail if anything upstream did not succeed
         run: |
           echo "quality:            ${{ needs.quality.result }}"
           echo "unit-tests:         ${{ needs.unit-tests.result }}"
           echo "integration-tests:  ${{ needs.integration-tests.result }}"
+          echo "migrations:         ${{ needs.migrations.result }}"
           echo "build:              ${{ needs.build.result }}"
           echo "docker:             ${{ needs.docker.result }}"
           echo "audit:              ${{ needs.audit.result }}"

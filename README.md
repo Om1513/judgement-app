@@ -40,9 +40,20 @@ npm run web
 
 ```bash
 cd server
-npm run db:push    # apply the Prisma schema to your local database
-npm run dev        # http://localhost:3001
+npm run db:migrate   # apply the migration history to your local database
+npm run dev          # http://localhost:3001
 ```
+
+The schema is `server/prisma/schema.prisma`; migrations live in
+`server/prisma/migrations/`. After changing the schema, run `npm run db:migrate`
+and commit the schema and the generated migration together — CI checks that they
+agree.
+
+Heads-up if your local database predates the migration history: it was created by
+`db:push` and has the tables without Prisma's bookkeeping, so `db:migrate` will
+detect that and offer to reset it. Local scratch data only, but it does mean
+losing whatever games are sitting in there. `npm run db:push` still works if you
+would rather not.
 
 ## Tests and CI
 

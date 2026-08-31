@@ -52,6 +52,69 @@ the session pooler.
 
 (Neon or Render Postgres work identically — just grab their connection string.)
 
+### Schema management (Prisma)
+
+One schema, one place. `server/prisma/schema.prisma` is canonical — it is what
+the server generates its client from, what the tests apply, and what CI checks.
+Migrations live beside it in `server/prisma/migrations/`. Run every `prisma`
+command from `server/`; there is no Prisma setup at the repo root.
+
+| | command |
+|---|---|
+| Change the schema (dev) | `npm --prefix server run db:migrate` (`prisma migrate dev`) |
+| Regenerate the client | `npm --prefix server run db:generate` |
+| Apply migrations (prod) | `npm --prefix server run db:migrate:deploy` |
+| Check what a DB has applied | `npm --prefix server run db:migrate:status` |
+
+After a schema change, commit `schema.prisma` **and** the generated migration
+together. CI's *Prisma migrations* job replays the migration history into a
+throwaway database and diffs the result against `schema.prisma`, so a schema
+edit without its migration fails the build.
+
+`prisma db push` (`npm --prefix server run db:push`) applies the schema without
+recording anything. Fine for a scratch local database and for the integration
+tests, which reset a disposable Postgres on every run. It is **not** the
+long-term production mechanism: it leaves no history, so there is no record of
+what was applied when, and no review step in front of a destructive change.
+
+**The live deployment still boots with `db push`** — see below for why, and for
+the one command that changes it.
+
+### Switching to `migrate deploy`
+
+The migration history exists and is verified (`0_init` is a baseline of the
+current schema, generated offline with `prisma migrate diff`; it was never run
+against a real database). What is *not* yet true is the state of the live
+database: it was created by `db push`, so it has all the tables but no
+`_prisma_migrations` table. `migrate deploy` refuses that outright —
+`P3005: The database schema is not empty` — so flipping the boot command first
+would fail the deploy rather than migrate anything.
+
+Baseline the existing database once, then flip. Run this against production with
+`DIRECT_URL` pointed at the session-mode pooler:
+
+```bash
+cd server
+npm run db:migrate:status                 # expect: no migrations applied yet
+npx prisma migrate resolve --applied 0_init
+npm run db:migrate:status                 # expect: "Database schema is up to date!"
+```
+
+`migrate resolve --applied` only inserts a bookkeeping row. It runs no DDL,
+touches no game data, and needs no downtime. Then swap the `CMD` in
+`server/Dockerfile` to the `migrate deploy` line already written there as a
+comment, and redeploy. From then on a deploy applies exactly the migrations in
+`server/prisma/migrations/` and stops if the database is in a state it does not
+recognise, instead of silently reshaping it.
+
+Two things to know before you do it. `0_init` must be a truthful description of
+what production already has — it was generated from the current `schema.prisma`,
+so this holds as long as production is actually up to date with that schema
+(confirm with `prisma migrate status` after baselining; it compares them). And
+once the flip is done, stop using `db push` against production — pushing again
+would change the schema without recording it, and the next `migrate deploy`
+would then be working from a false picture of the database.
+
 ## 2. Deploy the backend (Railway)
 
 1. Push this repo to GitHub (already at `github.com/Om1513/judgement-app`).
@@ -66,6 +129,7 @@ the session pooler.
    - `PORT` is injected by Railway automatically — do **not** set it.
 5. Deploy. On boot the container runs `prisma db push` (creates all tables on the
    fresh Supabase DB) then starts the server. Health check: `GET /health`.
+   For the audited alternative, see *Switching to `migrate deploy`* above.
 6. Under **Settings → Networking**, generate a public domain. You'll get something
    like `https://judgement-server-production.up.railway.app`. TLS/`wss://` is
    automatic. **This URL is your API host.**
@@ -230,8 +294,11 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
 
 ## Known limitations / recommended next steps
 
-1. **Schema management.** Deploy uses `prisma db push`. For audited schema
-   history switch to `prisma migrate deploy` once the schema stabilizes.
+1. **Schema management.** Deploy still boots with `prisma db push`, so schema
+   changes reach production unrecorded. The migration history and the CI check
+   are now in place; what remains is baselining the live database and flipping
+   the Dockerfile `CMD` — one command, no downtime. See
+   *Switching to `migrate deploy`* in section 1.
 2. **Scaling past one instance** needs the Socket.IO Redis adapter + sticky
    sessions, and moving the bot `setTimeout`/`actionLocks` and the disconnect
    grace-period timers out of process memory
@@ -239,6 +306,3 @@ eas submit --profile production --platform ios   # uploads to App Store Connect 
    `server/src/services/gameReconnect.service.ts`). The grace-period deadlines
    themselves are persisted, so a restart resumes them - but two instances would
    each run their own timers. Not needed until thousands of concurrent players.
-3. **Stray root Prisma setup** (`prisma/`, `prisma.config.ts`, root `@prisma/client`
-   dep) is unused by the app — the real schema is `server/prisma/schema.prisma`.
-   Safe to remove later to reduce confusion.
