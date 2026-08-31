@@ -19,6 +19,15 @@ services:
         fromDatabase:
           name: judgement-db
           property: connectionString
+      # schema.prisma declares `directUrl`, so this must be set or the boot-time
+      # `prisma migrate deploy` fails schema validation with P1012 before it can
+      # connect. Render Postgres has no separate transaction pooler to bypass, so
+      # it is the same string as DATABASE_URL. (On Supabase the two differ - see
+      # DEPLOYMENT.md section 1.)
+      - key: DIRECT_URL
+        fromDatabase:
+          name: judgement-db
+          property: connectionString
 
 databases:
   - name: judgement-db

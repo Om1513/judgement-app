@@ -31,16 +31,17 @@ COPY prisma ./prisma
 # Hosts inject PORT; 3001 is the local/default.
 EXPOSE 3001
 
-# On boot, sync the schema to the database (creates tables on a fresh DB),
-# then start the server. Client is already generated, so skip regeneration.
+# On boot, apply any pending migrations from prisma/migrations (copied into the
+# image above), then start the server. The client is already generated, so there
+# is nothing to regenerate.
 #
-# The audited alternative is `prisma migrate deploy`, and prisma/migrations/ (in
-# the image, copied above) is ready for it - but it cannot be switched on here
-# unilaterally. The live database was created by `db push`, so it has the tables
-# without the `_prisma_migrations` bookkeeping table, and `migrate deploy`
-# refuses that with `P3005: The database schema is not empty`. Baseline the
-# existing database once (one command, no downtime, no data touched - see
-# "Switching to migrate deploy" in DEPLOYMENT.md), then swap this line for:
+# `migrate deploy` applies only what is recorded and refuses a database whose
+# state it does not recognise, instead of silently reshaping it the way `db push`
+# would. The live database was baselined with `migrate resolve --applied 0_init`,
+# so its recorded history starts from that migration.
 #
-#   CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/server.js"]
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js db push --skip-generate && node dist/server.js"]
+# Do not run `db push` against production from here on. It would change the
+# schema without recording it, leaving `migrate deploy` working from a false
+# picture of the database. Schema changes go through `npm run db:migrate`
+# locally, committed together with their migration - see DEPLOYMENT.md section 1.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/server.js"]
