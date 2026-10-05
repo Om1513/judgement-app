@@ -78,6 +78,13 @@ module.exports = [
       // number of intentional mount-only animation effects. Reported, not
       // fatal, so the signal stays visible without blocking unrelated work.
       "react-hooks/exhaustive-deps": "warn",
+      // React Compiler rules that arrived with eslint-config-expo 57. The app
+      // does not use the compiler, and `refs` fires on every
+      // `useRef(new Animated.Value()).current`, the standard RN animation
+      // idiom. Reported, not fatal, for the same reason as exhaustive-deps.
+      "react-hooks/refs": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/immutability": "warn",
       // Every service in `src/services` exports both a class/singleton default
       // and named helpers; importing the default by its own name is intended.
       "import/no-named-as-default": "off",
