@@ -6,12 +6,6 @@
     "orientation": "landscape",
     "icon": "./assets/logo_kachuful.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/background.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#1a1030"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.omsinghan25.judgement",
@@ -24,7 +18,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.omsinghan25.judgement"
     },
     "web": {
@@ -33,7 +26,16 @@
     "plugins": [
       "expo-font",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/background.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#1a1030"
+        }
+      ]
     ],
     "extra": {
       "eas": {
