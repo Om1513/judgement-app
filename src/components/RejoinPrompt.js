@@ -109,7 +109,7 @@ export default function RejoinPrompt({ visible, offer, busy, onRejoin, onDiscard
 
 const rawStyles = {
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     alignItems: "center",

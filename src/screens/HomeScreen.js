@@ -271,7 +271,7 @@ const rawStyles = {
     height: "50%",
   },
   darkOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(15, 8, 30, 0.75)",
   },
   keyboardAvoid: {

@@ -42,7 +42,7 @@ export default function RestoringOverlay({ message = "Restoring game..." }) {
 
 const rawStyles = {
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#1a1030",
   },
   background: {

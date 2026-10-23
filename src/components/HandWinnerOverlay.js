@@ -116,7 +116,7 @@ export default function HandWinnerOverlay({ visible, winnerName, onShown }) {
 
 const rawStyles = {
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 500,

@@ -293,7 +293,7 @@ const rawStyles = {
     height: "100%",
   },
   overlayGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   content: {
     flex: 1,

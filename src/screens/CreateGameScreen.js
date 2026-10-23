@@ -431,7 +431,7 @@ const rawStyles = {
     opacity: 0.85,
   },
   overlayGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   content: {
     flex: 1,

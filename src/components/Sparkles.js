@@ -110,7 +110,7 @@ export default function Sparkles() {
 
 const rawStyles = {
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   sparkle: {
     position: "absolute",
