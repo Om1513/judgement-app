@@ -35,6 +35,23 @@ export class GameService {
   // especially costly against a remote/serverless database).
   private lobbyRefCache = new Map<string, { lobbyId: string; code: string }>();
 
+  // Live games, held in memory and written through to Postgres on every change.
+  // Every bid, card, trick and bot action starts by reading the game, and
+  // against a remote database that read was a full round trip on the path to
+  // everyone seeing the move. Postgres stays the source of truth: an entry is
+  // only stored after the write it reflects has succeeded, a miss (or a
+  // restart) reads the database, and the races are still settled there by
+  // conditional writes (advanceRoundOnce, claimSeatForBot, ...).
+  //
+  // Like the reconnect timers, this assumes one server process: a second
+  // instance writing the same game would not invalidate this one's copy.
+  private liveGames = new Map<string, Game>();
+  private static readonly MAX_LIVE_GAMES = 500;
+
+  // Round rows never change id, so a bid need not look its round up each time.
+  // Keyed `${gameId}:${roundNumber}`.
+  private roundRowIds = new Map<string, string>();
+
   /**
    * Returns the (immutable) lobby id + code for a game, used to address the
    * Socket.IO room. Cached in memory; one lightweight query on a cache miss.
@@ -207,7 +224,7 @@ export class GameService {
     });
 
     // Create game round record
-    await db.gameRound.create({
+    const round1Row = await db.gameRound.create({
       data: {
         gameId,
         roundNumber: 1,
@@ -218,36 +235,97 @@ export class GameService {
         status: 'BIDDING',
       },
     });
+    this.roundRowIds.set(`${gameId}:1`, round1Row.id);
 
     // Log game start action
     await this.logAction(gameId, turnOrder[0], 'GAME_START', { players: turnOrder });
+
+    // Read fresh on first use: this write set more columns than a Game holds.
+    this.liveGames.delete(gameId);
 
     return gameState;
   }
 
   /**
-   * Gets the full game state by ID.
+   * Gets the full game state by ID - from memory when the game is live, else
+   * from the database. Always a private copy: callers mutate the state they are
+   * given before saving it, and that must never leak into the cached game (or
+   * another caller's) if their write then fails.
    */
   async getGameById(gameId: string): Promise<Game | null> {
+    const cached = this.liveGames.get(gameId);
+    if (cached) {
+      return structuredClone(cached);
+    }
+
     const db = getDB();
 
-    const game = await db.game.findUnique({
+    const row = await db.game.findUnique({
       where: { id: gameId },
     });
 
-    if (!game) {
+    if (!row) {
       return null;
     }
 
-    return {
-      id: game.id,
-      lobbyId: game.lobbyId,
-      currentRound: game.currentRound,
-      currentTurnPlayerId: game.currentTurnPlayerId,
-      status: game.status as GameStatus,
-      gameState: game.gameStateJson as unknown as GameState,
-      createdAt: game.createdAt,
+    const game: Game = {
+      id: row.id,
+      lobbyId: row.lobbyId,
+      currentRound: row.currentRound,
+      currentTurnPlayerId: row.currentTurnPlayerId,
+      status: row.status as GameStatus,
+      gameState: row.gameStateJson as unknown as GameState,
+      createdAt: row.createdAt,
     };
+    this.remember(game);
+    return game;
+  }
+
+  /** Records a game as just saved. Only call after the write has succeeded. */
+  private remember(game: Game): void {
+    this.liveGames.delete(game.id);
+    this.liveGames.set(game.id, structuredClone(game));
+    // Oldest first: finished games are dropped explicitly, so this only trims
+    // abandoned ones.
+    if (this.liveGames.size > GameService.MAX_LIVE_GAMES) {
+      const oldest = this.liveGames.keys().next().value;
+      if (oldest !== undefined) this.liveGames.delete(oldest);
+    }
+  }
+
+  /**
+   * Drops a game's in-memory copy, so the next read comes from the database.
+   * For writes made outside this service (a finished game's status, or tests
+   * arranging rows directly) and for games that are over.
+   */
+  forgetGame(gameId: string): void {
+    this.liveGames.delete(gameId);
+    for (const key of this.roundRowIds.keys()) {
+      if (key.startsWith(`${gameId}:`)) this.roundRowIds.delete(key);
+    }
+  }
+
+  /** Drops every in-memory game. For tests that empty the database. */
+  forgetAllGames(): void {
+    this.liveGames.clear();
+    this.roundRowIds.clear();
+  }
+
+  /** A round's row id, looked up once and remembered. Null if it has none. */
+  private async getRoundRow(gameId: string, roundNumber: number): Promise<{ id: string } | null> {
+    const key = `${gameId}:${roundNumber}`;
+    const known = this.roundRowIds.get(key);
+    if (known) {
+      return { id: known };
+    }
+    const row = await getDB().gameRound.findFirst({
+      where: { gameId, roundNumber },
+      select: { id: true },
+    });
+    if (row) {
+      this.roundRowIds.set(key, row.id);
+    }
+    return row;
   }
 
   /**
@@ -405,9 +483,7 @@ export class GameService {
     state.players[playerIndex].bid = input.bid;
 
     // Get current game round to save bid
-    const gameRound = await db.gameRound.findFirst({
-      where: { gameId: input.gameId, roundNumber: roundState.roundNumber },
-    });
+    const gameRound = await this.getRoundRow(input.gameId, roundState.roundNumber);
 
     // The writes below do not depend on each other, so they go out together
     // rather than one round trip after another - this is on the path between a
@@ -483,7 +559,9 @@ export class GameService {
     );
     await Promise.all(writes);
 
-    return { ...game, status: state.status, currentTurnPlayerId: nextPlayerId, gameState: state };
+    const saved = { ...game, status: state.status, currentTurnPlayerId: nextPlayerId, gameState: state };
+    this.remember(saved);
+    return saved;
   }
 
   /**
@@ -595,55 +673,55 @@ export class GameService {
           });
         }
 
-        // Save round scores to database
-        const currentRoundDb = await db.gameRound.findFirst({
-          where: { gameId: input.gameId, roundNumber: roundState.roundNumber },
-        });
+        // Save the round's scores, close the round and open its scoreboard.
+        // Independent chains, so they go out together rather than as nine
+        // round trips in a row on the card that ends the round.
+        const currentRoundDb = await this.getRoundRow(input.gameId, roundState.roundNumber);
+        const roundWrites: Promise<unknown>[] = [
+          this.logAction(input.gameId, input.playerId, 'ROUND_END', {
+            round: roundState.roundNumber,
+            scores: state.scores,
+          }),
+        ];
         if (currentRoundDb) {
-          await db.roundScore.deleteMany({
-            where: { gameId: input.gameId, roundId: currentRoundDb.id },
-          });
-          await db.roundScore.createMany({
-            data: roundScores.map(rs => ({
-              gameId: input.gameId,
-              roundId: currentRoundDb.id,
-              playerId: rs.playerId,
-              bidValue: rs.bid,
-              handsMade: rs.handsMade,
-              roundScore: rs.score,
-            })),
-          });
-
-          // Update round status to COMPLETED
-          await db.gameRound.update({
-            where: { id: currentRoundDb.id },
-            data: { status: 'COMPLETED' },
-          });
-
-          // Create scoreboard confirmations
-          await db.scoreboardConfirmation.deleteMany({
-            where: { gameId: input.gameId, roundId: currentRoundDb.id },
-          });
-          const lobby = await lobbyService.getLobbyById(
-            (await db.game.findUnique({ where: { id: input.gameId } }))?.lobbyId || ''
+          const roundId = currentRoundDb.id;
+          roundWrites.push(
+            db.roundScore
+              .deleteMany({ where: { gameId: input.gameId, roundId } })
+              .then(() =>
+                db.roundScore.createMany({
+                  data: roundScores.map(rs => ({
+                    gameId: input.gameId,
+                    roundId,
+                    playerId: rs.playerId,
+                    bidValue: rs.bid,
+                    handsMade: rs.handsMade,
+                    roundScore: rs.score,
+                  })),
+                })
+              ),
+            // Update round status to COMPLETED
+            db.gameRound.update({
+              where: { id: roundId },
+              data: { status: 'COMPLETED' },
+            }),
+            // Scoreboard confirmations, one per seat at the table - the same
+            // seats the lobby holds while its game is running.
+            db.scoreboardConfirmation
+              .deleteMany({ where: { gameId: input.gameId, roundId } })
+              .then(() =>
+                db.scoreboardConfirmation.createMany({
+                  data: state.players.map(p => ({
+                    gameId: input.gameId,
+                    roundId,
+                    playerId: p.id,
+                    hasContinued: false,
+                  })),
+                })
+              )
           );
-          if (lobby) {
-            await db.scoreboardConfirmation.createMany({
-              data: lobby.players.map(p => ({
-                gameId: input.gameId,
-                roundId: currentRoundDb.id,
-                playerId: p.playerId,
-                hasContinued: false,
-              })),
-            });
-          }
         }
-
-        // Log round end
-        await this.logAction(input.gameId, input.playerId, 'ROUND_END', {
-          round: roundState.roundNumber,
-          scores: state.scores,
-        });
+        await Promise.all(roundWrites);
 
         // Transition to scoreboard phase (don't start next round yet)
         state.status = 'ROUND_SCOREBOARD';
@@ -681,18 +759,16 @@ export class GameService {
       }),
     ]);
 
-    return {
-      state,
-      game: {
-        ...game,
-        currentRound: state.currentRound,
-        status: state.status,
-        currentTurnPlayerId: nextPlayerId,
-        gameState: state,
-      },
-      trickComplete,
-      roundComplete,
+    const saved = {
+      ...game,
+      currentRound: state.currentRound,
+      status: state.status,
+      currentTurnPlayerId: nextPlayerId,
+      gameState: state,
     };
+    this.remember(saved);
+
+    return { state, game: saved, trickComplete, roundComplete };
   }
 
   /**
@@ -739,6 +815,7 @@ export class GameService {
         gameStateJson: state as any,
       },
     });
+    this.remember({ ...game, status: state.status, currentTurnPlayerId: winnerId, gameState: state });
 
     return state;
   }
@@ -792,7 +869,7 @@ export class GameService {
     });
 
     // Create game round record
-    await db.gameRound.create({
+    const roundRow = await db.gameRound.create({
       data: {
         gameId,
         roundNumber: state.currentRound,
@@ -803,6 +880,7 @@ export class GameService {
         status: 'BIDDING',
       },
     });
+    this.roundRowIds.set(`${gameId}:${state.currentRound}`, roundRow.id);
 
     // Log round start
     await this.logAction(gameId, dealerId, 'ROUND_START', {
@@ -886,6 +964,7 @@ export class GameService {
           gameStateJson: state as any,
         },
       });
+      this.remember({ ...game, status: 'GAME_OVER', gameState: state });
 
       return this.getGameById(gameId);
     }
@@ -904,6 +983,13 @@ export class GameService {
         currentTurnPlayerId: nextPlayerId,
         gameStateJson: state as any,
       },
+    });
+    this.remember({
+      ...game,
+      currentRound: state.currentRound,
+      status: state.status,
+      currentTurnPlayerId: nextPlayerId,
+      gameState: state,
     });
 
     return this.getGameById(gameId);
