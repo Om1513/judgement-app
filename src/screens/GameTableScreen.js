@@ -25,8 +25,6 @@ import { RECONNECTING, seatStatus } from "../utils/presence";
 import { getPlayableCardIndexes } from "../utils/cardRules";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 import {
-  CARD_HEIGHT,
-  CARD_WIDTH,
   SEAT_HEIGHT,
   SEAT_WIDTH,
   TABLE_MARGIN_BOTTOM,
@@ -558,6 +556,30 @@ export default function GameTableScreen({ navigation, route }) {
     [players.length, tableRect, r]
   );
 
+  // The seat's circle: tricks made / bid in the middle, and the pulsing gold
+  // ring while it is their turn.
+  const renderAvatar = (player, isActive) => (
+    <View style={styles.avatarWrap}>
+      {isActive && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.avatarGlowRing, { opacity: turnGlow }]}
+        />
+      )}
+      <View
+        style={[
+          styles.avatar,
+          isActive && styles.avatarGlow,
+          isActive && styles.avatarTurnHighlight,
+        ]}
+      >
+        <Text style={styles.avatarScore} numberOfLines={1} adjustsFontSizeToFit>
+          {displayedTricks(player)} / {player.bid ?? 0}
+        </Text>
+      </View>
+    </View>
+  );
+
   const renderPlayerSeat = (player, position) => {
     if (!player) return <View key={position} style={styles.emptySeat} />;
 
@@ -576,41 +598,17 @@ export default function GameTableScreen({ navigation, route }) {
           status === RECONNECTING && styles.seatReconnecting,
         ]}
       >
-        <View style={[styles.seatBox, isCurrentTurn && styles.seatBoxActive]}>
-          {isCurrentTurn && (
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.seatGlowRing, { opacity: turnGlow }]}
-            />
-          )}
-          {/* Avatar */}
-          <View
-            style={[
-              styles.avatar,
-              isCurrentTurn && styles.avatarGlow,
-              isCurrentTurn && styles.avatarTurnHighlight,
-            ]}
-          >
-            <Text style={styles.avatarText}>
-              {player.name.charAt(0).toUpperCase()}
-            </Text>
-          </View>
+        <View style={styles.seatBox}>
+          {renderAvatar(player, isCurrentTurn)}
 
           {/* Name */}
-          <Text style={[styles.playerName, isMe && styles.myName]} numberOfLines={1}>
+          <Text style={styles.playerName} numberOfLines={1}>
             {isMe ? "You" : player.name}
           </Text>
 
-          {/* Bid / Hands Made */}
-          <View style={styles.scoreContainer}>
-            <Text style={styles.scoreText}>
-              {displayedTricks(player)} / {player.bid ?? 0}
-            </Text>
-          </View>
-
-          {/* Who is driving this seat, when it is not its owner. Deliberately
-              small and grey: a dropout is a temporary fact about the table, not
-              an alarm. */}
+          {/* Shown while the seat is held open for a player who dropped out.
+              Deliberately small and grey: a dropout is a temporary fact about
+              the table, not an alarm. */}
           {status && (
             <View style={styles.presenceBadge}>
               <Text style={styles.presenceText} numberOfLines={1}>
@@ -624,8 +622,7 @@ export default function GameTableScreen({ navigation, route }) {
   };
 
   // Render each played card in front of its own player's seat (never stacked
-  // in the center). Empty seats show a faint placeholder slot, highlighted
-  // gold while it is that player's turn.
+  // in the center). A seat that has not played yet shows nothing.
   const renderPlayedCards = () => {
     // Keep showing the cards on the table not only during active play, but also
     // once the final trick of a round has completed. When the last card of a
@@ -654,26 +651,8 @@ export default function GameTableScreen({ navigation, route }) {
     return seated.map((player) => {
       const zone = getCardZone(player.seatIndex, count, tableRect, r.scale);
       const play = cardsPlayed.find((c) => c.playerId === player.id);
-      const isTurn = player.id === gameState?.currentTurnPlayerId;
 
-      if (!play) {
-        return (
-          <View
-            key={`slot-${player.id}`}
-            pointerEvents="none"
-            style={[
-              styles.cardSlot,
-              {
-                left: zone.left,
-                top: zone.top,
-                width: zone.width,
-                height: zone.height,
-              },
-              isTurn && styles.cardSlotActive,
-            ]}
-          />
-        );
-      }
+      if (!play) return null;
 
       const resolveDelta = winnerPoint
         ? { x: winnerPoint.x - zone.point.x, y: winnerPoint.y - zone.point.y }
@@ -810,6 +789,9 @@ export default function GameTableScreen({ navigation, route }) {
         style={styles.background}
         resizeMode="cover"
       >
+        {/* Dims the artwork so the seat names stand out against it. */}
+        <View pointerEvents="none" style={styles.backgroundScrim} />
+
         {/* Tapping any empty area deselects the currently selected card. */}
         <Pressable style={styles.touchableArea} onPress={() => setSelectedCard(null)}>
         {/* Round + Trump indicator - top right */}
@@ -945,32 +927,9 @@ export default function GameTableScreen({ navigation, route }) {
           ]}
         >
           {arrangedPlayers[2] && (
-            <View style={[styles.myInfo, isMyTurn && styles.seatBoxActive]}>
-              {isMyTurn && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[styles.seatGlowRing, { opacity: turnGlow }]}
-                />
-              )}
-              <View
-                style={[
-                  styles.avatar,
-                  isMyTurn && styles.avatarGlow,
-                  isMyTurn && styles.avatarTurnHighlight,
-                ]}
-              >
-                <Text style={styles.avatarText}>
-                  {(currentPlayerName || arrangedPlayers[2].name || "Y")
-                    .charAt(0)
-                    .toUpperCase()}
-                </Text>
-              </View>
+            <View style={styles.myInfo}>
+              {renderAvatar(arrangedPlayers[2], isMyTurn)}
               <Text style={styles.myInfoName}>You</Text>
-              <View style={styles.myScoreContainer}>
-                <Text style={styles.myScoreText}>
-                  {displayedTricks(arrangedPlayers[2])} / {arrangedPlayers[2].bid ?? 0}
-                </Text>
-              </View>
             </View>
           )}
         </View>
@@ -1021,6 +980,14 @@ const rawStyles = {
     flex: 1,
     width: "100%",
     height: "100%",
+  },
+  backgroundScrim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
   },
 
   // Round & Trump Indicators
@@ -1089,28 +1056,28 @@ const rawStyles = {
   },
   seatBox: {
     alignItems: "center",
-    backgroundColor: "rgba(42, 22, 84, 0.85)",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 215, 0, 0.5)",
   },
   emptySeat: {
     width: SEAT_WIDTH,
     height: SEAT_HEIGHT,
   },
+  // Holds the circle and its glow ring, so the ring can be positioned
+  // against the circle itself.
+  avatarWrap: {
+    width: 56,
+    height: 56,
+    marginBottom: 4,
+  },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#5E3A9E",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
     // Constant border so the turn highlight doesn't change the avatar size.
     borderWidth: 2.5,
-    borderColor: "transparent",
+    borderColor: "rgba(255, 215, 0, 0.5)",
   },
   avatarGlow: {
     shadowColor: "#FFD700",
@@ -1122,18 +1089,14 @@ const rawStyles = {
     borderColor: "#FFD700",
     backgroundColor: "#7E3FF2",
   },
-  // Solid gold border on the seat box of the player whose turn it is.
-  seatBoxActive: {
-    borderColor: "#FFD700",
-  },
-  // Animated pulsing glow border around the active player's seat box.
-  seatGlowRing: {
+  // Animated pulsing glow ring around the active player's avatar.
+  avatarGlowRing: {
     position: "absolute",
     top: -4,
     left: -4,
     right: -4,
     bottom: -4,
-    borderRadius: 15,
+    borderRadius: 32,
     borderWidth: 2,
     borderColor: "#FFD700",
     shadowColor: "#FFD700",
@@ -1142,38 +1105,26 @@ const rawStyles = {
     shadowRadius: 12,
     elevation: 14,
   },
-  avatarText: {
-    fontSize: 16,
+  // Tricks made / bid. Shrinks to fit for two-digit counts like "10 / 12".
+  avatarScore: {
+    fontSize: 18,
     fontFamily: "Bangers_400Regular",
-    color: "#FFF",
+    color: "#FFD700",
     textAlign: "center",
-    paddingHorizontal: 5,
+    paddingHorizontal: 3,
   },
+  // No box behind the name any more, so a shadow keeps it readable on the felt.
   playerName: {
-    fontSize: 11,
+    fontSize: 18,
     fontFamily: "Bangers_400Regular",
-    color: "#FFF8E7",
+    color: "#FFD700",
     textAlign: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
     // Capped so a long name cannot widen the seat box and shove the seat next
     // to it out of position; numberOfLines={1} clips it with an ellipsis.
     maxWidth: 80,
-    paddingHorizontal: 5,
-  },
-  myName: {
-    color: "#FFD700",
-  },
-  scoreContainer: {
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginTop: 4,
-  },
-  scoreText: {
-    fontSize: 12,
-    fontFamily: "Bangers_400Regular",
-    color: "#4CAF50",
-    textAlign: "center",
     paddingHorizontal: 5,
   },
 
@@ -1198,26 +1149,6 @@ const rawStyles = {
     letterSpacing: 0.5,
   },
 
-  // Played-card placeholder slot (shown until a player plays this trick)
-  cardSlot: {
-    position: "absolute",
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    borderColor: "rgba(255, 255, 255, 0.12)",
-  },
-  cardSlotActive: {
-    borderStyle: "solid",
-    borderColor: "rgba(255, 215, 0, 0.8)",
-    backgroundColor: "rgba(255, 215, 0, 0.06)",
-    shadowColor: "#FFD700",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-    elevation: 6,
-  },
   redCard: {
     color: "#e53935",
   },
@@ -1292,33 +1223,16 @@ const rawStyles = {
   },
   myInfo: {
     alignItems: "center",
-    backgroundColor: "rgba(42, 22, 84, 0.85)",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 215, 0, 0.5)",
   },
   myInfoName: {
-    fontSize: 12,
+    fontSize: 18,
     fontFamily: "Bangers_400Regular",
     color: "#FFD700",
     textAlign: "center",
     paddingHorizontal: 5,
-  },
-  myScoreContainer: {
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginTop: 2,
-  },
-  myScoreText: {
-    fontSize: 14,
-    fontFamily: "Bangers_400Regular",
-    color: "#4CAF50",
-    textAlign: "center",
-    paddingHorizontal: 5,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 
   // Bidding phase overlay

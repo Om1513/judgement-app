@@ -281,7 +281,7 @@ export class GameService {
    * Hides other players' cards.
    *
    * `presence` (see getPresence) adds who is actually at the table, so the UI can
-   * label a seat "Reconnecting..." or "Auto Playing". Omitting it means "assume
+   * label a seat "Reconnecting...". Omitting it means "assume
    * everyone is present", which is only correct at moments where that is
    * guaranteed - the deal, where the game refuses to start otherwise.
    */

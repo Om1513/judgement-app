@@ -22,7 +22,7 @@ type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServe
 /**
  * Gives the in-game reconnect service its Socket.IO-backed effects: how to tell
  * whether a player is really still connected, how to tell the table that a seat
- * is reconnecting / auto-playing / back, and how to nudge the game forward once
+ * is reconnecting / taken over / back, and how to nudge the game forward once
  * the bot owns a seat it has been waiting on.
  *
  * Called once per server from initializeSocket, so listeners and hooks cannot
@@ -56,7 +56,7 @@ export function attachGameReconnect(io: TypedServer): void {
 
       // The table may have been waiting on this seat for the whole grace period,
       // so the bot has to be prompted to act - and the broadcast that goes with
-      // it is what turns "Reconnecting..." into "Auto Playing".
+      // it is what clears the seat's "Reconnecting..." label.
       void gameService
         .getGameByLobbyId(lobby.id)
         .then(game => (game ? resumeAfterTakeover(io, game.id) : undefined))

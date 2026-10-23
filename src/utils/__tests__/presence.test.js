@@ -5,7 +5,7 @@
 // to deal to an absent player - sends players with no `connected` field at all,
 // and treating that as "away" would paint the whole table as reconnecting.
 
-import { AUTO_PLAYING, RECONNECTING, seatStatus } from "../presence";
+import { RECONNECTING, seatStatus } from "../presence";
 
 describe("seatStatus", () => {
   test("a player who is present and playing for themselves has no label", () => {
@@ -16,14 +16,14 @@ describe("seatStatus", () => {
     expect(seatStatus({ connected: false, controlledByBot: false })).toBe(RECONNECTING);
   });
 
-  test("a seat the bot has taken over is shown as auto playing", () => {
-    expect(seatStatus({ connected: false, controlledByBot: true })).toBe(AUTO_PLAYING);
+  test("a seat the bot has taken over has no label, not reconnecting", () => {
+    // The row keeps `connected: false` after a takeover; it must not fall back
+    // to reading as reconnecting.
+    expect(seatStatus({ connected: false, controlledByBot: true })).toBeNull();
   });
 
-  test("bot control wins over reconnecting - it is the later state of one dropout", () => {
-    // The row keeps `connected: false` after a takeover; the label that matters
-    // is the one that explains why cards are being played.
-    expect(seatStatus({ connected: false, controlledByBot: true })).toBe(AUTO_PLAYING);
+  test("an actual bot has no label", () => {
+    expect(seatStatus({ connected: true, controlledByBot: true })).toBeNull();
   });
 
   test("a missing presence field reads as present, not away", () => {
