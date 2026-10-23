@@ -220,6 +220,13 @@ class SocketService {
     this.socket.on('lobby:created', remember);
     this.socket.on('lobby:joined', remember);
     this.socket.on('lobby:update', (data) => this._trackLobby(data?.lobby));
+    // The lobby we had is the one from before the deal, still marked waiting -
+    // starting a game sends no lobby update. Forget it, so that after the game
+    // only the lobby the server hands back counts, and a server that never hands
+    // it back leaves us going Home rather than into a lobby that cannot start.
+    this.socket.on('game:started', () => {
+      this.currentLobby = null;
+    });
 
     // Being kicked is permanent - there is nothing left to come back to.
     this.socket.on('lobby:kicked', () => {
