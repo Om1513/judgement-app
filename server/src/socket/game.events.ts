@@ -126,7 +126,14 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         return;
       }
 
-      if (await botOwnsMySeat(socket)) {
+      // The table's presence is needed for the broadcast and does not depend on
+      // the bid, so it is read alongside the seat check rather than after.
+      const gameId = socket.data.gameId;
+      const [botOwns, presence] = await Promise.all([
+        botOwnsMySeat(socket),
+        gameService.getPresenceForGame(gameId),
+      ]);
+      if (botOwns) {
         socket.emit('game:error', {
           message: 'Rejoin the game before playing - the bot is currently playing your seat.',
           code: SocketErrorCodes.REJOIN_REQUIRED,
@@ -135,16 +142,14 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       }
 
       // Submit bid
-      await gameService.submitBid({
-        gameId: socket.data.gameId,
+      const game = await gameService.submitBid({
+        gameId,
         playerId: socket.data.playerId,
         bid,
       });
 
-      console.log(`Player ${socket.data.playerName} bid ${bid}`);
-
       // Broadcast personalized state to everyone (uses the cached lobby ref).
-      await broadcastGameUpdate(io, socket.data.gameId);
+      await broadcastGameUpdate(io, gameId, game, presence);
 
       // Process pending bot actions
       await botService.processPendingBotActions(socket.data.gameId);
@@ -177,7 +182,13 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         return;
       }
 
-      if (await botOwnsMySeat(socket)) {
+      // See game:submit-bid: presence is read alongside the seat check.
+      const gameId = socket.data.gameId;
+      const [botOwns, presence] = await Promise.all([
+        botOwnsMySeat(socket),
+        gameService.getPresenceForGame(gameId),
+      ]);
+      if (botOwns) {
         socket.emit('game:error', {
           message: 'Rejoin the game before playing - the bot is currently playing your seat.',
           code: SocketErrorCodes.REJOIN_REQUIRED,
@@ -186,17 +197,15 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
       }
 
       // Play card
-      const { trickComplete, roundComplete } = await gameService.playCard({
-        gameId: socket.data.gameId,
+      const { game, trickComplete, roundComplete } = await gameService.playCard({
+        gameId,
         playerId: socket.data.playerId,
         card,
       });
 
-      console.log(`Player ${socket.data.playerName} played ${card.rank} of ${card.suit}`);
-
       // Broadcast the new state, run the hand-winner popup / inter-hand pause,
       // and drive any pending bot actions.
-      await handleAfterCardPlay(io, socket.data.gameId, { trickComplete, roundComplete });
+      await handleAfterCardPlay(io, gameId, { trickComplete, roundComplete, game, presence });
 
       perfEnd(_t, 'game:play-card', { trickComplete, roundComplete });
     } catch (error) {

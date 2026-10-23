@@ -11,6 +11,7 @@ import {
   InterServerEvents,
   SocketData,
 } from '../types/socket';
+import { Game, PlayerPresence } from '../types/game';
 import { gameService } from '../services/game.service';
 import { scoreboardService } from '../services/scoreboard.service';
 import { perfEnabled, perfLog, payloadSize } from '../utils/perf';
@@ -28,16 +29,19 @@ function pauseMs(envVar: string, fallback: number): number {
 
 // How long the last played card is left on the table before the hand-winner
 // popup is announced (ms), so players can see the final play of the trick.
-export const LAST_CARD_VIEW_DELAY = pauseMs('LAST_CARD_VIEW_DELAY_MS', 1000);
+// The client shows the popup the moment it is announced.
+export const LAST_CARD_VIEW_DELAY = pauseMs('LAST_CARD_VIEW_DELAY_MS', 700);
 
 // How long the hand-winner popup is held before the next hand starts (ms).
-// Kept within the 1.5-2s window requested by product.
-export const HAND_WINNER_DURATION = pauseMs('HAND_WINNER_DURATION_MS', 1800);
+// Kept within the 1.5-2s window requested by product. (It used to be 1800, but
+// the client waited 900 of that before showing the popup; it now shows it
+// straight away, so 1500 leaves it on screen longer than before.)
+export const HAND_WINNER_DURATION = pauseMs('HAND_WINNER_DURATION_MS', 1500);
 
 /**
  * Sends a personalized game state update to every player in the game's lobby.
- * Pass `preloadedGame` when the caller already has the fresh game in hand to
- * avoid a redundant re-fetch.
+ * Pass `preloadedGame` (and `preloadedPresence`) when the caller already has
+ * them in hand, to save the round trips of reading them again.
  *
  * Every update carries the table's presence (who is reconnecting, whose seat the
  * bot is playing) alongside the game state, because the two change
@@ -47,19 +51,18 @@ export const HAND_WINNER_DURATION = pauseMs('HAND_WINNER_DURATION_MS', 1800);
 export async function broadcastGameUpdate(
   io: TypedServer,
   gameId: string,
-  preloadedGame?: Awaited<ReturnType<typeof gameService.getGameById>>
+  preloadedGame?: Awaited<ReturnType<typeof gameService.getGameById>>,
+  preloadedPresence?: PlayerPresence
 ): Promise<void> {
-  const game = preloadedGame ?? (await gameService.getGameById(gameId));
-  if (!game) {
+  const [game, ref] = await Promise.all([
+    preloadedGame ?? gameService.getGameById(gameId),
+    gameService.getLobbyRef(gameId),
+  ]);
+  if (!game || !ref) {
     return;
   }
 
-  const ref = await gameService.getLobbyRef(gameId);
-  if (!ref) {
-    return;
-  }
-
-  const presence = await gameService.getPresence(ref.lobbyId);
+  const presence = preloadedPresence ?? (await gameService.getPresence(ref.lobbyId));
   const sockets = await io.in(`lobby:${ref.code}`).fetchSockets();
   let lastSize = 0;
   for (const s of sockets) {
@@ -130,13 +133,19 @@ export async function resumeAfterTakeover(io: TypedServer, gameId: string): Prom
 export async function handleAfterCardPlay(
   io: TypedServer,
   gameId: string,
-  result: { trickComplete: boolean; roundComplete: boolean }
+  result: {
+    trickComplete: boolean;
+    roundComplete: boolean;
+    /** The game as just saved; read back from the database when absent. */
+    game?: Game;
+    presence?: PlayerPresence;
+  }
 ): Promise<void> {
   const { botService } = await import('../services/bot.service');
 
   // Push the latest state to everyone. When a trick just completed, the
   // completed trick is still on the table so clients can show the popup over it.
-  await broadcastGameUpdate(io, gameId);
+  await broadcastGameUpdate(io, gameId, result.game, result.presence);
 
   if (!result.trickComplete) {
     // Ordinary play - let the next player (bot) act.
@@ -145,7 +154,7 @@ export async function handleAfterCardPlay(
   }
 
   // A trick completed - announce the hand winner.
-  const game = await gameService.getGameById(gameId);
+  const game = result.game ?? (await gameService.getGameById(gameId));
   if (!game) {
     return;
   }
