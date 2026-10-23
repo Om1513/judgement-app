@@ -17,6 +17,7 @@ import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
 import { seatStatus } from "../utils/presence";
+import { withPendingBid } from "../utils/optimistic";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // The bid row's geometry is pinned rather than derived from its contents - see
@@ -40,8 +41,16 @@ export default function BiddingScreen({ navigation, route }) {
     currentPlayerName,
   } = route.params || {};
 
-  const [gameState, setGameState] = useState(initialGameState);
+  const [serverState, setServerState] = useState(initialGameState);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // The bid we have sent and the server has not confirmed yet. Shown at once,
+  // as if it had been accepted, so a tap lands instantly; the server's update
+  // replaces it, and a rejection takes it back.
+  const [pendingBid, setPendingBid] = useState(null);
+  const gameState = useMemo(
+    () => withPendingBid(serverState, pendingBid, currentPlayerId),
+    [serverState, pendingBid, currentPlayerId]
+  );
 
   // Read-only scoreboard peek, opened from the header button.
   const [peekOpen, setPeekOpen] = useState(false);
@@ -113,13 +122,17 @@ export default function BiddingScreen({ navigation, route }) {
   // Socket event listeners
   useEffect(() => {
     const unsubscribeUpdate = socketService.on("game:update", (data) => {
-      console.log("Game update:", data.gameState?.status);
-      setGameState(data.gameState);
-      setIsSubmitting(false);
+      setServerState(data.gameState);
+      // Held until the server shows our bid (or the round moved on): an
+      // unrelated update arriving first must not flash the buttons back.
+      const me = data.gameState?.players?.find((p) => p.id === currentPlayerId);
+      if (me?.hasBid || data.gameState?.status !== "BIDDING") {
+        setPendingBid(null);
+        setIsSubmitting(false);
+      }
 
       // Navigate to game table when playing phase begins
       if (data.gameState.status === "PLAYING") {
-        console.log("All bids complete! Navigating to game table.");
         navigation.replace("GameTable", {
           gameState: data.gameState,
           currentPlayerId,
@@ -130,6 +143,7 @@ export default function BiddingScreen({ navigation, route }) {
 
     const unsubscribeError = socketService.on("game:error", (data) => {
       Alert.alert("Error", data.message);
+      setPendingBid(null);
       setIsSubmitting(false);
     });
 
@@ -177,6 +191,7 @@ export default function BiddingScreen({ navigation, route }) {
 
     audioManager.playSound("buttonPop");
     setIsSubmitting(true);
+    setPendingBid(bid);
     socketService.submitBid(bid);
   };
 

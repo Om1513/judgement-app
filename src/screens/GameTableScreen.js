@@ -52,6 +52,11 @@ const HAND_CARD_HEIGHT = 80;
 const HAND_BOTTOM = 10;
 // Gap between the playable-card row and the top of the hand.
 const TRAY_LIFT = 14;
+
+// How long after the round's last trick is announced the scoreboard (or the
+// winner screen) opens. The server has already held the trick and its winner
+// popup on screen by then, so this is only a beat, not a second hold.
+const ROUND_END_NAV_DELAY_MS = 700;
 // Room kept clear either side of the row for the bottom corner seats.
 const TRAY_SIDE_INSET = TABLE_MARGIN_SIDE + SEAT_WIDTH + 12;
 
@@ -65,8 +70,13 @@ export default function GameTableScreen({ navigation, route }) {
   const [gameState, setGameState] = useState(initialGameState);
   const [selectedCard, setSelectedCard] = useState(null);
   const [isPlayingCard, setIsPlayingCard] = useState(false);
-  // The card picked from the playable-card row, while it flies to the table.
-  const [flyingCardKey, setFlyingCardKey] = useState(null);
+  // The card we have played and the server has not confirmed yet:
+  // { card, viaTray, arrived }. It is sent the moment it is chosen and drawn on
+  // the table from here, so a play lands instantly instead of after a round
+  // trip. `arrived` is false only while a card picked from the row is still
+  // flying to the table, which draws it until then. Cleared once the server's
+  // update shows it, or dropped if the play is rejected.
+  const [pendingPlay, setPendingPlay] = useState(null);
   // Cards up in the playable-card row. Their places in the hand stay empty, so
   // the hand shows only the cards that cannot be played.
   const [trayHiddenKeys, setTrayHiddenKeys] = useState([]);
@@ -257,7 +267,6 @@ export default function GameTableScreen({ navigation, route }) {
   // Socket event listeners
   useEffect(() => {
     const unsubscribeUpdate = socketService.on("game:update", (data) => {
-      console.log("Game update:", data.gameState?.status);
 
       // A resolved trick (currentTrick already has a winner) is the update that
       // carries the bumped tricksWon. Pin the avatars to the counts we were
@@ -299,7 +308,6 @@ export default function GameTableScreen({ navigation, route }) {
 
       // Navigate back to bidding screen for new round
       if (data.gameState.status === "BIDDING") {
-        console.log("New round starting, going to bidding screen.");
         navigation.replace("Bidding", {
           gameState: data.gameState,
           currentPlayerId,
@@ -310,12 +318,12 @@ export default function GameTableScreen({ navigation, route }) {
 
     const unsubscribeError = socketService.on("game:error", (data) => {
       Alert.alert("Error", data.message);
+      setPendingPlay(null);
       setIsPlayingCard(false);
       setPlayRejections((n) => n + 1);
     });
 
     const unsubscribeHandWinner = socketService.on("hand:winner-announced", (data) => {
-      console.log(`Hand ${data.trickNumber} won by ${data.playerName}`);
       // Clear any pending card selection so play is fully blocked.
       setSelectedCard(null);
 
@@ -326,33 +334,25 @@ export default function GameTableScreen({ navigation, route }) {
       const isNewTrick = lastHandWonKeyRef.current !== trickKey;
       if (isNewTrick) lastHandWonKeyRef.current = trickKey;
 
-      // Hold the completed trick on screen briefly so the last card played is
-      // visible before the winner popup appears.
+      // Shown at once: the server has already held the completed trick on the
+      // table (LAST_CARD_VIEW_DELAY) before announcing it, so a second hold
+      // here only left the popup less time on screen before the next hand.
       if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
-      winnerTimerRef.current = setTimeout(() => {
-        winnerTimerRef.current = null;
-        // Fires with the popup, not with the event 900ms earlier, so the sound
-        // lands on the announcement.
-        if (isNewTrick) audioManager.playSound("handWon");
-        setHandWinner({
-          playerId: data.playerId,
-          playerName: data.playerName,
-          trickNumber: data.trickNumber,
-        });
-      }, 900);
+      winnerTimerRef.current = null;
+      if (isNewTrick) audioManager.playSound("handWon");
+      setHandWinner({
+        playerId: data.playerId,
+        playerName: data.playerName,
+        trickNumber: data.trickNumber,
+      });
     });
 
     const unsubscribeHandNext = socketService.on("hand:next-started", () => {
-      console.log("Next hand started");
       if (winnerTimerRef.current) {
         clearTimeout(winnerTimerRef.current);
         winnerTimerRef.current = null;
       }
       setHandWinner(null);
-    });
-
-    const unsubscribeRoundComplete = socketService.on("game:round-complete", (data) => {
-      console.log(`Round ${data.roundNumber} complete`);
     });
 
     const unsubscribeScoreboard = socketService.on("scoreboard:state", (data) => {
@@ -365,8 +365,8 @@ export default function GameTableScreen({ navigation, route }) {
         setPeekScoreboard(data.scoreboard);
         return;
       }
-      console.log("Scoreboard state received, navigating to ScoreBoard");
-      // Wait a beat so the last card of the final trick is visible first.
+      // A short beat: the last trick and its winner popup have already been on
+      // screen for the server's hold by the time this arrives.
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         navTimerRef.current = null;
@@ -375,13 +375,12 @@ export default function GameTableScreen({ navigation, route }) {
           currentPlayerId,
           currentPlayerName,
         });
-      }, 1800);
+      }, ROUND_END_NAV_DELAY_MS);
     });
 
     // Final round skips the scoreboard - go straight to the winner screen.
     const unsubscribeFinalWinner = socketService.on("game:final-winner", (data) => {
-      console.log("Final winner:", data);
-      // Wait a beat so the last card of the final trick is visible first.
+      // Same beat as the round scoreboard, above.
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         navTimerRef.current = null;
@@ -393,7 +392,7 @@ export default function GameTableScreen({ navigation, route }) {
           currentPlayerId,
           currentPlayerName,
         });
-      }, 1800);
+      }, ROUND_END_NAV_DELAY_MS);
     });
 
     const unsubscribeGameOver = socketService.on("game:over", (data) => {
@@ -409,7 +408,6 @@ export default function GameTableScreen({ navigation, route }) {
       unsubscribeError();
       unsubscribeHandWinner();
       unsubscribeHandNext();
-      unsubscribeRoundComplete();
       unsubscribeScoreboard();
       unsubscribeFinalWinner();
       unsubscribeGameOver();
@@ -420,7 +418,7 @@ export default function GameTableScreen({ navigation, route }) {
 
   const handleCardPress = (card, index) => {
     if (handWinner) return;
-    if (!isMyTurn || isPlayingCard || gameState?.status !== "PLAYING") return;
+    if (!isMyTurn || isPlayingCard || pendingPlay || gameState?.status !== "PLAYING") return;
 
     if (!playableCards.includes(index)) {
       Alert.alert("Invalid Play", "You must follow the lead suit if you have it.");
@@ -430,6 +428,8 @@ export default function GameTableScreen({ navigation, route }) {
     // First tap selects the card; tapping the already-selected card plays it.
     if (selectedCard === index) {
       setIsPlayingCard(true);
+      setPendingPlay({ card, viaTray: false, arrived: true });
+      setSelectedCard(null);
       // No-ops when sound is off; purely local feedback, nothing is sent.
       audioManager.playSound("cardPlay");
       socketService.playCard(card);
@@ -474,7 +474,7 @@ export default function GameTableScreen({ navigation, route }) {
     !handWinner &&
     !currentTrick?.winnerId &&
     // Played straight from the hand instead; the row steps aside.
-    !(isPlayingCard && !flyingCardKey);
+    !(pendingPlay && !pendingPlay.viaTray);
 
   const trayCards = useMemo(
     () => playableCards.map((index) => ({ card: myHand[index], index })),
@@ -508,29 +508,36 @@ export default function GameTableScreen({ navigation, route }) {
   const myCardLanded = (currentTrick?.cardsPlayed || []).some(
     (c) => c.playerId === currentPlayerId
   );
+  // Whether our card is drawn on the table, confirmed or not.
+  const myCardOnTable = pendingPlay ? pendingPlay.arrived : myCardLanded;
 
-  // A card was tapped in the row and is on its way to the table.
+  // A card was tapped in the row: send the play now, while it flies to the
+  // table, so the server's answer is usually back before it lands.
   const handleTrayPick = useCallback((card) => {
     setSelectedCard(null);
-    setFlyingCardKey(cardKey(card));
+    setIsPlayingCard(true);
+    setPendingPlay({ card, viaTray: true, arrived: false });
+    socketService.playCard(card);
   }, []);
 
-  // The picked card has reached the table; send the play.
-  const handleTrayPlace = useCallback(
-    (card) => {
-      if (isPlayingCard) return;
-      setIsPlayingCard(true);
-      // No-ops when sound is off; purely local feedback, nothing is sent.
-      audioManager.playSound("cardPlay");
-      socketService.playCard(card);
-    },
-    [isPlayingCard]
-  );
+  // The picked card has reached the table; it is drawn there from now on.
+  const handleTrayPlace = useCallback((card) => {
+    // No-ops when sound is off; purely local feedback, nothing is sent.
+    audioManager.playSound("cardPlay");
+    setPendingPlay((p) =>
+      p && cardKey(p.card) === cardKey(card) ? { ...p, arrived: true } : p
+    );
+  }, []);
 
-  // The flight is over once our card is on the table or the play bounced.
+  // Confirmed: the server's trick now carries our card, under the same key, so
+  // handing over from the pending copy is invisible.
   useEffect(() => {
-    setFlyingCardKey(null);
-  }, [myCardLanded, playRejections]);
+    if (myCardLanded && pendingPlay?.arrived) setPendingPlay(null);
+  }, [myCardLanded, pendingPlay]);
+
+  // A reconnect answers with the server's state; whatever it says about our
+  // play is the truth from then on.
+  useEffect(() => socketService.onSession(() => setPendingPlay(null)), []);
 
   // Where a seat sits. Table seats are placed from normalized coordinates
   // inside the measured table rect (see utils/tableLayout); the two bottom
@@ -650,7 +657,12 @@ export default function GameTableScreen({ navigation, route }) {
 
     return seated.map((player) => {
       const zone = getCardZone(player.seatIndex, count, tableRect, r.scale);
-      const play = cardsPlayed.find((c) => c.playerId === player.id);
+      let play = cardsPlayed.find((c) => c.playerId === player.id);
+      if (player.id === currentPlayerId && pendingPlay) {
+        // Still flying from the row, which draws it until it lands; after that
+        // it is ours to draw, ahead of the server confirming it.
+        play = pendingPlay.arrived ? play || { card: pendingPlay.card } : null;
+      }
 
       if (!play) return null;
 
@@ -694,7 +706,10 @@ export default function GameTableScreen({ navigation, route }) {
             const isRed = card.suit === "hearts" || card.suit === "diamonds";
             const isPlayable = playableCards.includes(index);
             const isSelected = selectedCard === index;
-            const isUp = trayHiddenKeys.includes(cardKey(card));
+            // Up in the row, or already played and waiting on the server.
+            const isUp =
+              trayHiddenKeys.includes(cardKey(card)) ||
+              (!!pendingPlay && cardKey(pendingPlay.card) === cardKey(card));
 
             return (
               <TouchableOpacity
@@ -703,7 +718,7 @@ export default function GameTableScreen({ navigation, route }) {
                   handCardLayouts.current[cardKey(card)] = e.nativeEvent.layout;
                 }}
                 onPress={() => handleCardPress(card, index)}
-                disabled={!isMyTurn || isPlayingCard || !isPlayable || isUp}
+                disabled={!isMyTurn || isPlayingCard || !!pendingPlay || !isPlayable || isUp}
                 activeOpacity={0.8}
                 style={[
                   styles.handCard,
@@ -944,7 +959,7 @@ export default function GameTableScreen({ navigation, route }) {
           slots={traySlots}
           getSourceRect={getHandCardRect}
           target={trayTarget}
-          landed={myCardLanded}
+          landed={myCardOnTable}
           resetSignal={playRejections}
           onPick={handleTrayPick}
           onPlace={handleTrayPlace}

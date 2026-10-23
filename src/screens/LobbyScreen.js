@@ -108,7 +108,6 @@ export default function LobbyScreen({ navigation, route }) {
   useEffect(() => {
     // Listen for lobby updates
     const unsubscribeUpdate = socketService.on('lobby:update', (data) => {
-      console.log('Lobby update:', data.lobby);
       const lobby = data.lobby;
 
       // Update players list. A player mid-reconnect is still in here, holding
@@ -138,7 +137,6 @@ export default function LobbyScreen({ navigation, route }) {
 
     // Listen for game started
     const unsubscribeGameStarted = socketService.on('game:started', (data) => {
-      console.log('Game started:', data.gameState);
       // Navigate to bidding screen
       navigation.replace('Bidding', {
         gameState: data.gameState,
@@ -246,7 +244,6 @@ export default function LobbyScreen({ navigation, route }) {
     socketService.startGame();
 
     // Navigation will happen when we receive game:started event
-    console.log("Starting game...");
   };
 
   const handleAddBot = () => {

@@ -3,6 +3,7 @@
 import { Server } from 'socket.io';
 import { getDB } from '../db/connection';
 import { Player } from '../types/player';
+import { Game } from '../types/game';
 import {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -37,12 +38,12 @@ const BOT_SPEED_FACTOR = (() => {
 })();
 
 const BOT_TIMING = {
-  BID_MIN: 700,
-  BID_MAX: 1800,
-  PLAY_MIN: 900,
-  PLAY_MAX: 2200,
-  CONTINUE_MIN: 700,
-  CONTINUE_MAX: 1800,
+  BID_MIN: 500,
+  BID_MAX: 1100,
+  PLAY_MIN: 600,
+  PLAY_MAX: 1300,
+  CONTINUE_MIN: 400,
+  CONTINUE_MAX: 900,
 };
 
 // Action locks to prevent duplicate bot actions
@@ -150,14 +151,14 @@ export class BotService {
    * it, so bot-driven updates carry exactly what human-driven ones do - table
    * presence included.
    */
-  private async broadcastGameState(gameId: string): Promise<void> {
+  private async broadcastGameState(gameId: string, game?: Game): Promise<void> {
     if (!this.io) {
       console.error('Socket.IO server not initialized in bot service');
       return;
     }
 
     const { broadcastGameUpdate } = await import('../socket/playFlow');
-    await broadcastGameUpdate(this.io, gameId);
+    await broadcastGameUpdate(this.io, gameId, game);
   }
 
   /**
@@ -286,14 +287,14 @@ export class BotService {
         console.log(`Bot ${botPlayer.name} bidding ${bid}`);
 
         // Submit bid using game service
-        await gameService.submitBid({
+        const saved = await gameService.submitBid({
           gameId,
           playerId: botPlayerId,
           bid,
         });
 
         // Broadcast updated game state to all clients
-        await this.broadcastGameState(gameId);
+        await this.broadcastGameState(gameId, saved);
 
         // Release lock BEFORE processing next action
         actionLocks.delete(lockKey);
@@ -369,7 +370,7 @@ export class BotService {
         console.log(`Bot ${botPlayer.name} playing ${card.rank} of ${card.suit}`);
 
         // Play card using game service
-        const { trickComplete, roundComplete } = await gameService.playCard({
+        const { game: saved, trickComplete, roundComplete } = await gameService.playCard({
           gameId,
           playerId: botPlayerId,
           card,
@@ -384,7 +385,7 @@ export class BotService {
         // scoreboard, and drives any pending bot actions.
         if (this.io) {
           const { handleAfterCardPlay } = await import('../socket/playFlow');
-          await handleAfterCardPlay(this.io, gameId, { trickComplete, roundComplete });
+          await handleAfterCardPlay(this.io, gameId, { trickComplete, roundComplete, game: saved });
         }
       } catch (error) {
         console.error(`Error in bot card play for ${botPlayerId}:`, error);

@@ -358,9 +358,10 @@ export class GameService {
   }
 
   /**
-   * Submits a bid for the current player.
+   * Submits a bid for the current player. Returns the game as saved, so the
+   * caller can broadcast it without reading it back.
    */
-  async submitBid(input: SubmitBidInput): Promise<GameState> {
+  async submitBid(input: SubmitBidInput): Promise<Game> {
     const db = getDB();
     const game = await this.getGameById(input.gameId);
 
@@ -408,20 +409,25 @@ export class GameService {
       where: { gameId: input.gameId, roundNumber: roundState.roundNumber },
     });
 
+    // The writes below do not depend on each other, so they go out together
+    // rather than one round trip after another - this is on the path between a
+    // player's tap and everyone seeing it.
+    const writes: Promise<unknown>[] = [
+      this.logAction(input.gameId, input.playerId, 'BID_SUBMIT', { bid: input.bid }),
+    ];
     if (gameRound) {
       // Save bid to round_bids table
-      await db.roundBid.create({
-        data: {
-          gameId: input.gameId,
-          roundId: gameRound.id,
-          playerId: input.playerId,
-          bidValue: input.bid,
-        },
-      });
+      writes.push(
+        db.roundBid.create({
+          data: {
+            gameId: input.gameId,
+            roundId: gameRound.id,
+            playerId: input.playerId,
+            bidValue: input.bid,
+          },
+        })
+      );
     }
-
-    // Log action
-    await this.logAction(input.gameId, input.playerId, 'BID_SUBMIT', { bid: input.bid });
 
     // Check if all bids are in
     if (Object.keys(roundState.bids).length === state.players.length) {
@@ -443,10 +449,12 @@ export class GameService {
 
       // Update game round status
       if (gameRound) {
-        await db.gameRound.update({
-          where: { id: gameRound.id },
-          data: { status: 'PLAYING' },
-        });
+        writes.push(
+          db.gameRound.update({
+            where: { id: gameRound.id },
+            data: { status: 'PLAYING' },
+          })
+        );
       }
     } else {
       // Move to next bidder
@@ -463,22 +471,31 @@ export class GameService {
     });
 
     // Save state
-    await db.game.update({
-      where: { id: input.gameId },
-      data: {
-        status: state.status,
-        currentTurnPlayerId: nextPlayerId,
-        gameStateJson: state as any,
-      },
-    });
+    writes.push(
+      db.game.update({
+        where: { id: input.gameId },
+        data: {
+          status: state.status,
+          currentTurnPlayerId: nextPlayerId,
+          gameStateJson: state as any,
+        },
+      })
+    );
+    await Promise.all(writes);
 
-    return state;
+    return { ...game, status: state.status, currentTurnPlayerId: nextPlayerId, gameState: state };
   }
 
   /**
    * Plays a card.
    */
-  async playCard(input: PlayCardInput): Promise<{ state: GameState; trickComplete: boolean; roundComplete: boolean }> {
+  async playCard(input: PlayCardInput): Promise<{
+    state: GameState;
+    /** The game as saved, so the caller can broadcast it without reading it back. */
+    game: Game;
+    trickComplete: boolean;
+    roundComplete: boolean;
+  }> {
     const db = getDB();
     const game = await this.getGameById(input.gameId);
 
@@ -528,8 +545,13 @@ export class GameService {
     }
     trick.cardsPlayed.push({ playerId: input.playerId, card: input.card });
 
-    // Log action
-    await this.logAction(input.gameId, input.playerId, 'CARD_PLAY', { card: input.card });
+    // Logged alongside the state save below rather than ahead of it: nothing
+    // depends on it, and it is one round trip on the path to everyone else
+    // seeing this card.
+    const logged = this.logAction(input.gameId, input.playerId, 'CARD_PLAY', { card: input.card });
+    // Awaited with the save; marked handled now so a failure while the round
+    // scoring below is in flight is not reported as an unhandled rejection.
+    logged.catch(() => undefined);
 
     let trickComplete = false;
     let roundComplete = false;
@@ -646,17 +668,31 @@ export class GameService {
     });
 
     // Save state
-    await db.game.update({
-      where: { id: input.gameId },
-      data: {
+    await Promise.all([
+      logged,
+      db.game.update({
+        where: { id: input.gameId },
+        data: {
+          currentRound: state.currentRound,
+          status: state.status,
+          currentTurnPlayerId: nextPlayerId,
+          gameStateJson: state as any,
+        },
+      }),
+    ]);
+
+    return {
+      state,
+      game: {
+        ...game,
         currentRound: state.currentRound,
         status: state.status,
         currentTurnPlayerId: nextPlayerId,
-        gameStateJson: state as any,
+        gameState: state,
       },
-    });
-
-    return { state, trickComplete, roundComplete };
+      trickComplete,
+      roundComplete,
+    };
   }
 
   /**

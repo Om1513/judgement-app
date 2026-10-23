@@ -13,7 +13,7 @@ const SUIT_SYMBOLS = {
 // Timings, in ms.
 const STAGGER = 55; // between each card leaving the hand
 const RETURN_MS = 220; // cards sliding back into the hand
-const FLY_MS = 300; // the picked card travelling to the table
+const FLY_MS = 240; // the picked card travelling to the table
 
 const PRESS_SCALE = 1.08;
 
@@ -28,11 +28,11 @@ export const cardKey = (card) => `${card.suit}-${card.rank}`;
  *   one after another. The hand itself is left exactly as it is.
  * - Tapping a card calls `onPick(card)` and flies it to `target` - the pose
  *   PlayedCard starts its entrance from - while the rest sink back into the
- *   hand. Once it arrives, `onPlace(card)` is called; that is when the play is
- *   actually sent.
- * - The flying card is held at the target until `landed` turns true (the
- *   server's update put our card on the table and PlayedCard has taken over).
- * - If the play is rejected, bump `resetSignal` and the row comes back.
+ *   hand. Once it arrives, `onPlace(card)` is called.
+ * - The flying card is held at the target until `landed` turns true (our card
+ *   is drawn on the table by PlayedCard, which takes over from here).
+ * - If the play is rejected, bump `resetSignal` and the row comes back - even
+ *   after the card has landed, since a play is shown before it is confirmed.
  * - If `open` turns false without a pick (the turn ended some other way), the
  *   row slides back into the hand.
  *
@@ -75,36 +75,39 @@ export default function PlayableCardTray({
 
   const signature = cards.map((c) => cardKey(c.card)).join("|");
 
+  const deal = () => {
+    const next = cards.map(({ card }) => ({
+      key: cardKey(card),
+      card,
+      source: getSourceRect(cardKey(card)),
+      p: new Animated.Value(0),
+      press: new Animated.Value(0),
+    }));
+    fly.setValue(0);
+    phaseRef.current = "open";
+    setPickedKey(null);
+    setReturnedKeys([]);
+    setEntries(next);
+    onHiddenChange(next.map((e) => e.key));
+    Animated.stagger(
+      STAGGER,
+      next.map((e) =>
+        Animated.spring(e.p, {
+          toValue: 1,
+          friction: 7,
+          tension: 80,
+          useNativeDriver: true,
+        })
+      )
+    ).start();
+  };
+
   // Deal the row out on our turn; gather it back if the turn ends untouched.
   useEffect(() => {
     if (open && cards.length > 0) {
       // Mid-flight: the update that ends the turn is on its way.
       if (phaseRef.current === "picked") return;
-
-      const next = cards.map(({ card }) => ({
-        key: cardKey(card),
-        card,
-        source: getSourceRect(cardKey(card)),
-        p: new Animated.Value(0),
-        press: new Animated.Value(0),
-      }));
-      fly.setValue(0);
-      phaseRef.current = "open";
-      setPickedKey(null);
-      setReturnedKeys([]);
-      setEntries(next);
-      onHiddenChange(next.map((e) => e.key));
-      Animated.stagger(
-        STAGGER,
-        next.map((e) =>
-          Animated.spring(e.p, {
-            toValue: 1,
-            friction: 7,
-            tension: 80,
-            useNativeDriver: true,
-          })
-        )
-      ).start();
+      deal();
       return;
     }
 
@@ -141,7 +144,16 @@ export default function PlayableCardTray({
   }, [landed]);
 
   // The play was rejected: put the row back and let the player choose again.
+  const lastResetSignal = useRef(resetSignal);
   useEffect(() => {
+    // Only a change is a rejection - not the first render.
+    if (resetSignal === lastResetSignal.current) return;
+    lastResetSignal.current = resetSignal;
+    // Already landed and handed over: deal the row out afresh.
+    if (phaseRef.current === "closed") {
+      if (open && cards.length > 0) deal();
+      return;
+    }
     if (phaseRef.current !== "picked") return;
     phaseRef.current = "open";
     setPickedKey(null);
