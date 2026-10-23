@@ -14,6 +14,7 @@
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { devLog } from '../utils/log';
 
 // Matches the existing @kachuful_* key convention (player name, client id).
 const SOUND_ENABLED_KEY = '@kachuful_sound_enabled';
@@ -124,7 +125,7 @@ class AudioManager {
           this.soundEffectsEnabled = this.soundEnabled;
         }
       } catch (error) {
-        console.log('[audio] could not read sound preference:', error);
+        devLog('[audio] could not read sound preference:', error);
       }
 
       try {
@@ -138,7 +139,7 @@ class AudioManager {
           allowsRecording: false,
         });
       } catch (error) {
-        console.log('[audio] could not configure audio mode:', error);
+        devLog('[audio] could not configure audio mode:', error);
       }
 
       this.preloadSoundEffects();
@@ -194,7 +195,7 @@ class AudioManager {
       player.volume = this.musicVolume;
       this.musicPlayer = player;
     } catch (error) {
-      console.log('[audio] could not create music player:', error);
+      devLog('[audio] could not create music player:', error);
       this.musicPlayer = null;
     }
     return this.musicPlayer;
@@ -209,7 +210,7 @@ class AudioManager {
       player.volume = (spec.volume ?? 1) * this.soundEffectsVolume;
       this.sfxPlayers[name] = player;
     } catch (error) {
-      console.log(`[audio] could not preload "${name}":`, error);
+      devLog(`[audio] could not preload "${name}":`, error);
       this.sfxPlayers[name] = null;
     }
     return this.sfxPlayers[name];
@@ -219,7 +220,7 @@ class AudioManager {
     try {
       this.ensureMusicPlayer()?.play();
     } catch (error) {
-      console.log('[audio] play failed:', error);
+      devLog('[audio] play failed:', error);
     }
   }
 
@@ -227,7 +228,7 @@ class AudioManager {
     try {
       this.musicPlayer?.pause();
     } catch (error) {
-      console.log('[audio] pause failed:', error);
+      devLog('[audio] pause failed:', error);
     }
   }
 
@@ -314,7 +315,7 @@ class AudioManager {
     try {
       this.musicPlayer?.seekTo(0)?.catch(() => {});
     } catch (error) {
-      console.log('[audio] rewind failed:', error);
+      devLog('[audio] rewind failed:', error);
     }
   }
 
@@ -337,7 +338,7 @@ class AudioManager {
       player.seekTo(0)?.catch(() => {});
       player.play();
     } catch (error) {
-      console.log(`[audio] could not play "${name}":`, error);
+      devLog(`[audio] could not play "${name}":`, error);
       return;
     }
 
@@ -376,7 +377,7 @@ class AudioManager {
     try {
       await AsyncStorage.setItem(SOUND_ENABLED_KEY, enabled ? 'true' : 'false');
     } catch (error) {
-      console.log('[audio] could not save sound preference:', error);
+      devLog('[audio] could not save sound preference:', error);
     }
   }
 
@@ -394,7 +395,7 @@ class AudioManager {
       try {
         listener(this.soundEnabled);
       } catch (error) {
-        console.log('[audio] listener failed:', error);
+        devLog('[audio] listener failed:', error);
       }
     });
   }

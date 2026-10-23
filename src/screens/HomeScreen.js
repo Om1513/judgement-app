@@ -21,6 +21,7 @@ import PlayerNameInput from "../components/PlayerNameInput";
 import SoundToggleButton from "../components/SoundToggleButton";
 import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIconButton";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
+import { devLog } from "../utils/log";
 
 const PLAYER_NAME_KEY = "@kachuful_player_name";
 
@@ -91,7 +92,7 @@ export default function HomeScreen({ navigation }) {
         setPlayerName(savedName);
       }
     } catch (error) {
-      console.log("Error loading player name:", error);
+      devLog("Error loading player name:", error);
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +102,7 @@ export default function HomeScreen({ navigation }) {
     try {
       await AsyncStorage.setItem(PLAYER_NAME_KEY, name);
     } catch (error) {
-      console.log("Error saving player name:", error);
+      devLog("Error saving player name:", error);
     }
   };
 
