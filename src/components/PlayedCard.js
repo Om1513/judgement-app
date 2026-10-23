@@ -39,10 +39,12 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
 
   useEffect(() => {
     Animated.parallel([
+      // Settles quickly with a single small overshoot, so a card reads as
+      // placed straight away rather than wobbling into place.
       Animated.spring(enter, {
         toValue: 1,
-        friction: 6,
-        tension: 70,
+        friction: 8,
+        tension: 120,
         useNativeDriver: true,
       }),
       Animated.sequence([
@@ -64,8 +66,8 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
     if (resolving) {
       Animated.timing(resolve, {
         toValue: 1,
-        duration: 600,
-        delay: 250,
+        duration: 450,
+        delay: 150,
         easing: Easing.inOut(Easing.cubic),
         useNativeDriver: true,
       }).start();

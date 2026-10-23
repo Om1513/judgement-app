@@ -218,7 +218,6 @@ export default function JoinGameScreen({ navigation, route }) {
         }
       }
 
-      console.log("Joined lobby:", lobby);
 
       // Navigate to lobby screen with lobby data
       navigation.navigate("Lobby", {

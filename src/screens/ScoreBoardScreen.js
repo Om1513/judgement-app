@@ -109,7 +109,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
     // Listen for scoreboard updates
     const unsubscribeState = socketService.on('scoreboard:state', (data) => {
-      console.log('Scoreboard state:', data.scoreboard);
       setScoreboard(data.scoreboard);
 
       // Check if current player has already continued
@@ -131,7 +130,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
     // Listen for round bidding started
     const unsubscribeBidding = socketService.on('round:bidding-started', (data) => {
-      console.log('Next round bidding started');
       navigation.replace('Bidding', {
         gameState: data.gameState,
         currentPlayerId,
@@ -146,7 +144,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
     // Listen for the final winner - go to the celebration screen.
     const unsubscribeFinalWinner = socketService.on('game:final-winner', (data) => {
-      console.log('Final winner:', data);
       navigation.replace('FinalWinner', {
         winners: data.winners,
         winningScore: data.winningScore,

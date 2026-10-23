@@ -231,7 +231,6 @@ export default function CreateGameScreen({ navigation, route }) {
         }
       }
 
-      console.log("Lobby created:", lobby);
 
       // Success sting - deliberately here and not in the button handler. The
       // button's own pop already acknowledged the tap; this only fires once the

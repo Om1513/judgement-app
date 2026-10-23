@@ -13,7 +13,7 @@
 
 import React from "react";
 import { Dimensions, Keyboard, StyleSheet } from "react-native";
-import { act, fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render, within } from "@testing-library/react-native";
 
 import HomeScreen from "../HomeScreen";
 import HowToPlayScreen from "../HowToPlayScreen";
@@ -29,6 +29,7 @@ jest.mock("../../services/socket", () => ({
   __esModule: true,
   default: {
     on: jest.fn(() => jest.fn()),
+    onSession: jest.fn(() => jest.fn()),
     playCard: jest.fn(),
     submitBid: jest.fn(),
     leaveLobby: jest.fn(),
@@ -265,15 +266,95 @@ describe("playing a card from the table", () => {
     unmount();
   });
 
-  it("sends the tapped card once it has flown to the table", () => {
+  it("sends the tapped card the moment it is picked, not after its flight", () => {
     const { getByTestId, unmount } = renderTable();
     act(() => jest.advanceTimersByTime(1000));
 
     fireEvent.press(getByTestId("tray-card-spades-6"));
-    act(() => jest.advanceTimersByTime(1000));
 
     expect(socketService.playCard).toHaveBeenCalledTimes(1);
     expect(socketService.playCard).toHaveBeenCalledWith({ suit: "spades", rank: "6" });
+
+    // Landing does not send it again.
+    act(() => jest.advanceTimersByTime(1000));
+    expect(socketService.playCard).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("brings the row back if the server rejects a play that has already landed", () => {
+    const { getByTestId, queryByTestId, unmount } = renderTable();
+    act(() => jest.advanceTimersByTime(1000));
+
+    fireEvent.press(getByTestId("tray-card-spades-6"));
+    act(() => jest.advanceTimersByTime(1000));
+    // Landed and handed to the table: the row is gone.
+    expect(queryByTestId("tray-card-spades-2")).toBeNull();
+
+    const onError = socketService.on.mock.calls.find(([event]) => event === "game:error")[1];
+    act(() => onError({ message: "Not your turn" }));
+    act(() => jest.advanceTimersByTime(1000));
+
+    expect(queryByTestId("tray-card-spades-2")).toBeTruthy();
+    expect(queryByTestId("tray-card-spades-6")).toBeTruthy();
+    unmount();
+  });
+});
+
+// A bid shows the moment it is tapped, as if accepted; the server's update
+// replaces it.
+describe("placing a bid", () => {
+  const myTurnToBid = {
+    status: "BIDDING",
+    totalRounds: 4,
+    myHand: [{ suit: "spades", rank: "5" }],
+    players: [
+      { id: "p0", name: "Asha", hasBid: false, bid: null, isHost: true },
+      { id: "p1", name: "Bilal", hasBid: false, bid: null },
+      { id: "p2", name: "Chen", hasBid: false, bid: null },
+    ],
+    roundState: {
+      roundNumber: 1,
+      cardsPerPlayer: 3,
+      currentBidderId: "p0",
+      bidOrder: ["p0", "p1", "p2"],
+      totalBidsSoFar: 0,
+      trump: { suit: "hearts", symbol: "♥", name: "Hearts" },
+    },
+  };
+
+  it("shows the bid and passes the turn on at once", () => {
+    const { getByText, queryByText, getAllByTestId, unmount } = render(
+      <BiddingScreen
+        navigation={navigation}
+        route={{ params: { gameState: myTurnToBid, currentPlayerId: "p0" } }}
+      />
+    );
+
+    fireEvent.press(getByText("2"));
+
+    expect(socketService.submitBid).toHaveBeenCalledWith(2);
+    // The buttons are gone and the table names the next bidder...
+    expect(queryByText("3")).toBeNull();
+    expect(getByText(/Waiting for/)).toBeTruthy();
+    // ...and our cell holds the bid.
+    const [myCell] = getAllByTestId("bid-cell");
+    expect(within(myCell).getByText("2")).toBeTruthy();
+    unmount();
+  });
+
+  it("takes the bid back if the server rejects it", () => {
+    const { getByText, unmount } = render(
+      <BiddingScreen
+        navigation={navigation}
+        route={{ params: { gameState: myTurnToBid, currentPlayerId: "p0" } }}
+      />
+    );
+
+    fireEvent.press(getByText("2"));
+    const onError = socketService.on.mock.calls.find(([event]) => event === "game:error")[1];
+    act(() => onError({ message: "Invalid bid" }));
+
+    expect(getByText("3")).toBeTruthy();
     unmount();
   });
 });
