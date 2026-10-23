@@ -483,7 +483,7 @@ const rawStyles = {
     overflow: "visible",
   },
   overlayGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   particle: {
     position: "absolute",

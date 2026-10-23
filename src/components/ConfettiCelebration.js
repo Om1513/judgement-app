@@ -100,7 +100,7 @@ export default function ConfettiCelebration({ count = 50, loop = true }) {
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "hidden",
     zIndex: 10,
   },

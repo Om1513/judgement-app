@@ -13,7 +13,7 @@
 
 import React from "react";
 import { Dimensions, Keyboard, StyleSheet } from "react-native";
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import HomeScreen from "../HomeScreen";
 import HowToPlayScreen from "../HowToPlayScreen";
@@ -23,6 +23,7 @@ import LobbyScreen from "../LobbyScreen";
 import JoinGameScreen from "../JoinGameScreen";
 import ScoreBoardScreen from "../ScoreBoardScreen";
 import FinalWinnerScreen from "../FinalWinnerScreen";
+import socketService from "../../services/socket";
 
 jest.mock("../../services/socket", () => ({
   __esModule: true,
@@ -218,6 +219,62 @@ describe.each(Object.entries(VIEWPORTS))("on %s", (_name, viewport) => {
         />
       )
     ).not.toThrow();
+  });
+});
+
+// On our turn the cards we may play lift out of the hand into a row, and one
+// tap plays one. The component's own behaviour is covered alongside it; this
+// is the wiring - the follow-suit rule picks the row, and the tap reaches the
+// server.
+describe("playing a card from the table", () => {
+  const renderTable = () =>
+    render(
+      <GameTableScreen
+        navigation={navigation}
+        route={{
+          params: {
+            // Spades were led; this hand holds the 2 and 6 of spades.
+            gameState: gameState(3, { cardsPlayed: 1 }),
+            currentPlayerId: "p0",
+            currentPlayerName: "P0",
+          },
+        }}
+      />
+    );
+
+  it("offers only the cards that follow suit", () => {
+    const { queryByTestId, unmount } = renderTable();
+    expect(queryByTestId("tray-card-spades-2")).toBeTruthy();
+    expect(queryByTestId("tray-card-spades-6")).toBeTruthy();
+    expect(queryByTestId("tray-card-hearts-3")).toBeNull();
+    unmount();
+  });
+
+  it("keeps the row away while a finished trick is still on the table", () => {
+    // We won the trick, so the server already names us to lead - but the
+    // winner popup has not run yet, so we cannot play.
+    const state = gameState(3, { cardsPlayed: 3 });
+    state.roundState.currentTrick.winnerId = "p0";
+    const { queryByTestId, unmount } = render(
+      <GameTableScreen
+        navigation={navigation}
+        route={{ params: { gameState: state, currentPlayerId: "p0", currentPlayerName: "P0" } }}
+      />
+    );
+    expect(queryByTestId("tray-card-spades-2")).toBeNull();
+    unmount();
+  });
+
+  it("sends the tapped card once it has flown to the table", () => {
+    const { getByTestId, unmount } = renderTable();
+    act(() => jest.advanceTimersByTime(1000));
+
+    fireEvent.press(getByTestId("tray-card-spades-6"));
+    act(() => jest.advanceTimersByTime(1000));
+
+    expect(socketService.playCard).toHaveBeenCalledTimes(1);
+    expect(socketService.playCard).toHaveBeenCalledWith({ suit: "spades", rank: "6" });
+    unmount();
   });
 });
 

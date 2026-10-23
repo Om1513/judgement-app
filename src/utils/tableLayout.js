@@ -253,3 +253,41 @@ export function getHandCardLayout({
     overflows: totalWidth > availableWidth,
   };
 }
+
+/**
+ * Lays out the row of playable cards that lifts out of the hand on the
+ * player's turn.
+ *
+ * The row is centred and sits with its bottom edge at `bottom`, just above the
+ * hand. It keeps `sideInset` clear on both sides so it never runs under the
+ * bottom corner seats; when the cards will not fit with a gap between them they
+ * overlap, exactly as the hand itself does (see getHandCardLayout).
+ *
+ * @returns {Array<{left, top, width, height}>} one slot per card, left to right
+ */
+export function getTraySlots({
+  cardCount,
+  cardWidth,
+  cardHeight,
+  areaWidth,
+  bottom,
+  sideInset = 0,
+  gap = 8,
+}) {
+  const layout = getHandCardLayout({
+    availableWidth: Math.max(0, areaWidth - 2 * sideInset),
+    cardCount,
+    cardWidth,
+    // A negative overlap is a gap.
+    baseOverlap: -gap,
+  });
+  const start = (areaWidth - layout.totalWidth) / 2;
+  const top = bottom - cardHeight;
+
+  return Array.from({ length: cardCount }, (_, i) => ({
+    left: start + i * layout.stride,
+    top,
+    width: cardWidth,
+    height: cardHeight,
+  }));
+}
