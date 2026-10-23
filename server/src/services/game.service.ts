@@ -780,6 +780,45 @@ export class GameService {
    * Returns the updated game state or null if game is complete.
    */
   async advanceToNextRound(gameId: string): Promise<Game | null> {
+    return this.advanceRound(gameId);
+  }
+
+  /**
+   * Moves past a round's scoreboard once everybody has pressed Continue - but
+   * only once per round, however many callers ask.
+   *
+   * Several can see "everyone has continued" at the same moment: the last two
+   * players pressing together, or a player and a bot's timed Continue. Without
+   * a claim both would advance - the loser either dealing the round a second
+   * time or, reading the state a moment later, throwing "not in scoreboard
+   * phase" at a player who is by then already bidding. The claim is a single
+   * conditional write on the round being left, so exactly one caller wins;
+   * everyone else gets null and has nothing to do.
+   */
+  async advanceRoundOnce(gameId: string, roundNumber: number): Promise<Game | null> {
+    const db = getDB();
+
+    const { count } = await db.game.updateMany({
+      where: { id: gameId, status: 'ROUND_SCOREBOARD', currentRound: roundNumber },
+      data: { status: 'ROUND_COMPLETE' },
+    });
+    if (count === 0) {
+      return null;
+    }
+
+    try {
+      return await this.advanceRound(gameId);
+    } catch (error) {
+      // Release the claim so the round can still be advanced.
+      await db.game.updateMany({
+        where: { id: gameId, status: 'ROUND_COMPLETE', currentRound: roundNumber },
+        data: { status: 'ROUND_SCOREBOARD' },
+      });
+      throw error;
+    }
+  }
+
+  private async advanceRound(gameId: string): Promise<Game | null> {
     const db = getDB();
 
     const game = await this.getGameById(gameId);

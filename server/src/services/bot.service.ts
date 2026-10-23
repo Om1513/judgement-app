@@ -566,13 +566,13 @@ export class BotService {
     const continuedCount = confirmations.filter(c => c.hasContinued).length;
 
     if (continuedCount >= lobby.playerCount) {
-      // All continued
-      this.io.to(`lobby:${lobby.code}`).emit('scoreboard:all-continued');
-
-      // Advance to next round
-      const updatedGame = await gameService.advanceToNextRound(gameId);
+      // Advance to next round - unless a player's Continue landing at the same
+      // moment already has, in which case this is null and there is nothing to do.
+      const updatedGame = await gameService.advanceRoundOnce(gameId, game.currentRound);
 
       if (updatedGame) {
+        this.io.to(`lobby:${lobby.code}`).emit('scoreboard:all-continued');
+
         if (updatedGame.gameState.status === 'GAME_OVER') {
           // Finalize and broadcast the winner(s).
           const { broadcastFinalWinner } = await import('../socket/playFlow');
