@@ -17,6 +17,7 @@ import {
   getCardZone,
   getHandCardLayout,
   getSeatPosition,
+  getTraySlots,
   topSeatOffset,
 } from "../tableLayout";
 
@@ -273,5 +274,44 @@ describe("the player's hand", () => {
       expect(Number.isFinite(layout.stride)).toBe(true);
       expect(Number.isFinite(layout.margin)).toBe(true);
     }
+  });
+});
+
+describe("the playable-card row", () => {
+  const CARD_W = 55;
+  const CARD_H = 80;
+  const base = {
+    cardWidth: CARD_W,
+    cardHeight: CARD_H,
+    areaWidth: 874,
+    bottom: 298,
+    sideInset: 122,
+  };
+
+  it("is centred, evenly spaced, and sits on the given bottom edge", () => {
+    const slots = getTraySlots({ ...base, cardCount: 3 });
+    expect(slots).toHaveLength(3);
+
+    const left = slots[0].left;
+    const right = slots[2].left + CARD_W;
+    expect((left + right) / 2).toBeCloseTo(874 / 2);
+    expect(slots[1].left - slots[0].left).toBeCloseTo(CARD_W + 8);
+    for (const slot of slots) {
+      expect(slot.top + slot.height).toBe(298);
+      expect(slot.width).toBe(CARD_W);
+    }
+  });
+
+  it("overlaps rather than running under the corner seats", () => {
+    const slots = getTraySlots({ ...base, cardCount: 13 });
+    expect(slots[0].left).toBeGreaterThanOrEqual(122 - 0.001);
+    expect(slots[12].left + CARD_W).toBeLessThanOrEqual(874 - 122 + 0.001);
+    expect(slots[1].left - slots[0].left).toBeLessThan(CARD_W);
+  });
+
+  it("handles no cards and a single card", () => {
+    expect(getTraySlots({ ...base, cardCount: 0 })).toEqual([]);
+    const [only] = getTraySlots({ ...base, cardCount: 1 });
+    expect(only.left + CARD_W / 2).toBeCloseTo(874 / 2);
   });
 });

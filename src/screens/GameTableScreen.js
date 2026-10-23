@@ -18,7 +18,8 @@ import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIc
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
-import PlayedCard from "../components/PlayedCard";
+import PlayedCard, { ENTER_SCALE } from "../components/PlayedCard";
+import PlayableCardTray, { cardKey } from "../components/PlayableCardTray";
 import { arrangeSeats } from "../utils/seating";
 import { RECONNECTING, seatStatus } from "../utils/presence";
 import { getPlayableCardIndexes } from "../utils/cardRules";
@@ -34,6 +35,7 @@ import {
   getCardZone,
   getHandCardLayout,
   getSeatPosition,
+  getTraySlots,
 } from "../utils/tableLayout";
 
 // Suit symbols
@@ -48,6 +50,12 @@ const SUIT_SYMBOLS = {
 // as in the original design.
 const HAND_CARD_WIDTH = 55;
 const HAND_CARD_HEIGHT = 80;
+// The hand's distance from the bottom of the screen.
+const HAND_BOTTOM = 10;
+// Gap between the playable-card row and the top of the hand.
+const TRAY_LIFT = 14;
+// Room kept clear either side of the row for the bottom corner seats.
+const TRAY_SIDE_INSET = TABLE_MARGIN_SIDE + SEAT_WIDTH + 12;
 
 export default function GameTableScreen({ navigation, route }) {
   const {
@@ -59,6 +67,13 @@ export default function GameTableScreen({ navigation, route }) {
   const [gameState, setGameState] = useState(initialGameState);
   const [selectedCard, setSelectedCard] = useState(null);
   const [isPlayingCard, setIsPlayingCard] = useState(false);
+  // The card picked from the playable-card row, while it flies to the table.
+  const [flyingCardKey, setFlyingCardKey] = useState(null);
+  // Cards up in the playable-card row. Their places in the hand stay empty, so
+  // the hand shows only the cards that cannot be played.
+  const [trayHiddenKeys, setTrayHiddenKeys] = useState([]);
+  // Bumped when the server rejects a play, which sends the row back out.
+  const [playRejections, setPlayRejections] = useState(0);
   // Hand (trick) winner popup. Non-null while the popup is shown; card play is
   // disabled during this window (the backend also pauses, so bots wait too).
   const [handWinner, setHandWinner] = useState(null);
@@ -298,6 +313,7 @@ export default function GameTableScreen({ navigation, route }) {
     const unsubscribeError = socketService.on("game:error", (data) => {
       Alert.alert("Error", data.message);
       setIsPlayingCard(false);
+      setPlayRejections((n) => n + 1);
     });
 
     const unsubscribeHandWinner = socketService.on("hand:winner-announced", (data) => {
@@ -423,6 +439,100 @@ export default function GameTableScreen({ navigation, route }) {
       setSelectedCard(index);
     }
   };
+
+  // ---------------------------------------------------------------------
+  // Playable-card row
+  // ---------------------------------------------------------------------
+
+  // Where the hand and its cards are, kept in refs and read only when the row
+  // deals out, so scrolling the hand does not re-render the table.
+  const handContainerLayout = useRef(null);
+  const handScrollLayout = useRef(null);
+  const handScrollX = useRef(0);
+  const handCardLayouts = useRef({});
+
+  // A hand card's rect in screen space, or null if it has not been laid out.
+  // Card layouts are relative to the scroll content, so the hand's own offsets
+  // and the scroll position are added back on.
+  const getHandCardRect = useCallback((key) => {
+    const card = handCardLayouts.current[key];
+    const container = handContainerLayout.current;
+    const scroll = handScrollLayout.current;
+    if (!card || !container || !scroll) return null;
+    return {
+      left: container.x + scroll.x + card.x - handScrollX.current,
+      top: container.y + scroll.y + card.y,
+      width: card.width,
+      height: card.height,
+    };
+  }, []);
+
+  // Out only while we can actually play. A completed trick already names us as
+  // next to lead if we won it, but play is paused until the winner popup has
+  // been and gone - the row must not come out over the finished trick.
+  const trayOpen =
+    !!isMyTurn &&
+    gameState?.status === "PLAYING" &&
+    !handWinner &&
+    !currentTrick?.winnerId &&
+    // Played straight from the hand instead; the row steps aside.
+    !(isPlayingCard && !flyingCardKey);
+
+  const trayCards = useMemo(
+    () => playableCards.map((index) => ({ card: myHand[index], index })),
+    [playableCards, myHand]
+  );
+
+  const traySlots = useMemo(
+    () =>
+      getTraySlots({
+        cardCount: trayCards.length,
+        cardWidth: r.s(HAND_CARD_WIDTH),
+        cardHeight: r.s(HAND_CARD_HEIGHT),
+        areaWidth: r.width,
+        bottom: r.height - r.s(HAND_BOTTOM + HAND_CARD_HEIGHT + TRAY_LIFT),
+        sideInset: r.s(TRAY_SIDE_INSET),
+      }),
+    [trayCards.length, r]
+  );
+
+  // Where a picked card flies to: the pose our PlayedCard starts its entrance
+  // from, in screen space, so it takes over without a jump.
+  const trayTarget = useMemo(() => {
+    const zone = getCardZone(2, players.length, tableRect, r.scale);
+    return {
+      cx: tableMargins.left + zone.left + zone.width / 2 + zone.enterFrom.x,
+      cy: tableMargins.top + zone.top + zone.height / 2 + zone.enterFrom.y,
+      width: zone.width * ENTER_SCALE,
+    };
+  }, [players.length, tableRect, tableMargins, r.scale]);
+
+  const myCardLanded = (currentTrick?.cardsPlayed || []).some(
+    (c) => c.playerId === currentPlayerId
+  );
+
+  // A card was tapped in the row and is on its way to the table.
+  const handleTrayPick = useCallback((card) => {
+    setSelectedCard(null);
+    setFlyingCardKey(cardKey(card));
+  }, []);
+
+  // The picked card has reached the table; send the play.
+  const handleTrayPlace = useCallback(
+    (card) => {
+      if (isPlayingCard) return;
+      setIsPlayingCard(true);
+      // No-ops when sound is off; purely local feedback, nothing is sent.
+      audioManager.playSound("cardPlay");
+      socketService.playCard(card);
+    },
+    [isPlayingCard]
+  );
+
+  // The flight is over once our card is on the table or the play bounced.
+  useEffect(() => {
+    setFlyingCardKey(null);
+  }, [myCardLanded, playRejections]);
 
   // Where a seat sits. Table seats are placed from normalized coordinates
   // inside the measured table rect (see utils/tableLayout); the two bottom
@@ -583,22 +693,38 @@ export default function GameTableScreen({ navigation, route }) {
 
   const renderMyHand = () => {
     return (
-      <View style={[styles.myHandContainer, { bottom: r.s(10) }]}>
+      <View
+        style={[styles.myHandContainer, { bottom: r.s(HAND_BOTTOM) }]}
+        onLayout={(e) => {
+          handContainerLayout.current = e.nativeEvent.layout;
+        }}
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.myHandScroll}
+          onLayout={(e) => {
+            handScrollLayout.current = e.nativeEvent.layout;
+          }}
+          onScroll={(e) => {
+            handScrollX.current = e.nativeEvent.contentOffset.x;
+          }}
+          scrollEventThrottle={16}
         >
           {myHand.map((card, index) => {
             const isRed = card.suit === "hearts" || card.suit === "diamonds";
             const isPlayable = playableCards.includes(index);
             const isSelected = selectedCard === index;
+            const isUp = trayHiddenKeys.includes(cardKey(card));
 
             return (
               <TouchableOpacity
                 key={`${card.suit}-${card.rank}-${index}`}
+                onLayout={(e) => {
+                  handCardLayouts.current[cardKey(card)] = e.nativeEvent.layout;
+                }}
                 onPress={() => handleCardPress(card, index)}
-                disabled={!isMyTurn || isPlayingCard || !isPlayable}
+                disabled={!isMyTurn || isPlayingCard || !isPlayable || isUp}
                 activeOpacity={0.8}
                 style={[
                   styles.handCard,
@@ -609,6 +735,9 @@ export default function GameTableScreen({ navigation, route }) {
                   },
                   isSelected && styles.handCardSelected,
                   !isPlayable && isMyTurn && styles.handCardDisabled,
+                  // Up in the playable-card row; its place is kept so the rest
+                  // of the hand does not shift.
+                  isUp && styles.handCardUp,
                 ]}
               >
                 <LinearGradient
@@ -848,6 +977,20 @@ export default function GameTableScreen({ navigation, route }) {
 
         {/* 5th player - bottom-right corner (mirrors "You" at bottom-left) */}
         {arrangedPlayers[4] && renderPlayerSeat(arrangedPlayers[4], 4)}
+
+        {/* The cards we may play, lifted above the hand on our turn */}
+        <PlayableCardTray
+          open={trayOpen}
+          cards={trayCards}
+          slots={traySlots}
+          getSourceRect={getHandCardRect}
+          target={trayTarget}
+          landed={myCardLanded}
+          resetSignal={playRejections}
+          onPick={handleTrayPick}
+          onPlace={handleTrayPlace}
+          onHiddenChange={setTrayHiddenKeys}
+        />
 
         {/* Hand winner popup overlay */}
         <HandWinnerOverlay
@@ -1109,6 +1252,9 @@ const rawStyles = {
   },
   handCardDisabled: {
     opacity: 0.5,
+  },
+  handCardUp: {
+    opacity: 0,
   },
   handCardInner: {
     flex: 1,

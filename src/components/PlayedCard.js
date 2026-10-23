@@ -10,6 +10,11 @@ const SUIT_SYMBOLS = {
   clubs: "♣",
 };
 
+// How much larger than its settled size a card starts its entrance, and where
+// it starts from (`zone.enterFrom`). The playable-card tray flies a picked card
+// to exactly this pose so this card takes over from it without a jump.
+export const ENTER_SCALE = 1.12;
+
 /**
  * A single played card that lives in a player's seat card-zone.
  *
@@ -79,7 +84,7 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
     enter.interpolate({ inputRange: [0, 1], outputRange: [enterFrom.y, 0] }),
     resolve.interpolate({ inputRange: [0, 1], outputRange: [0, dy] })
   );
-  const scale = enter.interpolate({ inputRange: [0, 1], outputRange: [1.12, 1] });
+  const scale = enter.interpolate({ inputRange: [0, 1], outputRange: [ENTER_SCALE, 1] });
   const opacity = resolve.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
 
   return (
