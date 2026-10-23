@@ -14,6 +14,7 @@ import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import ConfettiCelebration from "../components/ConfettiCelebration";
 import audioManager from "../services/audioManager";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
+import { useFollowNextGame } from "../navigation/afterGame";
 
 // The painted gold ring fills most of the screen height, so the winner circle
 // is sized from the live viewport height rather than a module-scope
@@ -45,6 +46,8 @@ export default function FinalWinnerScreen({ navigation, route }) {
     currentPlayerId = "",
     currentPlayerName = "",
   } = route.params || {};
+
+  useFollowNextGame(navigation, { currentPlayerId, currentPlayerName });
 
   const fade = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.4)).current;

@@ -250,7 +250,18 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
    */
   socket.on('game:get-final-scoreboard', async () => {
     try {
-      if (!socket.data.gameId) {
+      // A socket that reconnected after the table went back to its lobby is
+      // restored into the lobby, not the game, so it has no game id - but the
+      // game it is still looking at is the lobby's latest one.
+      let gameId = socket.data.gameId;
+      if (!gameId && socket.data.lobbyId) {
+        const latest = await gameService.getGameByLobbyId(socket.data.lobbyId);
+        if (latest && isGameFinished(latest.gameState.status)) {
+          gameId = latest.id;
+        }
+      }
+
+      if (!gameId) {
         socket.emit('game:error', {
           message: 'Not in a game',
           code: SocketErrorCodes.GAME_NOT_FOUND,
@@ -258,8 +269,8 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         return;
       }
 
-      const scoreboard = await scoreboardService.getScoreboardState(socket.data.gameId);
-      const result = await scoreboardService.finalizeGame(socket.data.gameId);
+      const scoreboard = await scoreboardService.getScoreboardState(gameId);
+      const result = await scoreboardService.finalizeGame(gameId);
       if (!scoreboard || !result) {
         socket.emit('game:error', {
           message: 'Final scoreboard not available',

@@ -14,6 +14,7 @@ import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader, { useHeaderMetrics } from "../components/ScreenHeader";
+import { goBackToLobby, useFollowNextGame } from "../navigation/afterGame";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
 
 // Layout is a mirror of ScoreBoardScreen - same constants, same sizing rules,
@@ -75,8 +76,11 @@ export default function FinalScoreboardScreen({ navigation, route }) {
   const header = useHeaderMetrics();
   const {
     currentPlayerId = "",
+    currentPlayerName = "",
     winnerIds: initialWinnerIds = [],
   } = route.params || {};
+
+  useFollowNextGame(navigation, { currentPlayerId, currentPlayerName });
 
   const [scoreboard, setScoreboard] = useState(null);
   const [winnerIds, setWinnerIds] = useState(initialWinnerIds);
@@ -203,15 +207,10 @@ export default function FinalScoreboardScreen({ navigation, route }) {
                   inline
                   glyph="›"
                   glyphStyle={styles.backGlyph}
-                  accessibilityLabel="Return to home"
-                  onPress={() => {
-                    // The game is over and they have read the result, so this is
-                    // the end of the session - reopening the app must not drop
-                    // them back onto a finished scoreboard. The server side is
-                    // left alone; only the saved pointer goes.
-                    void socketService.clearSavedSession();
-                    navigation.navigate("Home");
-                  }}
+                  accessibilityLabel="Return to lobby"
+                  onPress={() =>
+                    goBackToLobby(navigation, { currentPlayerId, currentPlayerName })
+                  }
                 />
               </>
             }

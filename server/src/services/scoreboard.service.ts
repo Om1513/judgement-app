@@ -33,11 +33,6 @@ export class ScoreboardService {
       return null;
     }
 
-    const lobby = await lobbyService.getLobbyById(game.lobbyId);
-    if (!lobby) {
-      return null;
-    }
-
     // Get all rounds with their scores
     const rounds = await db.gameRound.findMany({
       where: { gameId },
@@ -48,12 +43,10 @@ export class ScoreboardService {
       },
     });
 
-    // Get lobby players for player info
-    const lobbyPlayers = await db.lobbyPlayer.findMany({
-      where: { lobbyId: game.lobbyId },
-      include: { player: true },
-      orderBy: { seatPosition: 'asc' },
-    });
+    // The game's own roster, not the lobby's: once a game ends its lobby is
+    // reset for the next one, and somebody who walked away mid-game is no
+    // longer in it - but they still played, and keep their column.
+    const lobbyPlayers = await this.getGameRoster(game);
 
     // Get current round
     const currentRound = rounds.find(r => r.roundNumber === game.currentRound);
@@ -78,7 +71,9 @@ export class ScoreboardService {
 
     // Build rows for all rounds
     const rows: ScoreboardRow[] = [];
-    const settings = lobby.settings as LobbySettings;
+    // The settings this game was dealt with; the host may change the lobby's
+    // before the next one.
+    const settings = game.gameState.settings as LobbySettings;
 
     for (let roundNum = 1; roundNum <= game.gameState.totalRounds; roundNum++) {
       const round = rounds.find(r => r.roundNumber === roundNum);
@@ -146,6 +141,38 @@ export class ScoreboardService {
       players,
       rows,
     };
+  }
+
+  /**
+   * Who played a game, in seat order, shaped like a lobby membership row.
+   * Taken from the game state, so it is unaffected by the lobby changing after
+   * the game ends; host and bot flags are read from current records.
+   */
+  private async getGameRoster(game: {
+    lobbyId: string;
+    gameState: { players: { id: string; name: string; seatPosition: number }[] };
+  }): Promise<
+    { playerId: string; isHost: boolean; player: { name: string; isBot: boolean } }[]
+  > {
+    const db = getDB();
+
+    const players = [...game.gameState.players].sort((a, b) => a.seatPosition - b.seatPosition);
+    const [records, lobby] = await Promise.all([
+      db.player.findMany({
+        where: { id: { in: players.map(p => p.id) } },
+        select: { id: true, isBot: true },
+      }),
+      db.lobby.findUnique({ where: { id: game.lobbyId }, select: { hostPlayerId: true } }),
+    ]);
+
+    return players.map(p => ({
+      playerId: p.id,
+      isHost: lobby?.hostPlayerId === p.id,
+      player: {
+        name: p.name,
+        isBot: records.find(r => r.id === p.id)?.isBot ?? false,
+      },
+    }));
   }
 
   /**
@@ -300,14 +327,11 @@ export class ScoreboardService {
       return null;
     }
 
-    const lobby = await lobbyService.getLobbyById(game.lobbyId);
-    if (!lobby) {
-      return null;
-    }
-
     const finalScores = game.gameState.scores || {};
+    // Names from the game itself: the lobby may already have been reset for the
+    // next game, without somebody who walked away from this one.
     const nameOf = (playerId: string) =>
-      lobby.players.find(p => p.playerId === playerId)?.name || 'Unknown';
+      game.gameState.players.find(p => p.id === playerId)?.name || 'Unknown';
 
     // Highest total score wins; ties produce multiple winners.
     const scoreValues = Object.values(finalScores);
