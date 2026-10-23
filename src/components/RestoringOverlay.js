@@ -18,7 +18,7 @@ export default function RestoringOverlay({ message = "Restoring game..." }) {
   return (
     <View style={styles.container} pointerEvents="auto">
       <ImageBackground
-        source={require("../../assets/background.png")}
+        source={require("../../assets/background.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

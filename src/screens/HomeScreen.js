@@ -158,7 +158,7 @@ export default function HomeScreen({ navigation }) {
     <TouchableWithoutFeedback onPress={dismissKeyboard}>
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/background.png")}
+          source={require("../../assets/background.jpg")}
           style={styles.background}
           resizeMode="cover"
         >

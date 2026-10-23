@@ -769,7 +769,7 @@ export default function GameTableScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/game.png")}
+          source={require("../../assets/game.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -782,7 +782,7 @@ export default function GameTableScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/game.png")}
+          source={require("../../assets/game.jpg")}
           style={styles.background}
           resizeMode="cover"
         >
@@ -800,7 +800,7 @@ export default function GameTableScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/game.png")}
+        source={require("../../assets/game.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

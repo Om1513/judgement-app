@@ -48,7 +48,7 @@ export default function HowToPlayScreen({ navigation }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/background_without_title.png")}
+          source={require("../../assets/background_without_title.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -221,7 +221,7 @@ export default function HowToPlayScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/background_without_title.png")}
+        source={require("../../assets/background_without_title.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

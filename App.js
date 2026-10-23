@@ -37,10 +37,10 @@ const DarkTheme = {
 // screen decodes its image mid-transition and the empty container shows through
 // as a black frame before the artwork appears.
 const BACKGROUND_IMAGES = [
-  require("./assets/background.png"),
-  require("./assets/background_without_title.png"),
-  require("./assets/game.png"),
-  require("./assets/winner_screen.png"),
+  require("./assets/background.jpg"),
+  require("./assets/background_without_title.jpg"),
+  require("./assets/game.jpg"),
+  require("./assets/winner_screen.jpg"),
 ];
 
 export default function App() {
