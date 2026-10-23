@@ -425,7 +425,9 @@ export class GameService {
       roundState: clientRoundState,
       scores: state.scores,
       isMyTurn: game.currentTurnPlayerId === playerId,
-      trumpOrder: state.trumpOrder,
+      // The full trump order is not sent: the app shows only the current
+      // round's trump (roundState.trump), and every update would otherwise
+      // carry - and reveal - every round still to come.
       // Clients display these; they never act on them. Trump and scores are
       // decided server-side.
       settings: {

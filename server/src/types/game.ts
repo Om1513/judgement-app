@@ -173,7 +173,6 @@ export interface ClientGameState {
   roundState: ClientRoundState | null;
   scores: Record<string, number>;
   isMyTurn: boolean;
-  trumpOrder: TrumpInfo[];
   // Echoed so the UI can label the active modes. The server remains
   // authoritative for both trump selection and scoring.
   settings: {
