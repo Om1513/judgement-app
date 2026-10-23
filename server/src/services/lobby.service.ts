@@ -784,6 +784,70 @@ export class LobbyService {
   }
 
   /**
+   * Puts a lobby back the way it was before the deal, once its game is over, so
+   * the same table can play again.
+   *
+   * Code, host, settings and seats are kept. What goes is everything that only
+   * meant something during the game:
+   *   - humans who walked away from it (DISCARD, or Leave Game mid-round) lose
+   *     their seat, through the ordinary removal path - so a host who walked away
+   *     hands the lobby on, and a lobby with no humans left is closed;
+   *   - bot control comes off every remaining human seat;
+   *   - presence is reset. Humans still away are reported in `absentPlayerIds`
+   *     rather than left marked disconnected, so the caller can hold their seats
+   *     with the waiting-room grace period, which owns its own deadline.
+   *
+   * The status flip is the claim: only a lobby still IN_GAME is reset, so a
+   * second call for the same game is a no-op and returns null. `lobby` is null
+   * when the lobby was closed.
+   */
+  async resetLobbyAfterGame(
+    lobbyId: string
+  ): Promise<{ lobby: LobbyState | null; absentPlayerIds: string[] } | null> {
+    const db = getDB();
+
+    const { count } = await db.lobby.updateMany({
+      where: { id: lobbyId, status: 'IN_GAME' },
+      data: { status: 'WAITING' },
+    });
+    if (count === 0) {
+      return null;
+    }
+
+    const rows = await db.lobbyPlayer.findMany({
+      where: { lobbyId },
+      include: { player: true },
+    });
+
+    for (const row of rows) {
+      if (!row.player.isBot && row.sessionDiscarded) {
+        const remaining = await this.removePlayerFromLobby(lobbyId, row.playerId);
+        if (!remaining) {
+          return { lobby: null, absentPlayerIds: [] };
+        }
+      }
+    }
+
+    const absentPlayerIds = rows
+      .filter(row => !row.player.isBot && !row.sessionDiscarded && !row.connected)
+      .map(row => row.playerId);
+
+    await db.lobbyPlayer.updateMany({
+      where: { lobbyId },
+      data: {
+        controlledByBot: false,
+        connected: true,
+        disconnectedAt: null,
+        reconnectDeadline: null,
+        // Any in-game takeover timer still in flight recognises itself as stale.
+        disconnectGeneration: { increment: 1 },
+      },
+    });
+
+    return { lobby: await this.getLobbyById(lobbyId), absentPlayerIds };
+  }
+
+  /**
    * Gets the lobby a player is currently participating in.
    *
    * Deliberately blind to a seat the player has walked away from - a DISCARD, or

@@ -280,6 +280,42 @@ describe('starting the next round', () => {
     assert.equal(rounds[1].status, 'BIDDING');
   });
 
+  test('when everyone continues at once, the round is advanced exactly once', async () => {
+    // The last player's Continue and a bot's timed Continue can both see
+    // "everyone has continued" together. Only one may deal the next round; the
+    // other must get nothing back rather than an error for a player who is
+    // already bidding.
+    const { gameId } = await roundOneComplete();
+    await continueAll(gameId);
+
+    const results = await Promise.all([
+      gameService.advanceRoundOnce(gameId, 1),
+      gameService.advanceRoundOnce(gameId, 1),
+      gameService.advanceRoundOnce(gameId, 1),
+    ]);
+
+    assert.equal(results.filter(Boolean).length, 1, 'one caller advanced');
+    const state = await getState(gameId);
+    assert.equal(state.currentRound, 2);
+    assert.equal(state.status, 'BIDDING');
+
+    const rounds = await db.gameRound.findMany({ where: { gameId } });
+    assert.deepEqual(
+      rounds.map((r) => r.roundNumber).sort(),
+      [1, 2],
+      'round 2 was dealt once, and no round was skipped'
+    );
+  });
+
+  test('a late request to leave a round that has already moved on does nothing', async () => {
+    const { gameId } = await roundOneComplete();
+    await continueAll(gameId);
+    await gameService.advanceRoundOnce(gameId, 1);
+
+    assert.equal(await gameService.advanceRoundOnce(gameId, 1), null);
+    assert.equal((await getState(gameId)).currentRound, 2);
+  });
+
   test('advancing outside the scoreboard phase is refused', async () => {
     const lobby = await createLobbyWithPlayers(4, { rounds: 4 });
     const gameId = await startGame(lobby.lobbyId, lobby.hostId);

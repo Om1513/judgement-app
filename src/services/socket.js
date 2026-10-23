@@ -41,6 +41,11 @@ class SocketService {
     // a cold start, or on a reconnect while any screen is open - and exactly one
     // place in the app is allowed to act on it (see App.js).
     this.pendingRejoin = null;
+    // The latest state of the lobby we are in, from whichever event last carried
+    // it. Kept here because the lobby can change while no lobby screen is open -
+    // above all when a finished game hands the table back to it, which happens
+    // while the players are still on the winner screen.
+    this.currentLobby = null;
     // In-flight connect(), so overlapping callers share one socket rather than
     // racing to open a second one.
     this.connectPromise = null;
@@ -208,9 +213,20 @@ class SocketService {
     // Entering a lobby is what creates a session worth surviving a cold start.
     // Recorded here, once, rather than in the create/join screens, so there is a
     // single place that decides what "being in a game" means.
-    const remember = (data) => this._rememberSession(data?.lobby);
+    const remember = (data) => {
+      this._trackLobby(data?.lobby);
+      this._rememberSession(data?.lobby);
+    };
     this.socket.on('lobby:created', remember);
     this.socket.on('lobby:joined', remember);
+    this.socket.on('lobby:update', (data) => this._trackLobby(data?.lobby));
+    // The lobby we had is the one from before the deal, still marked waiting -
+    // starting a game sends no lobby update. Forget it, so that after the game
+    // only the lobby the server hands back counts, and a server that never hands
+    // it back leaves us going Home rather than into a lobby that cannot start.
+    this.socket.on('game:started', () => {
+      this.currentLobby = null;
+    });
 
     // Being kicked is permanent - there is nothing left to come back to.
     this.socket.on('lobby:kicked', () => {
@@ -221,6 +237,13 @@ class SocketService {
       console.error('Socket error:', data.message);
       this._emitToListeners('error', data);
     });
+  }
+
+  /** Records the latest lobby state (see `currentLobby`). */
+  _trackLobby(lobby) {
+    if (lobby) {
+      this.currentLobby = lobby;
+    }
   }
 
   /**
@@ -265,6 +288,7 @@ class SocketService {
       );
       this.lastSession = data;
       this.pendingRejoin = null;
+      this._trackLobby(data.lobby);
       // Refresh the pointer on every restore, so a lobby joined on one launch is
       // still the one we ask for on the next.
       this._rememberSession(data.lobby);
@@ -319,6 +343,7 @@ class SocketService {
   async clearSavedSession() {
     this.lastSession = null;
     this.pendingRejoin = null;
+    this.currentLobby = null;
     await clearSession();
   }
 

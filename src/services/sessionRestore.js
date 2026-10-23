@@ -125,22 +125,27 @@ export function resolveRestoreTarget(payload, fallback = {}) {
     };
   }
 
-  // No game: a waiting lobby. Same params Create/Join hand to the lobby screen,
-  // including the live player list, so seats, host badge, bots and settings all
-  // come back as they were.
+  // No game: a waiting lobby.
+  return { name: 'Lobby', params: lobbyRouteParams(lobby, currentPlayerId, currentPlayerName) };
+}
+
+/**
+ * The lobby screen's params for a server lobby state. Same params Create/Join
+ * hand to the lobby screen, including the live player list, so seats, host
+ * badge, bots and settings all come back as they were. Shared by restore and by
+ * returning to the lobby after a game.
+ */
+export function lobbyRouteParams(lobby, currentPlayerId, currentPlayerName) {
   return {
-    name: 'Lobby',
-    params: {
-      lobbyCode: lobby.code,
-      lobbyId: lobby.id,
-      hostName: lobby.hostName,
-      hostId: lobby.hostPlayerId,
-      isHost: lobby.hostPlayerId === currentPlayerId,
-      currentPlayerId,
-      currentPlayerName,
-      gameSettings: lobby.settings,
-      initialPlayers: lobby.players,
-    },
+    lobbyCode: lobby.code,
+    lobbyId: lobby.id,
+    hostName: lobby.hostName,
+    hostId: lobby.hostPlayerId,
+    isHost: lobby.hostPlayerId === currentPlayerId,
+    currentPlayerId,
+    currentPlayerName,
+    gameSettings: lobby.settings,
+    initialPlayers: lobby.players,
   };
 }
 

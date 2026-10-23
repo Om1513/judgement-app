@@ -107,12 +107,17 @@ export function registerScoreboardEvents(io: TypedServer, socket: TypedSocket): 
 
       // If all players have continued, advance to next round
       if (allContinued) {
-        io.to(`lobby:${lobby.code}`).emit('scoreboard:all-continued');
-
-        // Advance to next round
-        const updatedGame = await gameService.advanceToNextRound(socket.data.gameId);
+        // Advance to next round - unless another Continue landing at the same
+        // moment (another player's, or a bot's) already has, in which case this
+        // is null and there is nothing to do.
+        const updatedGame = await gameService.advanceRoundOnce(
+          socket.data.gameId,
+          game.currentRound
+        );
 
         if (updatedGame) {
+          io.to(`lobby:${lobby.code}`).emit('scoreboard:all-continued');
+
           if (updatedGame.gameState.status === 'GAME_OVER') {
             // Game is complete - finalize and broadcast the winner(s).
             await broadcastFinalWinner(io, socket.data.gameId);

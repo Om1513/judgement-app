@@ -360,7 +360,13 @@ function registerSessionEvents(io: TypedServer, socket: TypedSocket): void {
       socket.data.lobbyId = found.id;
       void socket.join(`lobby:${found.code}`);
 
-      const rejoined = (await gameReconnectService.rejoin(found, socket.data.playerId)) ?? found;
+      // The game may have finished and handed the table back to its lobby while
+      // the offer was open. Then there is nothing to take back from the bot -
+      // they simply reclaim their held waiting-room seat.
+      const rejoined =
+        found.status === 'WAITING'
+          ? (await lobbyReconnectService.restorePlayer(found, socket.data.playerId)) ?? found
+          : (await gameReconnectService.rejoin(found, socket.data.playerId)) ?? found;
       const payload = await buildRestoredSession(socket, rejoined);
 
       console.log(`${socket.data.playerName} rejoined lobby ${rejoined.code}`);

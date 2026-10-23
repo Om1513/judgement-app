@@ -256,4 +256,60 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
   gameService.clearLobbyRef(gameId);
   const { gameReconnectService } = await import('../services/gameReconnect.service');
   gameReconnectService.cancelLobby(ref.lobbyId);
+
+  await returnToLobby(io, ref.lobbyId, ref.code, gameId);
+}
+
+/**
+ * Hands a finished game's table back to its lobby, so the host can deal again
+ * without anyone re-entering a code.
+ *
+ * Players stay on the winner screen and final scoreboard for as long as they
+ * like - those read the finished game by its id - and the lobby they return to
+ * is already waiting, with the same code, host, settings and seats.
+ *
+ * Only the lobby's latest game may do this: a stale call for an earlier game
+ * must never reset a table that has since started another.
+ */
+async function returnToLobby(
+  io: TypedServer,
+  lobbyId: string,
+  lobbyCode: string,
+  gameId: string
+): Promise<void> {
+  try {
+    const latest = await gameService.getGameByLobbyId(lobbyId);
+    if (latest?.id !== gameId) {
+      return;
+    }
+
+    const { lobbyService } = await import('../services/lobby.service');
+    const { lobbyReconnectService } = await import('../services/lobbyReconnect.service');
+
+    const reset = await lobbyService.resetLobbyAfterGame(lobbyId);
+    if (!reset) {
+      return; // Already returned.
+    }
+    if (!reset.lobby) {
+      // Only bots were left behind; the lobby is closed.
+      lobbyReconnectService.cancelLobby(lobbyId);
+      console.log(`Lobby ${lobbyCode} closed after its game: no humans left`);
+      return;
+    }
+
+    console.log(`Lobby ${lobbyCode} is back to waiting after game ${gameId}`);
+    io.to(`lobby:${lobbyCode}`).emit('lobby:update', { lobby: reset.lobby });
+
+    // Somebody who dropped out during the game gets the ordinary waiting-room
+    // grace period: their seat is held, and freed if they do not come back.
+    for (const playerId of reset.absentPlayerIds) {
+      const lobby = await lobbyService.getLobbyById(lobbyId);
+      if (!lobby) {
+        break;
+      }
+      await lobbyReconnectService.startGracePeriod(lobby, playerId);
+    }
+  } catch (error) {
+    console.error(`Error returning lobby ${lobbyCode} after game ${gameId}:`, error);
+  }
 }
