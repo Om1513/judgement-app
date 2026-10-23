@@ -608,9 +608,9 @@ export default function GameTableScreen({ navigation, route }) {
             </Text>
           </View>
 
-          {/* Who is driving this seat, when it is not its owner. Deliberately
-              small and grey: a dropout is a temporary fact about the table, not
-              an alarm. */}
+          {/* Shown while the seat is held open for a player who dropped out.
+              Deliberately small and grey: a dropout is a temporary fact about
+              the table, not an alarm. */}
           {status && (
             <View style={styles.presenceBadge}>
               <Text style={styles.presenceText} numberOfLines={1}>

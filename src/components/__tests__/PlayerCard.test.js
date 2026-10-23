@@ -101,10 +101,10 @@ describe("a seat the bot has taken over", () => {
     expect(screen.getByText("R")).toBeTruthy();
   });
 
-  it("is labelled as auto playing rather than reconnecting", () => {
+  it("carries no status label, and is not shown as reconnecting", () => {
     render(<PlayerCard player={takenOver} />);
 
-    expect(screen.getByText("AUTO PLAYING")).toBeTruthy();
+    expect(screen.queryByText("AUTO PLAYING")).toBeNull();
     expect(screen.queryByText("RECONNECTING...")).toBeNull();
   });
 
@@ -112,13 +112,11 @@ describe("a seat the bot has taken over", () => {
     render(<PlayerCard player={{ ...host, connected: false, controlledByBot: true }} />);
 
     expect(screen.getByText("HOST")).toBeTruthy();
-    expect(screen.getByText("AUTO PLAYING")).toBeTruthy();
   });
 
-  it("is not labelled for a real bot, which is badged BOT instead", () => {
+  it("still badges a real bot as BOT", () => {
     render(<PlayerCard player={{ ...bot, controlledByBot: true }} />);
 
-    expect(screen.queryByText("AUTO PLAYING")).toBeNull();
     expect(screen.getByText("BOT")).toBeTruthy();
   });
 });

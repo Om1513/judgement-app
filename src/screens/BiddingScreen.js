@@ -282,9 +282,7 @@ export default function BiddingScreen({ navigation, route }) {
                   <Text style={styles.hostBadgeText}>HOST</Text>
                 </View>
               )}
-              {/* Who is driving this seat, when it is not its owner - the bidding
-                  table is where a taken-over seat is most confusing without it,
-                  since a bid appears that its owner never made. */}
+              {/* Shown while the seat is held open for a player who dropped out. */}
               {seatStatus(player) && (
                 <View style={styles.presenceBadge}>
                   <Text style={styles.presenceText} numberOfLines={1}>

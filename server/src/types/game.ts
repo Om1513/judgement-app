@@ -124,7 +124,7 @@ export interface ClientPlayer {
   connected: boolean;
   /**
    * The bot engine is playing this seat because their grace period elapsed.
-   * Clients show "Auto Playing". Bots at the table have this true from the
+   * Clients show no label for it. Bots at the table have this true from the
    * start, so a bot and a taken-over human read the same way.
    */
   controlledByBot: boolean;
