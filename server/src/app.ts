@@ -21,9 +21,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Request logging middleware
+// Request logging middleware. Skips the health check, which the host polls
+// every few seconds and would otherwise drown out everything else.
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  console.log(`${req.method} ${req.path}`);
+  if (req.path !== '/health') {
+    console.log(`${req.method} ${req.path}`);
+  }
   next();
 });
 

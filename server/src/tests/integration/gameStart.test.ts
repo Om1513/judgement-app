@@ -212,7 +212,9 @@ describe('trump order', () => {
     const game = await gameService.getGameById(gameId);
     const clientState = gameService.getClientGameState(game!, playerIds[2]);
 
-    assert.deepEqual(clientState.trumpOrder, before);
+    // The client sees this round's trump, never the order still to come.
+    assert.deepEqual(clientState.roundState?.trump, before[0]);
+    assert.equal('trumpOrder' in clientState, false);
     assert.deepEqual((await getState(gameId)).trumpOrder, before);
   });
 });

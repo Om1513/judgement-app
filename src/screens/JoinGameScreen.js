@@ -267,7 +267,7 @@ export default function JoinGameScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/background_without_title.png")}
+          source={require("../../assets/background_without_title.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -296,7 +296,7 @@ export default function JoinGameScreen({ navigation, route }) {
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.container} testID="join-screen">
         <ImageBackground
-          source={require("../../assets/background_without_title.png")}
+          source={require("../../assets/background_without_title.jpg")}
           style={styles.background}
           resizeMode="cover"
         >

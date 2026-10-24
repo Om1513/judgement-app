@@ -17,6 +17,7 @@ import {
   resolveRestoreTarget,
   runColdStartRestore,
 } from "./src/services/sessionRestore";
+import { devLog } from "./src/utils/log";
 
 // Matches the splash background in app.json, so the handoff from the native
 // splash into the first screen is invisible rather than a flash.
@@ -37,10 +38,10 @@ const DarkTheme = {
 // screen decodes its image mid-transition and the empty container shows through
 // as a black frame before the artwork appears.
 const BACKGROUND_IMAGES = [
-  require("./assets/background.png"),
-  require("./assets/background_without_title.png"),
-  require("./assets/game.png"),
-  require("./assets/winner_screen.png"),
+  require("./assets/background.jpg"),
+  require("./assets/background_without_title.jpg"),
+  require("./assets/game.jpg"),
+  require("./assets/winner_screen.jpg"),
 ];
 
 export default function App() {
@@ -86,7 +87,7 @@ export default function App() {
     // A failed prefetch must not strand the app on the boot screen - the images
     // would just decode lazily as before.
     Asset.loadAsync(BACKGROUND_IMAGES)
-      .catch((error) => console.log("[assets] preload failed:", error))
+      .catch((error) => devLog("[assets] preload failed:", error))
       .finally(() => setImagesReady(true));
   }, []);
 

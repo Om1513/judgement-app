@@ -124,7 +124,6 @@ export class BotService {
       },
     });
 
-    console.log(`Bot ${availableName} added to lobby ${lobby.code}`);
 
     return {
       id: botPlayer.id,
@@ -284,8 +283,6 @@ export class BotService {
           isLastBidder
         );
 
-        console.log(`Bot ${botPlayer.name} bidding ${bid}`);
-
         // Submit bid using game service
         const saved = await gameService.submitBid({
           gameId,
@@ -366,8 +363,6 @@ export class BotService {
           botPlayer.tricksWon,
           trick.cardsPlayed
         );
-
-        console.log(`Bot ${botPlayer.name} playing ${card.rank} of ${card.suit}`);
 
         // Play card using game service
         const { game: saved, trickComplete, roundComplete } = await gameService.playCard({
@@ -489,10 +484,6 @@ export class BotService {
         if (existing?.hasContinued) {
           return;
         }
-
-        // Get bot player info
-        const bot = await db.player.findUnique({ where: { id: botPlayerId } });
-        console.log(`Bot ${bot?.name || 'Unknown'} clicking Continue`);
 
         // Update confirmation
         await db.scoreboardConfirmation.upsert({

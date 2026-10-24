@@ -278,6 +278,8 @@ describe('bot scheduling', () => {
       where: { id: gameId },
       data: { status: 'GAME_OVER', gameStateJson: state as never },
     });
+    // Arranged directly in the database, so drop the service's cached copy.
+    gameService.forgetGame(gameId);
 
     const before = await getState(gameId);
     await botService.processPendingBotActions(gameId);

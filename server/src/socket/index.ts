@@ -60,8 +60,6 @@ export function initializeSocket(httpServer: HTTPServer): TypedServer {
 
   // Connection handler
   io.on('connection', async (socket: TypedSocket) => {
-    console.log(`New connection: ${socket.id}`);
-
     // Observability: which transport did this client land on, and did it
     // upgrade to WebSocket? (Enabled only when PERF_LOG is set.)
     if (perfEnabled) {

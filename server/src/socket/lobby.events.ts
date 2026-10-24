@@ -370,7 +370,7 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       }
 
       // Add bot to lobby
-      const botPlayer = await botService.addBotToLobby(
+      await botService.addBotToLobby(
         socket.data.lobbyId,
         socket.data.playerId
       );
@@ -380,8 +380,6 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
       if (!lobby) {
         throw new Error('Lobby not found after adding bot');
       }
-
-      console.log(`Bot ${botPlayer.name} added to lobby ${lobby.code}`);
 
       // Broadcast updated lobby state
       io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
@@ -416,8 +414,6 @@ export function registerLobbyEvents(io: TypedServer, socket: TypedSocket): void 
         hostPlayerId: socket.data.playerId,
         settings,
       });
-
-      console.log(`Host ${socket.data.playerName} updated settings for lobby ${lobby.code}`);
 
       // Broadcast updated lobby state
       io.to(`lobby:${lobby.code}`).emit('lobby:update', { lobby });
