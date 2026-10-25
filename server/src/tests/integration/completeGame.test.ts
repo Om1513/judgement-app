@@ -203,6 +203,8 @@ describe('ties', () => {
       where: { id: gameId },
       data: { gameStateJson: state as never },
     });
+    // Arranged directly in the database, so drop the service's cached copy.
+    gameService.forgetGame(gameId);
 
     const result = await scoreboardService.finalizeGame(gameId);
 
@@ -225,6 +227,8 @@ describe('ties', () => {
       where: { id: gameId },
       data: { gameStateJson: state as never },
     });
+    // Arranged directly in the database, so drop the service's cached copy.
+    gameService.forgetGame(gameId);
 
     const result = await scoreboardService.finalizeGame(gameId);
 
@@ -242,6 +246,8 @@ describe('ties', () => {
       where: { id: gameId },
       data: { gameStateJson: state as never },
     });
+    // Arranged directly in the database, so drop the service's cached copy.
+    gameService.forgetGame(gameId);
 
     const result = await scoreboardService.finalizeGame(gameId);
     assert.equal(result?.winningScore, 0);

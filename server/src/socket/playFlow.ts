@@ -263,6 +263,7 @@ export async function broadcastFinalWinner(io: TypedServer, gameId: string): Pro
   // countdown still running against it. There are no turns left to block, so a
   // seat that is still absent has nothing for a bot to play.
   gameService.clearLobbyRef(gameId);
+  gameService.forgetGame(gameId);
   const { gameReconnectService } = await import('../services/gameReconnect.service');
   gameReconnectService.cancelLobby(ref.lobbyId);
 

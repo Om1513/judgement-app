@@ -91,22 +91,6 @@ export function attachGameReconnect(io: TypedServer): void {
 }
 
 /**
- * Whether the bot - not this socket's human - is currently the controller of
- * their seat.
- *
- * A bot-controlled seat is one whose owner has not rejoined yet, so an action
- * arriving from their socket must be refused: allowing it is how a seat ends up
- * with two controllers and a trick with two cards from one player.
- */
-async function botOwnsMySeat(socket: TypedSocket): Promise<boolean> {
-  if (!socket.data.lobbyId || !socket.data.playerId) {
-    return false;
-  }
-  const membership = await lobbyService.getMembership(socket.data.lobbyId, socket.data.playerId);
-  return membership?.controlledByBot === true;
-}
-
-/**
  * Registers game-related socket event handlers.
  */
 export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
@@ -126,14 +110,16 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         return;
       }
 
-      // The table's presence is needed for the broadcast and does not depend on
-      // the bid, so it is read alongside the seat check rather than after.
+      // The table's presence is needed for the broadcast anyway, and answers
+      // the seat check too. A seat the bot is playing belongs to an owner who
+      // has not rejoined yet, so their socket's action must be refused:
+      // allowing it is how a seat ends up with two controllers and a trick with
+      // two cards from one player.
       const gameId = socket.data.gameId;
-      const [botOwns, presence] = await Promise.all([
-        botOwnsMySeat(socket),
-        gameService.getPresenceForGame(gameId),
-      ]);
-      if (botOwns) {
+      const presence = await gameService.getPresenceForGame(gameId);
+      // The same row the presence was read from says whether the bot owns this
+      // seat, so there is no need for a second query to ask.
+      if (presence[socket.data.playerId]?.controlledByBot === true) {
         socket.emit('game:error', {
           message: 'Rejoin the game before playing - the bot is currently playing your seat.',
           code: SocketErrorCodes.REJOIN_REQUIRED,
@@ -182,13 +168,12 @@ export function registerGameEvents(io: TypedServer, socket: TypedSocket): void {
         return;
       }
 
-      // See game:submit-bid: presence is read alongside the seat check.
+      // See game:submit-bid: presence doubles as the seat check.
       const gameId = socket.data.gameId;
-      const [botOwns, presence] = await Promise.all([
-        botOwnsMySeat(socket),
-        gameService.getPresenceForGame(gameId),
-      ]);
-      if (botOwns) {
+      const presence = await gameService.getPresenceForGame(gameId);
+      // The same row the presence was read from says whether the bot owns this
+      // seat, so there is no need for a second query to ask.
+      if (presence[socket.data.playerId]?.controlledByBot === true) {
         socket.emit('game:error', {
           message: 'Rejoin the game before playing - the bot is currently playing your seat.',
           code: SocketErrorCodes.REJOIN_REQUIRED,

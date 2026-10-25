@@ -118,16 +118,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
       }
     });
 
-    // Listen for player continued
-    const unsubscribeContinued = socketService.on('scoreboard:player-continued', (data) => {
-      console.log('Player continued:', data.playerName);
-    });
-
-    // Listen for all continued - navigate to next round
-    const unsubscribeAllContinued = socketService.on('scoreboard:all-continued', () => {
-      console.log('All players continued');
-    });
-
     // Listen for round bidding started
     const unsubscribeBidding = socketService.on('round:bidding-started', (data) => {
       navigation.replace('Bidding', {
@@ -156,8 +146,6 @@ export default function ScoreBoardScreen({ navigation, route }) {
 
     return () => {
       unsubscribeState();
-      unsubscribeContinued();
-      unsubscribeAllContinued();
       unsubscribeBidding();
       unsubscribeGameError();
       unsubscribeFinalWinner();
@@ -222,7 +210,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/background_without_title.png")}
+          source={require("../../assets/background_without_title.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -272,7 +260,7 @@ export default function ScoreBoardScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/background_without_title.png")}
+        source={require("../../assets/background_without_title.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

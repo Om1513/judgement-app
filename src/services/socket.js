@@ -173,9 +173,6 @@ class SocketService {
       // long-polling instead of WebSocket) are easy to spot.
       const transport = this.socket.io?.engine?.transport?.name;
       console.log('Socket connected:', this.socket.id, 'transport:', transport);
-      this.socket.io?.engine?.once('upgrade', () => {
-        console.log('Socket transport upgraded:', this.socket.io.engine.transport.name);
-      });
       this.isConnected = true;
       this._identify();
     });
@@ -189,7 +186,6 @@ class SocketService {
     });
 
     this.socket.on('connected', (data) => {
-      console.log('Player connected:', data.playerId);
       this.playerId = data.playerId;
       // `session:restore` is sent just *before* this, so on a first connect it
       // arrives with no player id to file the session under. This is the first

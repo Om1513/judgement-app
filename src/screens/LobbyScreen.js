@@ -23,6 +23,7 @@ import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
 import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
+import { devLog } from "../utils/log";
 
 // Four players per row, whatever the lobby size.
 const PLAYERS_PER_ROW = 4;
@@ -118,16 +119,6 @@ export default function LobbyScreen({ navigation, route }) {
       setCurrentHostId(lobby.hostPlayerId);
     });
 
-    // Listen for player joined
-    const unsubscribeJoined = socketService.on('lobby:player-joined', (data) => {
-      console.log('Player joined:', data.player.name);
-    });
-
-    // Listen for player left
-    const unsubscribeLeft = socketService.on('lobby:player-left', (data) => {
-      console.log('Player left:', data.playerId);
-    });
-
     // Listen for being kicked
     const unsubscribeKicked = socketService.on('lobby:kicked', (data) => {
       Alert.alert('Removed from Lobby', data.message, [
@@ -153,8 +144,6 @@ export default function LobbyScreen({ navigation, route }) {
 
     return () => {
       unsubscribeUpdate();
-      unsubscribeJoined();
-      unsubscribeLeft();
       unsubscribeKicked();
       unsubscribeGameStarted();
       unsubscribeError();
@@ -215,7 +204,7 @@ export default function LobbyScreen({ navigation, route }) {
       });
     } catch (error) {
       // User dismissed the share sheet or it failed - nothing to do.
-      console.log("Share cancelled or failed:", error?.message);
+      devLog("Share cancelled or failed:", error?.message);
     }
   };
 
@@ -287,7 +276,7 @@ export default function LobbyScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/background_without_title.png")}
+          source={require("../../assets/background_without_title.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -319,7 +308,7 @@ export default function LobbyScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/background_without_title.png")}
+        source={require("../../assets/background_without_title.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

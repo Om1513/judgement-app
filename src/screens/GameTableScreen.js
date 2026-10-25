@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -563,68 +563,20 @@ export default function GameTableScreen({ navigation, route }) {
     [players.length, tableRect, r]
   );
 
-  // The seat's circle: tricks made / bid in the middle, and the pulsing gold
-  // ring while it is their turn.
-  const renderAvatar = (player, isActive) => (
-    <View style={styles.avatarWrap}>
-      {isActive && (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.avatarGlowRing, { opacity: turnGlow }]}
-        />
-      )}
-      <View
-        style={[
-          styles.avatar,
-          isActive && styles.avatarGlow,
-          isActive && styles.avatarTurnHighlight,
-        ]}
-      >
-        <Text style={styles.avatarScore} numberOfLines={1} adjustsFontSizeToFit>
-          {displayedTricks(player)} / {player.bid ?? 0}
-        </Text>
-      </View>
-    </View>
-  );
-
   const renderPlayerSeat = (player, position) => {
     if (!player) return <View key={position} style={styles.emptySeat} />;
-
-    const isCurrentTurn = player.id === gameState?.currentTurnPlayerId;
-    const isMe = player.id === currentPlayerId;
-    const status = seatStatus(player);
-
     return (
-      <View
+      <PlayerSeat
         key={player.id}
-        style={[
-          styles.playerSeat,
-          seatPlacement(position),
-          // Muted, never moved: the seat, avatar and counts stay exactly where
-          // they were, so a dropout does not reshuffle the table.
-          status === RECONNECTING && styles.seatReconnecting,
-        ]}
-      >
-        <View style={styles.seatBox}>
-          {renderAvatar(player, isCurrentTurn)}
-
-          {/* Name */}
-          <Text style={styles.playerName} numberOfLines={1}>
-            {isMe ? "You" : player.name}
-          </Text>
-
-          {/* Shown while the seat is held open for a player who dropped out.
-              Deliberately small and grey: a dropout is a temporary fact about
-              the table, not an alarm. */}
-          {status && (
-            <View style={styles.presenceBadge}>
-              <Text style={styles.presenceText} numberOfLines={1}>
-                {status}
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
+        styles={styles}
+        placement={seatPlacement(position)}
+        name={player.id === currentPlayerId ? "You" : player.name}
+        isActive={player.id === gameState?.currentTurnPlayerId}
+        tricks={displayedTricks(player)}
+        bid={player.bid ?? 0}
+        status={seatStatus(player)}
+        turnGlow={turnGlow}
+      />
     );
   };
 
@@ -769,7 +721,7 @@ export default function GameTableScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/game.png")}
+          source={require("../../assets/game.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -782,7 +734,7 @@ export default function GameTableScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/game.png")}
+          source={require("../../assets/game.jpg")}
           style={styles.background}
           resizeMode="cover"
         >
@@ -800,7 +752,7 @@ export default function GameTableScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/game.png")}
+        source={require("../../assets/game.jpg")}
         style={styles.background}
         resizeMode="cover"
       >
@@ -943,7 +895,13 @@ export default function GameTableScreen({ navigation, route }) {
         >
           {arrangedPlayers[2] && (
             <View style={styles.myInfo}>
-              {renderAvatar(arrangedPlayers[2], isMyTurn)}
+              <SeatAvatar
+                styles={styles}
+                isActive={!!isMyTurn}
+                tricks={displayedTricks(arrangedPlayers[2])}
+                bid={arrangedPlayers[2].bid ?? 0}
+                turnGlow={turnGlow}
+              />
               <Text style={styles.myInfoName}>You</Text>
             </View>
           )}
@@ -979,6 +937,87 @@ export default function GameTableScreen({ navigation, route }) {
     </View>
   );
 }
+
+// The seat's circle: tricks made / bid in the middle, and the pulsing gold
+// ring while it is their turn. Memoized, like PlayerSeat: a game update
+// re-renders only the seats whose own numbers changed.
+const SeatAvatar = memo(function SeatAvatar({ styles, isActive, tricks, bid, turnGlow }) {
+  return (
+    <View style={styles.avatarWrap}>
+      {isActive && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.avatarGlowRing, { opacity: turnGlow }]}
+        />
+      )}
+      <View
+        style={[
+          styles.avatar,
+          isActive && styles.avatarGlow,
+          isActive && styles.avatarTurnHighlight,
+        ]}
+      >
+        <Text style={styles.avatarScore} numberOfLines={1} adjustsFontSizeToFit>
+          {tricks} / {bid}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+const PlayerSeat = memo(
+  function PlayerSeat({ styles, placement, name, isActive, tricks, bid, status, turnGlow }) {
+    return (
+      <View
+        style={[
+          styles.playerSeat,
+          placement,
+          // Muted, never moved: the seat, avatar and counts stay exactly where
+          // they were, so a dropout does not reshuffle the table.
+          status === RECONNECTING && styles.seatReconnecting,
+        ]}
+      >
+        <View style={styles.seatBox}>
+          <SeatAvatar
+            styles={styles}
+            isActive={isActive}
+            tricks={tricks}
+            bid={bid}
+            turnGlow={turnGlow}
+          />
+
+          {/* Name */}
+          <Text style={styles.playerName} numberOfLines={1}>
+            {name}
+          </Text>
+
+          {/* Shown while the seat is held open for a player who dropped out.
+              Deliberately small and grey: a dropout is a temporary fact about
+              the table, not an alarm. */}
+          {status && (
+            <View style={styles.presenceBadge}>
+              <Text style={styles.presenceText} numberOfLines={1}>
+                {status}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  },
+  // The placement is a fresh object each render; compare what it says.
+  (prev, next) =>
+    prev.styles === next.styles &&
+    prev.name === next.name &&
+    prev.isActive === next.isActive &&
+    prev.tricks === next.tricks &&
+    prev.bid === next.bid &&
+    prev.status === next.status &&
+    prev.turnGlow === next.turnGlow &&
+    ["left", "top", "right", "bottom", "width"].every(
+      (k) => prev.placement[k] === next.placement[k]
+    )
+);
 
 // Baseline (iPhone 17 Pro, 874 x 402) values. useScaledStyles maps the whole
 // sheet onto the current viewport; anything genuinely position-dependent is

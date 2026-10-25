@@ -369,6 +369,8 @@ export class ScoreboardService {
           where: { id: gameId },
           data: { status: 'COMPLETED' as any },
         });
+        // Written behind the game service's back; its copy is stale now.
+        gameService.forgetGame(gameId);
 
         console.log(
           `Game ${gameId} finalized. Winner(s): ${winners.map(w => w.name).join(', ')} @ ${winningScore}`

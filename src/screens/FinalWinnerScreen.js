@@ -132,7 +132,7 @@ export default function FinalWinnerScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <ImageBackground
-          source={require("../../assets/winner_screen.png")}
+          source={require("../../assets/winner_screen.jpg")}
           style={styles.background}
           resizeMode="cover"
         />
@@ -143,7 +143,7 @@ export default function FinalWinnerScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={require("../../assets/winner_screen.png")}
+        source={require("../../assets/winner_screen.jpg")}
         style={styles.background}
         resizeMode="cover"
       >

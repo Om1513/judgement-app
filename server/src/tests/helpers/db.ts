@@ -54,6 +54,9 @@ export const db = getDB();
 export async function resetDatabase(): Promise<void> {
   const list = TABLES.map((t) => `"${t}"`).join(', ');
   await db.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
+  // The rows are gone, so the in-memory copies of them must go too.
+  const { gameService } = await import('../../services/game.service');
+  gameService.forgetAllGames();
 }
 
 /** Closes the pool so the test process can exit cleanly. */
