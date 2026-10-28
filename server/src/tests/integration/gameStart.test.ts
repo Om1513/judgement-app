@@ -153,7 +153,9 @@ describe('starting a game', () => {
 describe('trump order', () => {
   test('Kachuful mode lays out the whole game up front, in order', async () => {
     const { lobbyId, hostId } = await createLobbyWithPlayers(4, {
+      // Eight rounds fit one deck only up to six players.
       rounds: 8,
+      maxPlayers: 6,
       orderMode: 'Kachuful',
     });
     const gameId = await startGame(lobbyId, hostId);
@@ -182,7 +184,9 @@ describe('trump order', () => {
 
   test('is generated once and persisted - re-reading never re-rolls it', async () => {
     const { lobbyId, hostId } = await createLobbyWithPlayers(4, {
+      // Eight rounds fit one deck only up to six players.
       rounds: 8,
+      maxPlayers: 6,
       orderMode: 'Random',
     });
     const gameId = await startGame(lobbyId, hostId);
@@ -201,7 +205,9 @@ describe('trump order', () => {
 
   test('a reconnecting player sees the same trump the table sees', async () => {
     const { lobbyId, hostId, playerIds } = await createLobbyWithPlayers(4, {
+      // Eight rounds fit one deck only up to six players.
       rounds: 8,
+      maxPlayers: 6,
       orderMode: 'Random',
     });
     const gameId = await startGame(lobbyId, hostId);

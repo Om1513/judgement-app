@@ -11,99 +11,15 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
-import SettingCard from "../components/SettingCard";
-import RoundSelector from "../components/RoundSelector";
-import OrderModeToggle from "../components/OrderModeToggle";
-import ScoringModeToggle from "../components/ScoringModeToggle";
+import LobbySettingsForm from "../components/LobbySettingsForm";
 import GameButton from "../components/GameButton";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScreenHeader from "../components/ScreenHeader";
-import InfoHint from "../components/InfoHint";
-import { TrumpOrder } from "../components/SuitLegend";
+import { DEFAULT_SETTINGS } from "../utils/lobbySettings";
 import audioManager from "../services/audioManager";
 import { useResponsive, useScaledStyles } from "../utils/responsive";
-
-/**
- * What the two order modes actually do. Lives behind the ⓘ on the Order card
- * rather than under it: the fixed Kachuful rotation needs the four suits spelled
- * out, which is more than a settings card should carry inline.
- *
- * The active mode is marked so the panel answers "what will my game do?", not
- * just "what are the options?".
- */
-function OrderInfo({ orderMode }) {
-  const styles = useScaledStyles(rawStyles);
-  const isRandom = orderMode === "Random";
-
-  return (
-    <View>
-      <View style={styles.infoMode}>
-        <Text style={[styles.infoModeName, !isRandom && styles.infoModeActive]}>
-          Kachuful{!isRandom ? "  ·  selected" : ""}
-        </Text>
-        <Text style={styles.infoText}>
-          Trump follows a fixed cycle and repeats every four rounds.
-        </Text>
-        <TrumpOrder />
-      </View>
-
-      <View style={styles.infoDivider} />
-
-      <View>
-        <Text style={[styles.infoModeName, isRandom && styles.infoModeActive]}>
-          Random{isRandom ? "  ·  selected" : ""}
-        </Text>
-        <Text style={styles.infoText}>
-          A trump is drawn for every round when the game starts. Suits can
-          repeat, and the whole sequence is fixed once dealt - reconnecting never
-          re-rolls it.
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-/**
- * What the two scoring modes pay out. Both only ever pay for an exact
- * judgement - that is the part players get wrong, so it is stated first and the
- * worked examples come from the same rule the server scores with
- * (calculateScore in server/src/utils/cardUtils.ts).
- */
-function ScoringInfo({ scoringMode }) {
-  const styles = useScaledStyles(rawStyles);
-  const isPlusOne = scoringMode === "+1";
-
-  return (
-    <View>
-      <Text style={styles.infoText}>
-        You only score by making your bid exactly. Missing it either way scores
-        nothing, however close.
-      </Text>
-
-      <View style={styles.infoDivider} />
-
-      <View style={styles.infoMode}>
-        <Text style={[styles.infoModeName, !isPlusOne && styles.infoModeActive]}>
-          +10{!isPlusOne ? "  ·  selected" : ""}
-        </Text>
-        <Text style={styles.infoText}>
-          10 × your bid. Bid 0 → 10, bid 2 → 20, bid 4 → 40.
-        </Text>
-      </View>
-
-      <View>
-        <Text style={[styles.infoModeName, isPlusOne && styles.infoModeActive]}>
-          +1{isPlusOne ? "  ·  selected" : ""}
-        </Text>
-        <Text style={styles.infoText}>
-          10 + your bid. Bid 0 → 11, bid 2 → 12, bid 4 → 14.
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 export default function CreateGameScreen({ navigation, route }) {
   const styles = useScaledStyles(rawStyles);
@@ -123,34 +39,9 @@ export default function CreateGameScreen({ navigation, route }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  // Game settings state
-  const [maxPlayers, setMaxPlayers] = useState(4);
-  const [rounds, setRounds] = useState(4);
-  const [orderMode, setOrderMode] = useState("Kachuful");
-  const [scoringMode, setScoringMode] = useState("+10");
-
-  // Deck has 52 cards, so maxPlayers * rounds must be <= 52
-  const DECK_SIZE = 52;
-  const maxAllowedRounds = Math.min(8, Math.floor(DECK_SIZE / maxPlayers));
-  const maxAllowedPlayers = Math.min(8, Math.floor(DECK_SIZE / rounds));
-
-  // Handle player change - adjust rounds if needed
-  const handlePlayersChange = (newPlayers) => {
-    setMaxPlayers(newPlayers);
-    const maxRoundsForPlayers = Math.floor(DECK_SIZE / newPlayers);
-    if (rounds > maxRoundsForPlayers) {
-      setRounds(Math.min(8, maxRoundsForPlayers));
-    }
-  };
-
-  // Handle rounds change - adjust players if needed
-  const handleRoundsChange = (newRounds) => {
-    setRounds(newRounds);
-    const maxPlayersForRounds = Math.floor(DECK_SIZE / newRounds);
-    if (maxPlayers > maxPlayersForRounds) {
-      setMaxPlayers(Math.min(8, maxPlayersForRounds));
-    }
-  };
+  // Game settings. The choices and the one-deck rule live in LobbySettingsForm,
+  // shared with the lobby's Game Settings panel.
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   const [fontsLoaded] = useFonts({
     Bangers_400Regular,
@@ -214,8 +105,6 @@ export default function CreateGameScreen({ navigation, route }) {
       if (socketService.lastSession?.lobby) {
         await socketService.leaveCurrentSession();
       }
-
-      const settings = { maxPlayers, rounds, orderMode, scoringMode };
 
       // Create lobby. If the server still reports an existing membership
       // (race / stale session), leave it and retry once.
@@ -322,47 +211,7 @@ export default function CreateGameScreen({ navigation, route }) {
 
               {/* Settings Section - 2x2 Grid */}
               <View style={styles.settingsSection}>
-                <View style={styles.settingsRow}>
-                  <SettingCard label="Players" compact>
-                    <RoundSelector
-                      value={maxPlayers}
-                      onChange={handlePlayersChange}
-                      min={3}
-                      max={maxAllowedPlayers}
-                    />
-                  </SettingCard>
-
-                  <SettingCard label="Rounds" compact>
-                    <RoundSelector
-                      value={rounds}
-                      onChange={handleRoundsChange}
-                      min={4}
-                      max={maxAllowedRounds}
-                    />
-                  </SettingCard>
-                </View>
-
-                <View style={styles.settingsRow}>
-                  <SettingCard label="Order" compact>
-                    <OrderModeToggle
-                      value={orderMode}
-                      onChange={setOrderMode}
-                    />
-                    <InfoHint title="TRUMP ORDER" label="How trump order works">
-                      <OrderInfo orderMode={orderMode} />
-                    </InfoHint>
-                  </SettingCard>
-
-                  <SettingCard label="Scoring" compact>
-                    <ScoringModeToggle
-                      value={scoringMode}
-                      onChange={setScoringMode}
-                    />
-                    <InfoHint title="SCORING" label="How scoring works">
-                      <ScoringInfo scoringMode={scoringMode} />
-                    </InfoHint>
-                  </SettingCard>
-                </View>
+                <LobbySettingsForm value={settings} onChange={setSettings} />
               </View>
 
               {/* Create Lobby Button */}
@@ -392,30 +241,6 @@ export default function CreateGameScreen({ navigation, route }) {
 }
 
 const rawStyles = {
-  infoMode: {
-    marginBottom: 10,
-  },
-  infoModeName: {
-    fontSize: 15,
-    fontFamily: "Inter_700Bold",
-    color: "#C9BEDC",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  infoModeActive: {
-    color: "#FFD700",
-  },
-  infoText: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: "#C9BEDC",
-    lineHeight: 17,
-  },
-  infoDivider: {
-    height: 1,
-    backgroundColor: "rgba(255, 215, 0, 0.25)",
-    marginVertical: 12,
-  },
   container: {
     flex: 1,
     backgroundColor: "#1a1030",
@@ -443,13 +268,6 @@ const rawStyles = {
     width: "100%",
     paddingHorizontal: 0,
     paddingTop: 10,
-  },
-  settingsRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "stretch",
-    marginVertical: 5,
-    overflow: "visible",
   },
   bottomSection: {
     alignItems: "center",

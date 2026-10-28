@@ -17,6 +17,7 @@ import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import GameButton from "../components/GameButton";
 import PlayerCard from "../components/PlayerCard";
 import RemovePlayerModal from "../components/RemovePlayerModal";
+import LobbySettingsPanel from "../components/LobbySettingsPanel";
 import socketService from "../services/socket";
 import CircleIconButton from "../components/CircleIconButton";
 import SoundToggleButton from "../components/SoundToggleButton";
@@ -24,6 +25,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import audioManager from "../services/audioManager";
 import { touchSlop, useResponsive, useScaledStyles } from "../utils/responsive";
 import { devLog } from "../utils/log";
+import { DEFAULT_SETTINGS, describeSettings } from "../utils/lobbySettings";
 
 // Four players per row, whatever the lobby size.
 const PLAYERS_PER_ROW = 4;
@@ -91,6 +93,24 @@ export default function LobbyScreen({ navigation, route }) {
 
   const [currentHostId, setCurrentHostId] = useState(hostId);
 
+  // The lobby's settings, kept live from every lobby:update - the host can
+  // change them from the Game Settings panel while everyone waits.
+  const [settings, setSettings] = useState(() => ({ ...DEFAULT_SETTINGS, ...gameSettings }));
+  const maxPlayers = settings.maxPlayers || 8;
+
+  // The host's Game Settings panel. `settingsSaving` holds the settings we
+  // asked for until the lobby comes back with them.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSaving, setSettingsSavingState] = useState(null);
+  const [settingsError, setSettingsError] = useState(null);
+  // The same, for the socket listeners, which are registered once. Always set
+  // together through setSettingsSaving so the two cannot disagree.
+  const settingsSavingRef = useRef(null);
+  const setSettingsSaving = (value) => {
+    settingsSavingRef.current = value;
+    setSettingsSavingState(value);
+  };
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -115,8 +135,23 @@ export default function LobbyScreen({ navigation, route }) {
       // their seat - the card stays put and simply shows as reconnecting.
       setPlayers(lobby.players.map(toLobbyPlayer));
 
-      // Update host if changed
+      // Update host if changed. Only the host edits settings, so a save still
+      // pending when the role moves on is dropped (the panel hides itself).
       setCurrentHostId(lobby.hostPlayerId);
+      if (lobby.hostPlayerId !== currentPlayerId) {
+        setSettingsSaving(null);
+        setSettingsOpen(false);
+      }
+
+      if (lobby.settings) {
+        setSettings((prev) => ({ ...prev, ...lobby.settings }));
+        // The change we saved has landed: close the panel.
+        const asked = settingsSavingRef.current;
+        if (asked && Object.entries(asked).every(([k, v]) => lobby.settings[k] === v)) {
+          setSettingsSaving(null);
+          setSettingsOpen(false);
+        }
+      }
     });
 
     // Listen for being kicked
@@ -138,6 +173,13 @@ export default function LobbyScreen({ navigation, route }) {
 
     // Listen for errors
     const unsubscribeError = socketService.on('lobby:error', (data) => {
+      // A settings save that was refused is answered in the panel, which stays
+      // open so the host can see why and adjust.
+      if (settingsSavingRef.current) {
+        setSettingsSaving(null);
+        setSettingsError(data.message);
+        return;
+      }
       Alert.alert('Error', data.message);
       setIsStarting(false);
     });
@@ -184,6 +226,24 @@ export default function LobbyScreen({ navigation, route }) {
   }, [isReady]);
 
   // Real-time updates are handled by socket events above
+
+  const openSettings = () => {
+    audioManager.playSound("buttonPop");
+    setSettingsError(null);
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = (changes) => {
+    setSettingsError(null);
+    setSettingsSaving(changes);
+    socketService.updateSettings(changes);
+  };
+
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    setSettingsSaving(null);
+    setSettingsError(null);
+  };
 
   const handleCopyCode = async () => {
     audioManager.playSound("buttonPop");
@@ -237,7 +297,7 @@ export default function LobbyScreen({ navigation, route }) {
 
   const handleAddBot = () => {
     // Check if lobby is full
-    if (players.length >= (gameSettings.maxPlayers || 8)) {
+    if (players.length >= maxPlayers) {
       Alert.alert('Lobby Full', 'Cannot add more players to the lobby.');
       return;
     }
@@ -349,15 +409,25 @@ export default function LobbyScreen({ navigation, route }) {
                   </>
                 }
                 right={
-                  isCurrentUserHost &&
-                  players.length < (gameSettings.maxPlayers || 8) ? (
-                    <CircleIconButton
-                      inline
-                      glyph="🤖"
-                      glyphStyle={styles.addBotGlyph}
-                      accessibilityLabel="Add bot player"
-                      onPress={handleAddBot}
-                    />
+                  isCurrentUserHost ? (
+                    <>
+                      <CircleIconButton
+                        inline
+                        glyph="⚙"
+                        glyphStyle={styles.settingsGlyph}
+                        accessibilityLabel="Game settings"
+                        onPress={openSettings}
+                      />
+                      {players.length < maxPlayers && (
+                        <CircleIconButton
+                          inline
+                          glyph="🤖"
+                          glyphStyle={styles.addBotGlyph}
+                          accessibilityLabel="Add bot player"
+                          onPress={handleAddBot}
+                        />
+                      )}
+                    </>
                   ) : null
                 }
               />
@@ -415,10 +485,17 @@ export default function LobbyScreen({ navigation, route }) {
                   </View>
                 </View>
 
-                {/* Player count */}
-                <Text style={styles.playerCount}>
-                  Players: {players.length}/{gameSettings.maxPlayers || 8}
-                </Text>
+                {/* Player count, and what everyone is about to play - live, so a
+                    change from the host's settings panel shows straight away. */}
+                <View style={styles.countRow}>
+                  <Text style={styles.playerCount}>
+                    Players: {players.length}/{maxPlayers}
+                  </Text>
+                  <Text style={styles.settingsSummary} numberOfLines={1}>
+                    {"  ·  "}
+                    {describeSettings(settings)}
+                  </Text>
+                </View>
 
                 {/* Why Start Game is disabled, sitting with the count it refers
                     to. The slot keeps its height when the message clears, so
@@ -468,6 +545,16 @@ export default function LobbyScreen({ navigation, route }) {
 
             {/* Remove Player confirmation - an in-screen overlay (no native
                 Modal), so it stays in landscape with no orientation flicker. */}
+            <LobbySettingsPanel
+              visible={settingsOpen && isCurrentUserHost}
+              settings={settings}
+              minPlayers={players.length}
+              saving={!!settingsSaving}
+              error={settingsError}
+              onSave={saveSettings}
+              onCancel={closeSettings}
+            />
+
             <RemovePlayerModal
               visible={!!playerToRemove}
               playerName={playerToRemove?.name || ""}
@@ -582,7 +669,20 @@ const rawStyles = {
     fontSize: 19,
     fontFamily: "Bangers_400Regular",
     color: "#FFFFFF",
+    letterSpacing: 1,
+  },
+  // One line with the player count, so showing the settings costs the player
+  // grid no height.
+  countRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
     marginTop: 6,
+  },
+  // Set exactly like the player count it shares the line with.
+  settingsSummary: {
+    fontSize: 19,
+    fontFamily: "Bangers_400Regular",
+    color: "#FFFFFF",
     letterSpacing: 1,
   },
   centerSection: {
@@ -638,6 +738,10 @@ const rawStyles = {
     fontFamily: "Bangers_400Regular",
     color: "#FFF8E7",
     letterSpacing: 0.5,
+  },
+  settingsGlyph: {
+    fontSize: 24,
+    lineHeight: 28,
   },
   // Emoji render larger than text glyphs at the same point size and carry their
   // own colour, so this is sized down and the gold glow dropped.

@@ -223,6 +223,59 @@ describe('lobby over the wire', () => {
     assert.equal(lobby.settings.scoringMode, '+1');
   });
 
+  test('only the host can change the settings', async () => {
+    const { clients } = await lobbyOf(['Host', 'Guest']);
+    const [, guest] = clients;
+
+    const error = await waitFor<{ message: string; code?: string }>(guest.socket, 'lobby:error', () =>
+      guest.socket.emit('lobby:update-settings', { settings: { rounds: 6 } })
+    );
+    assert.equal(error.code, 'NOT_HOST');
+  });
+
+  test('settings a single deck cannot deal are refused, and nothing changes', async () => {
+    const { host, clients } = await lobbyOf(['Host', 'Guest'], { maxPlayers: 8, rounds: 4 });
+    const [, guest] = clients;
+    const before = countReceived(guest, 'lobby:update');
+
+    const error = await waitFor<{ message: string }>(host.socket, 'lobby:error', () =>
+      host.socket.emit('lobby:update-settings', { settings: { rounds: 8 } })
+    );
+    assert.match(error.message, /more than 52 cards/);
+
+    await flush();
+    assert.equal(countReceived(guest, 'lobby:update'), before, 'no update went out');
+  });
+
+  test('the settings cannot change once the game has started', async () => {
+    const { host } = await lobbyOf(['Host', 'Guest'], { rounds: 4 });
+    await waitFor(host.socket, 'game:started', () => host.socket.emit('lobby:start-game'));
+
+    const error = await waitFor<{ message: string }>(host.socket, 'lobby:error', () =>
+      host.socket.emit('lobby:update-settings', { settings: { rounds: 6 } })
+    );
+    assert.match(error.message, /after game has started/);
+  });
+
+  test('the game that starts next uses the changed settings', async () => {
+    const { host } = await lobbyOf(['Host', 'Guest'], { rounds: 4, scoringMode: '+10' });
+
+    await waitForMatching<{ lobby: LobbyState }>(
+      host.socket,
+      'lobby:update',
+      (d) => d.lobby.settings.rounds === 6,
+      () => host.socket.emit('lobby:update-settings', { settings: { rounds: 6, scoringMode: '+1' } })
+    );
+
+    const { gameState } = await waitFor<{ gameState: ClientGameState }>(
+      host.socket,
+      'game:started',
+      () => host.socket.emit('lobby:start-game')
+    );
+    assert.equal(gameState.totalRounds, 6);
+    assert.equal(gameState.settings.scoringMode, '+1');
+  });
+
   test('creating a second lobby while already in one is refused', async () => {
     const { host } = await lobbyOf(['Host', 'Guest']);
 

@@ -10,6 +10,9 @@ export const LOBBY_CONSTRAINTS = {
   MAX_ROUNDS: 8,
   VALID_ORDER_MODES: ['Kachuful', 'Random'] as const,
   VALID_SCORING_MODES: ['+10', '+1'] as const,
+  // Round N deals N cards to everyone, so the last round of a full table needs
+  // maxPlayers x rounds cards from a single deck.
+  DECK_SIZE: 52,
 } as const;
 
 /**
@@ -69,6 +72,15 @@ export function validateLobbySettings(
     } else {
       sanitized.scoringMode = settings.scoringMode;
     }
+  }
+
+  // Only once each value is known to be in range on its own: a full table in
+  // the last round must be dealable from one deck.
+  if (errors.length === 0 && sanitized.maxPlayers * sanitized.rounds > LOBBY_CONSTRAINTS.DECK_SIZE) {
+    errors.push(
+      `${sanitized.maxPlayers} players x ${sanitized.rounds} rounds needs more than ` +
+        `${LOBBY_CONSTRAINTS.DECK_SIZE} cards - lower the players or the rounds`
+    );
   }
 
   return {

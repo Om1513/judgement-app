@@ -38,6 +38,7 @@ jest.mock("../../services/socket", () => ({
     startGame: jest.fn(),
     addBot: jest.fn(),
     kickPlayer: jest.fn(),
+    updateSettings: jest.fn(),
   },
 }));
 
@@ -300,6 +301,91 @@ describe("playing a card from the table", () => {
 
     expect(tappable(utils, "spades-2")).toBe(true);
     expect(tappable(utils, "spades-6")).toBe(true);
+    utils.unmount();
+  });
+});
+
+// The host can change the game's settings from the lobby; everyone sees them.
+describe("game settings in the lobby", () => {
+  const lobbyPlayers = [
+    { playerId: "p0", name: "Asha", isHost: true, joinedAt: "2026-01-01T00:00:00.000Z" },
+    { playerId: "p1", name: "Bilal", isHost: false, joinedAt: "2026-01-01T00:00:01.000Z" },
+  ];
+  const settings = { maxPlayers: 4, rounds: 4, orderMode: "Kachuful", scoringMode: "+10" };
+
+  const renderLobby = (currentPlayerId = "p0") => {
+    const utils = render(
+      <LobbyScreen
+        navigation={navigation}
+        route={{
+          params: {
+            lobbyCode: "ABC123",
+            hostId: "p0",
+            currentPlayerId,
+            currentPlayerName: currentPlayerId === "p0" ? "Asha" : "Bilal",
+            gameSettings: settings,
+            initialPlayers: lobbyPlayers,
+          },
+        }}
+      />
+    );
+    // The lobby fades in once its transition settles.
+    act(() => jest.advanceTimersByTime(600));
+    return utils;
+  };
+
+  const serverSends = (event, data) => {
+    const handler = socketService.on.mock.calls.filter(([e]) => e === event).pop()[1];
+    act(() => handler(data));
+  };
+
+  const lobbyWith = (next) => ({
+    lobby: { players: lobbyPlayers, hostPlayerId: "p0", settings: { ...settings, ...next } },
+  });
+
+  it("offers the settings button to the host only", () => {
+    const host = renderLobby("p0");
+    expect(host.queryByLabelText("Game settings")).toBeTruthy();
+    host.unmount();
+
+    const guest = renderLobby("p1");
+    expect(guest.queryByLabelText("Game settings")).toBeNull();
+    guest.unmount();
+  });
+
+  it("shows everyone what they are about to play, and keeps it live", () => {
+    const utils = renderLobby("p1");
+    expect(utils.getByText(/4 rounds · Kachuful order · \+10 scoring/)).toBeTruthy();
+
+    serverSends("lobby:update", lobbyWith({ rounds: 6, orderMode: "Random", scoringMode: "+1" }));
+    expect(utils.getByText(/6 rounds · Random order · \+1 scoring/)).toBeTruthy();
+    utils.unmount();
+  });
+
+  it("saves only what changed, and closes once the lobby has it", () => {
+    const utils = renderLobby("p0");
+    fireEvent.press(utils.getByLabelText("Game settings"));
+    expect(utils.getByText("Game Settings")).toBeTruthy();
+
+    fireEvent.press(utils.getByText("+1"));
+    fireEvent.press(utils.getByText("Save"));
+    expect(socketService.updateSettings).toHaveBeenCalledWith({ scoringMode: "+1" });
+
+    serverSends("lobby:update", lobbyWith({ scoringMode: "+1" }));
+    expect(utils.queryByText("Game Settings")).toBeNull();
+    expect(utils.getByText(/\+1 scoring/)).toBeTruthy();
+    utils.unmount();
+  });
+
+  it("keeps the panel open and says why when the server refuses", () => {
+    const utils = renderLobby("p0");
+    fireEvent.press(utils.getByLabelText("Game settings"));
+    fireEvent.press(utils.getByText("+1"));
+    fireEvent.press(utils.getByText("Save"));
+
+    serverSends("lobby:error", { message: "Cannot update settings after game has started" });
+    expect(utils.getByText("Game Settings")).toBeTruthy();
+    expect(utils.getByText("Cannot update settings after game has started")).toBeTruthy();
     utils.unmount();
   });
 });
