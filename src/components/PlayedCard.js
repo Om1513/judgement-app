@@ -10,16 +10,18 @@ const SUIT_SYMBOLS = {
   clubs: "♣",
 };
 
-// How much larger than its settled size a card starts its entrance, and where
-// it starts from (`zone.enterFrom`). The playable-card tray flies a picked card
-// to exactly this pose so this card takes over from it without a jump.
-export const ENTER_SCALE = 1.12;
+// How much larger than its settled size a card starts its entrance (from
+// `zone.enterFrom`). Other players' cards arrive this way; ours is flown to its
+// final pose by the hand and mounts `settled` instead.
+const ENTER_SCALE = 1.12;
 
 /**
  * A single played card that lives in a player's seat card-zone.
  *
  * - On mount it animates in from the player's side (a small "lift + travel"),
  *   settles with a spring bounce, and flashes a gold glow.
+ * - With `settled`, it mounts already in place - no slide in - and only the
+ *   glow flashes. Used for our own card, which the hand has just flown here.
  * - When `resolving` flips true (the trick has a winner) it slides toward the
  *   winner's seat (via `resolveDelta`) and fades out before unmounting.
  *
@@ -29,8 +31,9 @@ export const ENTER_SCALE = 1.12;
  *   width/height  - the card's scaled size
  *   enterFrom     - direction the card slides in from (px), toward its player
  */
-function PlayedCard({ card, zone, resolving, resolveDelta }) {
-  const enter = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
+function PlayedCard({ card, zone, resolving, resolveDelta, settled = false }) {
+  // 0 -> 1 entrance. Only read on mount, like the animation it drives.
+  const enter = useRef(new Animated.Value(settled ? 1 : 0)).current;
   const resolve = useRef(new Animated.Value(0)).current; // 0 -> 1 collect-to-winner
   const glow = useRef(new Animated.Value(0)).current;
   const styles = useScaledStyles(rawStyles);
@@ -40,7 +43,8 @@ function PlayedCard({ card, zone, resolving, resolveDelta }) {
   useEffect(() => {
     Animated.parallel([
       // Settles quickly with a single small overshoot, so a card reads as
-      // placed straight away rather than wobbling into place.
+      // placed straight away rather than wobbling into place. A settled card is
+      // already there; the spring is then a no-op.
       Animated.spring(enter, {
         toValue: 1,
         friction: 8,

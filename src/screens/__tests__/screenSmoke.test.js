@@ -223,10 +223,9 @@ describe.each(Object.entries(VIEWPORTS))("on %s", (_name, viewport) => {
   });
 });
 
-// On our turn the cards we may play lift out of the hand into a row, and one
-// tap plays one. The component's own behaviour is covered alongside it; this
-// is the wiring - the follow-suit rule picks the row, and the tap reaches the
-// server.
+// On our turn the cards we may play pop up out of the hand, and one tap plays
+// one. The hand's own behaviour is covered alongside it; this is the wiring -
+// the follow-suit rule picks the cards, and the tap reaches the server.
 describe("playing a card from the table", () => {
   const renderTable = () =>
     render(
@@ -243,60 +242,65 @@ describe("playing a card from the table", () => {
       />
     );
 
+  // A hand card can be tapped only while it is popped up and playable.
+  const tappable = (utils, key) =>
+    utils.getByTestId(`hand-card-${key}`).props.accessibilityState?.disabled !== true;
+
   it("offers only the cards that follow suit", () => {
-    const { queryByTestId, unmount } = renderTable();
-    expect(queryByTestId("tray-card-spades-2")).toBeTruthy();
-    expect(queryByTestId("tray-card-spades-6")).toBeTruthy();
-    expect(queryByTestId("tray-card-hearts-3")).toBeNull();
-    unmount();
+    const utils = renderTable();
+    expect(tappable(utils, "spades-2")).toBe(true);
+    expect(tappable(utils, "spades-6")).toBe(true);
+    expect(tappable(utils, "hearts-3")).toBe(false);
+    utils.unmount();
   });
 
-  it("keeps the row away while a finished trick is still on the table", () => {
+  it("keeps the cards down while a finished trick is still on the table", () => {
     // We won the trick, so the server already names us to lead - but the
     // winner popup has not run yet, so we cannot play.
     const state = gameState(3, { cardsPlayed: 3 });
     state.roundState.currentTrick.winnerId = "p0";
-    const { queryByTestId, unmount } = render(
+    const utils = render(
       <GameTableScreen
         navigation={navigation}
         route={{ params: { gameState: state, currentPlayerId: "p0", currentPlayerName: "P0" } }}
       />
     );
-    expect(queryByTestId("tray-card-spades-2")).toBeNull();
-    unmount();
+    expect(tappable(utils, "spades-2")).toBe(false);
+    utils.unmount();
   });
 
-  it("sends the tapped card the moment it is picked, not after its flight", () => {
-    const { getByTestId, unmount } = renderTable();
+  it("sends the tapped card with one tap, the moment it is tapped", () => {
+    const utils = renderTable();
     act(() => jest.advanceTimersByTime(1000));
 
-    fireEvent.press(getByTestId("tray-card-spades-6"));
+    fireEvent.press(utils.getByTestId("hand-card-spades-6"));
 
     expect(socketService.playCard).toHaveBeenCalledTimes(1);
     expect(socketService.playCard).toHaveBeenCalledWith({ suit: "spades", rank: "6" });
 
-    // Landing does not send it again.
+    // Landing does not send it again, and nothing else can be played meanwhile.
     act(() => jest.advanceTimersByTime(1000));
     expect(socketService.playCard).toHaveBeenCalledTimes(1);
-    unmount();
+    expect(tappable(utils, "spades-2")).toBe(false);
+    utils.unmount();
   });
 
-  it("brings the row back if the server rejects a play that has already landed", () => {
-    const { getByTestId, queryByTestId, unmount } = renderTable();
+  it("pops the cards back up if the server rejects a play that has already landed", () => {
+    const utils = renderTable();
     act(() => jest.advanceTimersByTime(1000));
 
-    fireEvent.press(getByTestId("tray-card-spades-6"));
+    fireEvent.press(utils.getByTestId("hand-card-spades-6"));
     act(() => jest.advanceTimersByTime(1000));
-    // Landed and handed to the table: the row is gone.
-    expect(queryByTestId("tray-card-spades-2")).toBeNull();
+    // Landed and handed to the table: nothing is popped up any more.
+    expect(tappable(utils, "spades-2")).toBe(false);
 
     const onError = socketService.on.mock.calls.find(([event]) => event === "game:error")[1];
     act(() => onError({ message: "Not your turn" }));
     act(() => jest.advanceTimersByTime(1000));
 
-    expect(queryByTestId("tray-card-spades-2")).toBeTruthy();
-    expect(queryByTestId("tray-card-spades-6")).toBeTruthy();
-    unmount();
+    expect(tappable(utils, "spades-2")).toBe(true);
+    expect(tappable(utils, "spades-6")).toBe(true);
+    utils.unmount();
   });
 });
 
