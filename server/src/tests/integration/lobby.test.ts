@@ -247,10 +247,11 @@ describe('settings updates', () => {
     const updated = await lobbyService.updateSettings({
       lobbyId,
       hostPlayerId: hostId,
-      settings: { rounds: 8, scoringMode: '+1' },
+      settings: { rounds: 8, maxPlayers: 6, scoringMode: '+1' },
     });
 
     assert.equal(updated.settings.rounds, 8);
+    assert.equal(updated.settings.maxPlayers, 6);
     assert.equal(updated.settings.scoringMode, '+1');
   });
 

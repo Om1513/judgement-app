@@ -19,8 +19,9 @@ describe('validateLobbySettings', () => {
   });
 
   test('accepts the full legal range of rounds', () => {
+    // At six players even eight rounds fit in one deck; see the deck test below.
     for (let rounds = LOBBY_CONSTRAINTS.MIN_ROUNDS; rounds <= LOBBY_CONSTRAINTS.MAX_ROUNDS; rounds++) {
-      const result = validateLobbySettings({ rounds });
+      const result = validateLobbySettings({ rounds, maxPlayers: 6 });
       assert.equal(result.valid, true, `rounds=${rounds}`);
       assert.equal(result.settings.rounds, rounds);
     }
@@ -39,6 +40,20 @@ describe('validateLobbySettings', () => {
     assert.equal(validateLobbySettings({ maxPlayers: 9 }).valid, false);
     assert.equal(validateLobbySettings({ maxPlayers: 2 }).valid, true);
     assert.equal(validateLobbySettings({ maxPlayers: 8 }).valid, true);
+  });
+
+  test('refuses a table that one deck cannot deal in its last round', () => {
+    // Round N deals N cards to everyone.
+    assert.equal(validateLobbySettings({ maxPlayers: 6, rounds: 8 }).valid, true); // 48
+    assert.equal(validateLobbySettings({ maxPlayers: 8, rounds: 6 }).valid, true); // 48
+    assert.equal(validateLobbySettings({ maxPlayers: 7, rounds: 7 }).valid, true); // 49
+
+    const tooMany = validateLobbySettings({ maxPlayers: 8, rounds: 7 }); // 56
+    assert.equal(tooMany.valid, false);
+    assert.match(tooMany.errors[0], /more than 52 cards/);
+
+    // The default eight-player table caps out at six rounds.
+    assert.equal(validateLobbySettings({ rounds: 8 }).valid, false);
   });
 
   test('accepts both order modes and rejects anything else', () => {

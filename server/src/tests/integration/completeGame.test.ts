@@ -18,7 +18,8 @@ import { calculateScore } from '../../utils/cardUtils';
 
 /** Plays every round of a game and leaves it on GAME_OVER. */
 async function playWholeGame(players: number, rounds: number) {
-  const lobby = await createLobbyWithPlayers(players, { rounds });
+  // A lobby sized to the table, so one deck can deal every round.
+  const lobby = await createLobbyWithPlayers(players, { rounds, maxPlayers: players });
   const gameId = await startGame(lobby.lobbyId, lobby.hostId);
 
   for (let round = 1; round <= rounds; round++) {
