@@ -254,40 +254,70 @@ export function getHandCardLayout({
   };
 }
 
+// How far the playable cards rise out of the hand, as a share of a card's
+// height. Over the rest of the hand they rise far enough to leave the cards
+// beneath readable; with nothing beneath them they only need a nudge.
+export const POP_LIFT_OVER_HAND = 0.6;
+export const POP_LIFT_ALONE = 0.25;
+
 /**
- * Lays out the row of playable cards that lifts out of the hand on the
- * player's turn.
+ * Where every card in the local player's hand sits, in screen space.
  *
- * The row is centred and sits with its bottom edge at `bottom`, just above the
- * hand. It keeps `sideInset` clear on both sides so it never runs under the
- * bottom corner seats; when the cards will not fit with a gap between them they
- * overlap, exactly as the hand itself does (see getHandCardLayout).
+ * On the player's turn the cards they may play pop up as their own centred
+ * group, and the rest close up beneath them as if the popped cards were not in
+ * the hand at all - three cards with two playable leave the third centred on
+ * its own, five with two leave a three-card fan. With nothing popped it is
+ * simply the hand, fanned and centred.
  *
- * @returns {Array<{left, top, width, height}>} one slot per card, left to right
+ * Both groups fan with getHandCardLayout: the hand overlapping as it always
+ * has, the popped group with a small gap between cards (overlapping only when
+ * it runs out of room). `poppedInset` keeps the popped group clear of the
+ * bottom corner seats, which it rises up beside.
+ *
+ * @param {string[]} keys        cards in hand order
+ * @param {string[]} poppedKeys  the subset that pops up
+ * @param {number}   bottom      y of the bottom edge of the hand
+ * @returns {Object<string, {left: number, top: number}>} per card key
  */
-export function getTraySlots({
-  cardCount,
-  cardWidth,
-  cardHeight,
+export function getHandPositions({
+  keys,
+  poppedKeys = [],
   areaWidth,
   bottom,
-  sideInset = 0,
+  cardWidth,
+  cardHeight,
+  handInset = 20,
+  poppedInset = 0,
   gap = 8,
 }) {
-  const layout = getHandCardLayout({
-    availableWidth: Math.max(0, areaWidth - 2 * sideInset),
-    cardCount,
+  const poppedSet = new Set(poppedKeys);
+  const popped = keys.filter((k) => poppedSet.has(k));
+  const rest = keys.filter((k) => !poppedSet.has(k));
+  const positions = {};
+
+  const restLayout = getHandCardLayout({
+    availableWidth: Math.max(0, areaWidth - 2 * handInset),
+    cardCount: rest.length,
+    cardWidth,
+  });
+  const restStart = (areaWidth - restLayout.totalWidth) / 2;
+  const restTop = bottom - cardHeight;
+  rest.forEach((key, i) => {
+    positions[key] = { left: restStart + i * restLayout.stride, top: restTop };
+  });
+
+  const poppedLayout = getHandCardLayout({
+    availableWidth: Math.max(0, areaWidth - 2 * poppedInset),
+    cardCount: popped.length,
     cardWidth,
     // A negative overlap is a gap.
     baseOverlap: -gap,
   });
-  const start = (areaWidth - layout.totalWidth) / 2;
-  const top = bottom - cardHeight;
+  const poppedStart = (areaWidth - poppedLayout.totalWidth) / 2;
+  const lift = cardHeight * (rest.length > 0 ? POP_LIFT_OVER_HAND : POP_LIFT_ALONE);
+  popped.forEach((key, i) => {
+    positions[key] = { left: poppedStart + i * poppedLayout.stride, top: restTop - lift };
+  });
 
-  return Array.from({ length: cardCount }, (_, i) => ({
-    left: start + i * layout.stride,
-    top,
-    width: cardWidth,
-    height: cardHeight,
-  }));
+  return positions;
 }

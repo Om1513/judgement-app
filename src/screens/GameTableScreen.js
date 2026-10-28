@@ -3,14 +3,10 @@ import {
   View,
   Text,
   ImageBackground,
-  TouchableOpacity,
   Animated,
   Alert,
-  ScrollView,
-  Pressable,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { LinearGradient } from "expo-linear-gradient";
 import { useFonts, Bangers_400Regular } from "@expo-google-fonts/bangers";
 import socketService from "../services/socket";
 import HandWinnerOverlay from "../components/HandWinnerOverlay";
@@ -18,8 +14,9 @@ import CircleIconButton, { useCircleButtonMetrics } from "../components/CircleIc
 import SoundToggleButton from "../components/SoundToggleButton";
 import ScoreboardModal from "../components/ScoreboardModal";
 import audioManager from "../services/audioManager";
-import PlayedCard, { ENTER_SCALE } from "../components/PlayedCard";
-import PlayableCardTray, { cardKey } from "../components/PlayableCardTray";
+import PlayedCard from "../components/PlayedCard";
+import PlayerHand from "../components/PlayerHand";
+import { cardKey } from "../utils/cards";
 import { arrangeSeats } from "../utils/seating";
 import { RECONNECTING, seatStatus } from "../utils/presence";
 import { getPlayableCardIndexes } from "../utils/cardRules";
@@ -31,18 +28,8 @@ import {
   TABLE_MARGIN_SIDE,
   TABLE_MARGIN_TOP,
   getCardZone,
-  getHandCardLayout,
   getSeatPosition,
-  getTraySlots,
 } from "../utils/tableLayout";
-
-// Suit symbols
-const SUIT_SYMBOLS = {
-  spades: "♠",
-  hearts: "♥",
-  diamonds: "♦",
-  clubs: "♣",
-};
 
 // Baseline card in the player's own hand. Slightly larger than a played card,
 // as in the original design.
@@ -50,15 +37,16 @@ const HAND_CARD_WIDTH = 55;
 const HAND_CARD_HEIGHT = 80;
 // The hand's distance from the bottom of the screen.
 const HAND_BOTTOM = 10;
-// Gap between the playable-card row and the top of the hand.
-const TRAY_LIFT = 14;
+// Room either side of the fanned hand.
+const HAND_SIDE_INSET = 20;
 
 // How long after the round's last trick is announced the scoreboard (or the
 // winner screen) opens. The server has already held the trick and its winner
 // popup on screen by then, so this is only a beat, not a second hold.
 const ROUND_END_NAV_DELAY_MS = 700;
-// Room kept clear either side of the row for the bottom corner seats.
-const TRAY_SIDE_INSET = TABLE_MARGIN_SIDE + SEAT_WIDTH + 12;
+// Room kept clear either side of the popped-up cards for the bottom corner
+// seats, which they rise up beside.
+const POPPED_SIDE_INSET = TABLE_MARGIN_SIDE + SEAT_WIDTH + 12;
 
 export default function GameTableScreen({ navigation, route }) {
   const {
@@ -68,20 +56,14 @@ export default function GameTableScreen({ navigation, route }) {
   } = route.params || {};
 
   const [gameState, setGameState] = useState(initialGameState);
-  const [selectedCard, setSelectedCard] = useState(null);
   const [isPlayingCard, setIsPlayingCard] = useState(false);
   // The card we have played and the server has not confirmed yet:
-  // { card, viaTray, arrived }. It is sent the moment it is chosen and drawn on
-  // the table from here, so a play lands instantly instead of after a round
-  // trip. `arrived` is false only while a card picked from the row is still
-  // flying to the table, which draws it until then. Cleared once the server's
-  // update shows it, or dropped if the play is rejected.
+  // { card, arrived }. It is sent the moment it is tapped and drawn on the
+  // table from here, so a play lands instantly instead of after a round trip.
+  // `arrived` is false while the card is still flying from the hand, which
+  // draws it until then. Cleared once the server's update shows it, or dropped
+  // if the play is rejected - which pops the playable cards back up.
   const [pendingPlay, setPendingPlay] = useState(null);
-  // Cards up in the playable-card row. Their places in the hand stay empty, so
-  // the hand shows only the cards that cannot be played.
-  const [trayHiddenKeys, setTrayHiddenKeys] = useState([]);
-  // Bumped when the server rejects a play, which sends the row back out.
-  const [playRejections, setPlayRejections] = useState(0);
   // Hand (trick) winner popup. Non-null while the popup is shown; card play is
   // disabled during this window (the backend also pauses, so bots wait too).
   const [handWinner, setHandWinner] = useState(null);
@@ -203,18 +185,6 @@ export default function GameTableScreen({ navigation, route }) {
   const isMyTurn = gameState?.isMyTurn;
   const leadSuit = currentTrick?.leadSuit;
 
-  // How the hand fans out. Cards tighten their overlap rather than shrinking
-  // when the screen is narrow, so a rank is always readable and always tappable.
-  const handLayout = useMemo(
-    () =>
-      getHandCardLayout({
-        availableWidth: Math.max(0, r.width - r.s(40)),
-        cardCount: myHand.length,
-        cardWidth: r.s(HAND_CARD_WIDTH),
-      }),
-    [r, myHand.length]
-  );
-
   // Fired by the winner popup once its entrance animation settles. That is the
   // beat the new count belongs on: the player sees "X wins the hand!" and their
   // tally ticks up underneath it.
@@ -304,7 +274,6 @@ export default function GameTableScreen({ navigation, route }) {
 
       setGameState(data.gameState);
       setIsPlayingCard(false);
-      setSelectedCard(null);
 
       // Navigate back to bidding screen for new round
       if (data.gameState.status === "BIDDING") {
@@ -320,13 +289,9 @@ export default function GameTableScreen({ navigation, route }) {
       Alert.alert("Error", data.message);
       setPendingPlay(null);
       setIsPlayingCard(false);
-      setPlayRejections((n) => n + 1);
     });
 
     const unsubscribeHandWinner = socketService.on("hand:winner-announced", (data) => {
-      // Clear any pending card selection so play is fully blocked.
-      setSelectedCard(null);
-
       // One sting per completed trick. A re-emitted or duplicated event for a
       // trick we have already sounded still shows the popup (harmless and
       // idempotent) but stays silent.
@@ -416,112 +381,60 @@ export default function GameTableScreen({ navigation, route }) {
     };
   }, [navigation, currentPlayerId, currentPlayerName]);
 
-  const handleCardPress = (card, index) => {
-    if (handWinner) return;
-    if (!isMyTurn || isPlayingCard || pendingPlay || gameState?.status !== "PLAYING") return;
-
-    if (!playableCards.includes(index)) {
-      Alert.alert("Invalid Play", "You must follow the lead suit if you have it.");
-      return;
-    }
-
-    // First tap selects the card; tapping the already-selected card plays it.
-    if (selectedCard === index) {
-      setIsPlayingCard(true);
-      setPendingPlay({ card, viaTray: false, arrived: true });
-      setSelectedCard(null);
-      // No-ops when sound is off; purely local feedback, nothing is sent.
-      audioManager.playSound("cardPlay");
-      socketService.playCard(card);
-    } else {
-      setSelectedCard(index);
-    }
-  };
-
   // ---------------------------------------------------------------------
-  // Playable-card row
+  // The hand
   // ---------------------------------------------------------------------
 
-  // Where the hand and its cards are, kept in refs and read only when the row
-  // deals out, so scrolling the hand does not re-render the table.
-  const handContainerLayout = useRef(null);
-  const handScrollLayout = useRef(null);
-  const handScrollX = useRef(0);
-  const handCardLayouts = useRef({});
-
-  // A hand card's rect in screen space, or null if it has not been laid out.
-  // Card layouts are relative to the scroll content, so the hand's own offsets
-  // and the scroll position are added back on.
-  const getHandCardRect = useCallback((key) => {
-    const card = handCardLayouts.current[key];
-    const container = handContainerLayout.current;
-    const scroll = handScrollLayout.current;
-    if (!card || !container || !scroll) return null;
-    return {
-      left: container.x + scroll.x + card.x - handScrollX.current,
-      top: container.y + scroll.y + card.y,
-      width: card.width,
-      height: card.height,
-    };
-  }, []);
-
-  // Out only while we can actually play. A completed trick already names us as
-  // next to lead if we won it, but play is paused until the winner popup has
-  // been and gone - the row must not come out over the finished trick.
-  const trayOpen =
+  // The playable cards pop up only while we can actually play. A completed
+  // trick already names us as next to lead if we won it, but play is paused
+  // until the winner popup has been and gone - nothing may pop up over the
+  // finished trick. And once a card is on its way, the rest settle back down.
+  const canPlayNow =
     !!isMyTurn &&
     gameState?.status === "PLAYING" &&
     !handWinner &&
     !currentTrick?.winnerId &&
-    // Played straight from the hand instead; the row steps aside.
-    !(pendingPlay && !pendingPlay.viaTray);
+    !pendingPlay &&
+    !isPlayingCard;
 
-  const trayCards = useMemo(
-    () => playableCards.map((index) => ({ card: myHand[index], index })),
-    [playableCards, myHand]
+  const poppedKeys = useMemo(
+    () => (canPlayNow ? playableCards.map((index) => cardKey(myHand[index])) : []),
+    [canPlayNow, playableCards, myHand]
   );
 
-  const traySlots = useMemo(
-    () =>
-      getTraySlots({
-        cardCount: trayCards.length,
-        cardWidth: r.s(HAND_CARD_WIDTH),
-        cardHeight: r.s(HAND_CARD_HEIGHT),
-        areaWidth: r.width,
-        bottom: r.height - r.s(HAND_BOTTOM + HAND_CARD_HEIGHT + TRAY_LIFT),
-        sideInset: r.s(TRAY_SIDE_INSET),
-      }),
-    [trayCards.length, r]
-  );
+  // On our turn, the cards we cannot play are dimmed, as they always were.
+  const dimmedKeys = useMemo(() => {
+    if (!isMyTurn || gameState?.status !== "PLAYING") return [];
+    const playable = new Set(playableCards);
+    return myHand.filter((_, i) => !playable.has(i)).map(cardKey);
+  }, [isMyTurn, gameState?.status, playableCards, myHand]);
 
-  // Where a picked card flies to: the pose our PlayedCard starts its entrance
-  // from, in screen space, so it takes over without a jump.
-  const trayTarget = useMemo(() => {
+  // Where our card comes to rest on the table, in screen space: exactly where
+  // PlayedCard draws it, so the hand-off is invisible.
+  const flightTarget = useMemo(() => {
     const zone = getCardZone(2, players.length, tableRect, r.scale);
     return {
-      cx: tableMargins.left + zone.left + zone.width / 2 + zone.enterFrom.x,
-      cy: tableMargins.top + zone.top + zone.height / 2 + zone.enterFrom.y,
-      width: zone.width * ENTER_SCALE,
+      left: tableMargins.left + zone.left,
+      top: tableMargins.top + zone.top,
+      width: zone.width,
+      height: zone.height,
     };
   }, [players.length, tableRect, tableMargins, r.scale]);
 
   const myCardLanded = (currentTrick?.cardsPlayed || []).some(
     (c) => c.playerId === currentPlayerId
   );
-  // Whether our card is drawn on the table, confirmed or not.
-  const myCardOnTable = pendingPlay ? pendingPlay.arrived : myCardLanded;
 
-  // A card was tapped in the row: send the play now, while it flies to the
-  // table, so the server's answer is usually back before it lands.
-  const handleTrayPick = useCallback((card) => {
-    setSelectedCard(null);
+  // One tap on a popped card plays it: sent now, while it flies to the table,
+  // so the server's answer is usually back before it lands.
+  const handlePlay = useCallback((card) => {
     setIsPlayingCard(true);
-    setPendingPlay({ card, viaTray: true, arrived: false });
+    setPendingPlay({ card, arrived: false });
     socketService.playCard(card);
   }, []);
 
-  // The picked card has reached the table; it is drawn there from now on.
-  const handleTrayPlace = useCallback((card) => {
+  // The card has reached the table; it is drawn there from now on.
+  const handleArrive = useCallback((card) => {
     // No-ops when sound is off; purely local feedback, nothing is sent.
     audioManager.playSound("cardPlay");
     setPendingPlay((p) =>
@@ -610,8 +523,9 @@ export default function GameTableScreen({ navigation, route }) {
     return seated.map((player) => {
       const zone = getCardZone(player.seatIndex, count, tableRect, r.scale);
       let play = cardsPlayed.find((c) => c.playerId === player.id);
-      if (player.id === currentPlayerId && pendingPlay) {
-        // Still flying from the row, which draws it until it lands; after that
+      const isMine = player.id === currentPlayerId;
+      if (isMine && pendingPlay) {
+        // Still flying from the hand, which draws it until it lands; after that
         // it is ours to draw, ahead of the server confirming it.
         play = pendingPlay.arrived ? play || { card: pendingPlay.card } : null;
       }
@@ -629,92 +543,11 @@ export default function GameTableScreen({ navigation, route }) {
           zone={zone}
           resolving={!!handWinner}
           resolveDelta={resolveDelta}
+          // Flown here by the hand and already in place: no second entrance.
+          settled={isMine && !!pendingPlay}
         />
       );
     });
-  };
-
-  const renderMyHand = () => {
-    return (
-      <View
-        style={[styles.myHandContainer, { bottom: r.s(HAND_BOTTOM) }]}
-        onLayout={(e) => {
-          handContainerLayout.current = e.nativeEvent.layout;
-        }}
-      >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.myHandScroll}
-          onLayout={(e) => {
-            handScrollLayout.current = e.nativeEvent.layout;
-          }}
-          onScroll={(e) => {
-            handScrollX.current = e.nativeEvent.contentOffset.x;
-          }}
-          scrollEventThrottle={16}
-        >
-          {myHand.map((card, index) => {
-            const isRed = card.suit === "hearts" || card.suit === "diamonds";
-            const isPlayable = playableCards.includes(index);
-            const isSelected = selectedCard === index;
-            // Up in the row, or already played and waiting on the server.
-            const isUp =
-              trayHiddenKeys.includes(cardKey(card)) ||
-              (!!pendingPlay && cardKey(pendingPlay.card) === cardKey(card));
-
-            return (
-              <TouchableOpacity
-                key={`${card.suit}-${card.rank}-${index}`}
-                onLayout={(e) => {
-                  handCardLayouts.current[cardKey(card)] = e.nativeEvent.layout;
-                }}
-                onPress={() => handleCardPress(card, index)}
-                disabled={!isMyTurn || isPlayingCard || !!pendingPlay || !isPlayable || isUp}
-                activeOpacity={0.8}
-                style={[
-                  styles.handCard,
-                  {
-                    width: handLayout.cardWidth,
-                    height: r.s(HAND_CARD_HEIGHT),
-                    marginHorizontal: handLayout.margin,
-                  },
-                  isSelected && styles.handCardSelected,
-                  !isPlayable && isMyTurn && styles.handCardDisabled,
-                  // Up in the playable-card row; its place is kept so the rest
-                  // of the hand does not shift.
-                  isUp && styles.handCardUp,
-                ]}
-              >
-                <LinearGradient
-                  colors={
-                    isSelected
-                      ? ["#FFE55C", "#FFD700", "#F5A623"]
-                      : ["#FFFFFF", "#F5F5F5", "#EEEEEE"]
-                  }
-                  style={styles.handCardInner}
-                >
-                  <Text style={[
-                    styles.handCardRank,
-                    isRed && styles.redCard,
-                    isSelected && styles.selectedCardText,
-                  ]}>
-                    {card.rank}
-                  </Text>
-                  <Text style={[
-                    styles.handCardSuit,
-                    isRed && styles.redCard,
-                    isSelected && styles.selectedCardText,
-                  ]}>
-                    {SUIT_SYMBOLS[card.suit]}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-    );
   };
 
   if (!fontsLoaded || !gameState) {
@@ -759,8 +592,7 @@ export default function GameTableScreen({ navigation, route }) {
         {/* Dims the artwork so the seat names stand out against it. */}
         <View pointerEvents="none" style={styles.backgroundScrim} />
 
-        {/* Tapping any empty area deselects the currently selected card. */}
-        <Pressable style={styles.touchableArea} onPress={() => setSelectedCard(null)}>
+        <View style={styles.touchableArea}>
         {/* Round + Trump indicator - top right */}
         <View
           style={[
@@ -877,9 +709,6 @@ export default function GameTableScreen({ navigation, route }) {
           {renderPlayedCards()}
         </View>
 
-        {/* My hand at bottom */}
-        {renderMyHand()}
-
         {/* Bottom player info (me) - seat 2 */}
         <View
           style={[
@@ -910,18 +739,24 @@ export default function GameTableScreen({ navigation, route }) {
         {/* 5th player - bottom-right corner (mirrors "You" at bottom-left) */}
         {arrangedPlayers[4] && renderPlayerSeat(arrangedPlayers[4], 4)}
 
-        {/* The cards we may play, lifted above the hand on our turn */}
-        <PlayableCardTray
-          open={trayOpen}
-          cards={trayCards}
-          slots={traySlots}
-          getSourceRect={getHandCardRect}
-          target={trayTarget}
-          landed={myCardOnTable}
-          resetSignal={playRejections}
-          onPick={handleTrayPick}
-          onPlace={handleTrayPlace}
-          onHiddenChange={setTrayHiddenKeys}
+        {/* My hand. On our turn the playable cards pop up out of it, and the
+            one we tap flies straight to its place on the table. Drawn above
+            the table so that flight is never clipped. */}
+        <PlayerHand
+          cards={myHand}
+          poppedKeys={poppedKeys}
+          dimmedKeys={dimmedKeys}
+          flyingCard={pendingPlay && !pendingPlay.arrived ? pendingPlay.card : null}
+          flightTarget={flightTarget}
+          hiddenKey={pendingPlay?.arrived ? cardKey(pendingPlay.card) : null}
+          areaWidth={r.width}
+          bottom={r.height - r.s(HAND_BOTTOM)}
+          cardWidth={r.s(HAND_CARD_WIDTH)}
+          cardHeight={r.s(HAND_CARD_HEIGHT)}
+          handInset={r.s(HAND_SIDE_INSET)}
+          poppedInset={r.s(POPPED_SIDE_INSET)}
+          onPlay={handlePlay}
+          onArrive={handleArrive}
         />
 
         {/* Hand winner popup overlay */}
@@ -930,7 +765,7 @@ export default function GameTableScreen({ navigation, route }) {
           winnerName={handWinner?.playerName}
           onShown={handleWinnerShown}
         />
-        </Pressable>
+        </View>
 
         <StatusBar style="light" hidden />
       </ImageBackground>
@@ -1203,63 +1038,6 @@ const rawStyles = {
     letterSpacing: 0.5,
   },
 
-  redCard: {
-    color: "#e53935",
-  },
-
-  // My hand
-  myHandContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  myHandScroll: {
-    paddingHorizontal: 20,
-    // Leave room above the cards so a selected card can rise without being clipped.
-    paddingTop: 24,
-    alignItems: "flex-end",
-  },
-  handCard: {
-    borderRadius: 8,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  handCardSelected: {
-    transform: [{ translateY: -15 }],
-    shadowColor: "#FFD700",
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-  },
-  handCardDisabled: {
-    opacity: 0.5,
-  },
-  handCardUp: {
-    opacity: 0,
-  },
-  handCardInner: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  handCardRank: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1a1a2e",
-  },
-  handCardSuit: {
-    fontSize: 18,
-    color: "#1a1a2e",
-  },
-  selectedCardText: {
-    color: "#2A1654",
-  },
 
   // My info
   myInfoContainer: {

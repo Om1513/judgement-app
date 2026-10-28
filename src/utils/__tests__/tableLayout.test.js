@@ -16,8 +16,10 @@ import {
   SEAT_WIDTH,
   getCardZone,
   getHandCardLayout,
+  POP_LIFT_ALONE,
+  POP_LIFT_OVER_HAND,
+  getHandPositions,
   getSeatPosition,
-  getTraySlots,
   topSeatOffset,
 } from "../tableLayout";
 
@@ -277,41 +279,63 @@ describe("the player's hand", () => {
   });
 });
 
-describe("the playable-card row", () => {
+// On our turn the playable cards pop up as their own group, and the rest of
+// the hand closes up beneath them as if they were not there.
+describe("the hand with its playable cards popped up", () => {
   const CARD_W = 55;
   const CARD_H = 80;
+  const AREA = 874;
+  const BOTTOM = 392;
   const base = {
+    areaWidth: AREA,
+    bottom: BOTTOM,
     cardWidth: CARD_W,
     cardHeight: CARD_H,
-    areaWidth: 874,
-    bottom: 298,
-    sideInset: 122,
+    handInset: 20,
+    poppedInset: 122,
   };
+  const centreOf = (lefts) => (Math.min(...lefts) + Math.max(...lefts) + CARD_W) / 2;
 
-  it("is centred, evenly spaced, and sits on the given bottom edge", () => {
-    const slots = getTraySlots({ ...base, cardCount: 3 });
-    expect(slots).toHaveLength(3);
-
-    const left = slots[0].left;
-    const right = slots[2].left + CARD_W;
-    expect((left + right) / 2).toBeCloseTo(874 / 2);
-    expect(slots[1].left - slots[0].left).toBeCloseTo(CARD_W + 8);
-    for (const slot of slots) {
-      expect(slot.top + slot.height).toBe(298);
-      expect(slot.width).toBe(CARD_W);
-    }
+  it("with nothing popped, is the plain fanned hand on the bottom edge", () => {
+    const keys = ["a", "b", "c"];
+    const pos = getHandPositions({ ...base, keys });
+    expect(centreOf(keys.map((k) => pos[k].left))).toBeCloseTo(AREA / 2);
+    for (const k of keys) expect(pos[k].top).toBe(BOTTOM - CARD_H);
+    expect(pos.b.left - pos.a.left).toBeCloseTo(CARD_W - 16);
   });
 
-  it("overlaps rather than running under the corner seats", () => {
-    const slots = getTraySlots({ ...base, cardCount: 13 });
-    expect(slots[0].left).toBeGreaterThanOrEqual(122 - 0.001);
-    expect(slots[12].left + CARD_W).toBeLessThanOrEqual(874 - 122 + 0.001);
-    expect(slots[1].left - slots[0].left).toBeLessThan(CARD_W);
+  it("three cards with two popped leave the third centred on its own", () => {
+    const pos = getHandPositions({ ...base, keys: ["a", "b", "c"], poppedKeys: ["a", "c"] });
+
+    expect(pos.b.left + CARD_W / 2).toBeCloseTo(AREA / 2);
+    expect(pos.b.top).toBe(BOTTOM - CARD_H);
+    // The popped pair: centred above, in hand order, with a gap between.
+    expect(centreOf([pos.a.left, pos.c.left])).toBeCloseTo(AREA / 2);
+    expect(pos.c.left - pos.a.left).toBeCloseTo(CARD_W + 8);
+    expect(pos.a.top).toBeCloseTo(BOTTOM - CARD_H - CARD_H * POP_LIFT_OVER_HAND);
   });
 
-  it("handles no cards and a single card", () => {
-    expect(getTraySlots({ ...base, cardCount: 0 })).toEqual([]);
-    const [only] = getTraySlots({ ...base, cardCount: 1 });
-    expect(only.left + CARD_W / 2).toBeCloseTo(874 / 2);
+  it("five cards with two popped leave a three-card fan", () => {
+    const keys = ["a", "b", "c", "d", "e"];
+    const pos = getHandPositions({ ...base, keys, poppedKeys: ["b", "d"] });
+    const threeCardHand = getHandPositions({ ...base, keys: ["a", "c", "e"] });
+
+    for (const k of ["a", "c", "e"]) expect(pos[k]).toEqual(threeCardHand[k]);
+  });
+
+  it("only nudges the cards up when the whole hand is playable", () => {
+    const pos = getHandPositions({ ...base, keys: ["a", "b"], poppedKeys: ["a", "b"] });
+    expect(pos.a.top).toBeCloseTo(BOTTOM - CARD_H - CARD_H * POP_LIFT_ALONE);
+  });
+
+  it("keeps the popped group clear of the corner seats", () => {
+    const keys = Array.from({ length: 13 }, (_, i) => `k${i}`);
+    const pos = getHandPositions({ ...base, keys, poppedKeys: keys });
+    expect(pos.k0.left).toBeGreaterThanOrEqual(122 - 0.001);
+    expect(pos.k12.left + CARD_W).toBeLessThanOrEqual(AREA - 122 + 0.001);
+  });
+
+  it("handles an empty hand", () => {
+    expect(getHandPositions({ ...base, keys: [] })).toEqual({});
   });
 });
