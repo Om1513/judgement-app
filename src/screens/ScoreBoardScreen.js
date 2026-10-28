@@ -536,7 +536,9 @@ const rawStyles = {
   trumpCell: {
     flex: 2.4,
     flexDirection: "row",
-    justifyContent: "flex-start",
+    // Centred like every other column, so the trump and "Total" sit in the
+    // middle of their column rather than against its left edge.
+    justifyContent: "center",
   },
   roundCell: {
     flex: 1.4,
