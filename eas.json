@@ -17,6 +17,15 @@
         "EXPO_PUBLIC_SERVER_URL": "https://judgement-server-production.up.railway.app"
       }
     },
+    "simulator": {
+      "ios": {
+        "simulator": true
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SERVER_URL": "https://judgement-server-production.up.railway.app"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {
