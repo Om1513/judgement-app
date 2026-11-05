@@ -7,19 +7,23 @@ version-controlled and consistent between versions — the same philosophy as
 Everything in a fenced block is meant to be pasted verbatim into App Store
 Connect → the app → **App Store** tab → the version page.
 
-| | |
-|---|---|
-| App Store Connect app | `6801937647` |
-| Bundle identifier | `com.omsinghan25.judgement` |
-| Category | Games → Card (secondary: Games → Strategy) |
-| Orientation | Landscape only — screenshots must be landscape too |
-| Privacy Policy URL | host `privacy.html` / `PRIVACY.md` per `DEPLOYMENT.md §7` |
+
+|                       |                                                           |
+| --------------------- | --------------------------------------------------------- |
+| App Store Connect app | `6801937647`                                              |
+| Bundle identifier     | `com.omsinghan25.judgement`                               |
+| Category              | Games → Card (secondary: Games → Strategy)                |
+| Orientation           | Landscape only — screenshots must be landscape too        |
+| Privacy Policy URL    | host `privacy.html` / `PRIVACY.md` per `DEPLOYMENT.md §7` |
+
 
 Character limits that matter: **Name 30**, **Subtitle 30**, **Promotional Text
 170**, **Keywords 100** (comma-separated, no spaces needed), **Description
 4000**. Counts below are all within limit.
 
 ---
+
+
 
 ## Name (30 chars max)
 
@@ -42,13 +46,15 @@ terms rather than describing the app.
 
 ## Promotional Text (170 chars max)
 
-Editable *without* a new build — use it for whatever is newest. For this
-release:
+Editable *without* a new build — after launch, use it for whatever is newest.
+For the initial release, pitch the whole game:
 
 ```
-New: the host can now change rounds, scoring and trump order right from the
-lobby — no need to back out and recreate the game.
+The classic trick-taking game of exact bids, now online. Create a game, share
+one code, and play with 2–8 friends — or add bots and play right now.
 ```
+
+
 
 ## Description (4000 chars max)
 
@@ -117,14 +123,18 @@ contact you — `omsinghan25@icloud.com` is the address used everywhere else
 
 ---
 
+
+
 ## Screenshot plan
 
 Required sizes (landscape, because the app is landscape-only):
 
-| Device | Pixels (landscape) | Required? |
-|---|---|---|
-| iPhone 6.9" | 2868 × 1320 (or 2796 × 1290) | Yes |
-| iPad 13" | 2752 × 2064 | Yes — `supportsTablet` is true |
+
+| Device      | Pixels (landscape)           | Required?                      |
+| ----------- | ---------------------------- | ------------------------------ |
+| iPhone 6.9" | 2868 × 1320 (or 2796 × 1290) | Yes                            |
+| iPad 13"    | 2752 × 2064                  | Yes — `supportsTablet` is true |
+
 
 Up to 10 per device; the **first three** are what shows in search results for
 landscape, so they must stand alone. Capture from the Simulator
@@ -134,23 +144,23 @@ build** — reviewers compare screenshots against the live app (§2.3 again).
 Order tells a story: hook → core loop → social proof of the experience.
 
 1. **Game table, mid-hand, 4 players** (`GameTableScreen`) — the money shot.
-   Cards fanned in hand, a trick in progress on the table, trump visible.
+  Cards fanned in hand, a trick in progress on the table, trump visible.
    Overlay: `Win exactly what you bid — no more, no less`
 2. **Bidding screen** (`BiddingScreen`) — the moment of judgement.
-   Overlay: `How many hands will YOU win?`
+  Overlay: `How many hands will YOU win?`
 3. **Lobby with code showing** (`LobbyScreen`) — the social hook, now with the
-   new settings panel visible.
+  new settings panel visible.
    Overlay: `Share one code. Friends drop straight in.`
 4. **8-player table** — show the game at full size; it's the most visually
-   impressive state. Overlay: `2 to 8 players, online in real time`
+  impressive state. Overlay: `2 to 8 players, online in real time`
 5. **Round scoreboard** (`ScoreboardModal`) — exact bids paying off, a zero for
-   someone who missed. Overlay: `Only an exact bid scores`
+  someone who missed. Overlay: `Only an exact bid scores`
 6. **Bots in the lobby** — Add Bot in action.
-   Overlay: `No one around? Bots are always up for a game.`
+  Overlay: `No one around? Bots are always up for a game.`
 7. **Winner screen with confetti** (`FinalWinnerScreen`) —
-   Overlay: `Settle it once and for all`
+  Overlay: `Settle it once and for all`
 8. **How To Play** (`HowToPlayScreen`) —
-   Overlay: `New to Kachuful? Learn in two minutes.`
+  Overlay: `New to Kachuful? Learn in two minutes.`
 
 Overlay text rules from the asset guidance: short phrases that *enhance* the
 visual rather than describe it, legible at search-result size, kept inside a
@@ -168,14 +178,16 @@ Aiko, Dev…), or any screen state the shipping build can't reach.
 Worth doing for v1.1 rather than blocking v1.0. When you do:
 
 - **Real captured UI only** — Apple rejects previews that are mostly motion
-  graphics. Record with the Simulator or `xcrun simctl io booted recordVideo`.
+graphics. Record with the Simulator or `xcrun simctl io booted recordVideo`.
 - First 3 seconds: a card being played onto the table (the new fly-to-table
-  animation from PR #17 is exactly the hook this wants).
+animation from PR #17 is exactly the hook this wants).
 - Story arc: join via code → bid → play a trick → scoreboard with an exact bid
-  paying. Beginning, middle, end.
+paying. Beginning, middle, end.
 - Must work **muted** (previews autoplay silently) and **loop cleanly** —
-  end on the scoreboard, cut back to the opening deal.
+end on the scoreboard, cut back to the opening deal.
 - Poster frame: the mid-trick table shot, same as screenshot 1.
+
+
 
 ## App icon
 
@@ -185,31 +197,36 @@ Liquid Glass version with **Icon Composer** so it gets the iOS 26+ treatment.
 
 ---
 
+
+
 ## Remaining App Store Connect form answers
 
 - **App Privacy**: collects **Name** and **User ID** (the random device play
-  id) → linked to the user? **No** (it's a random id, not identity) → used for
-  tracking? **No**. Everything else: not collected. Matches `PRIVACY.md`.
+id) → linked to the user? **No** (it's a random id, not identity) → used for
+tracking? **No**. Everything else: not collected. Matches `PRIVACY.md`.
 - **Age rating questionnaire**: no to everything (no gambling with real money,
-  no violence, no mature themes) → lands at **4+**.
+no violence, no mature themes) → lands at **4+**.
 - **Sign-in required**: No.
 - **App Review notes** — reuse the block from `TESTFLIGHT.md` (§Beta App Review
-  Information). The bots instruction is the single most important sentence in
-  the whole submission:
+Information). The bots instruction is the single most important sentence in
+the whole submission:
   ```
   Multiplayer is solo-testable: Create Game → Add Bot (tap 3 times) → Start
   Game. No account or sign-in exists. The app requires internet to reach its
   server, which is live and monitored.
   ```
 - **Release option**: Manually release this version — for v1.0, approve first,
-  confirm the server one last time, then press the button yourself.
+confirm the server one last time, then press the button yourself.
+
+
 
 ## Pre-submission checklist
 
 1. Server live **and** on the same commit as the build (`DEPLOYMENT.md §7`,
-   `TESTFLIGHT.md §Before you distribute`).
+  `TESTFLIGHT.md §Before you distribute`).
 2. Screenshots taken from the build being submitted, not an older one.
 3. Privacy Policy URL resolves publicly (open it in a private browser window).
 4. How To Play text agrees with live server scoring.
 5. Keep the server up for the entire review window — a reviewer who can't
-   reach the lobby rejects the build.
+  reach the lobby rejects the build.
+
